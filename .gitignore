@@ -1,0 +1,10 @@
+# Build artifacts
+dist/
+*.zip
+
+# System / editor files
+.DS_Store
+*.log
+node_modules/
+.vscode/
+.idea/

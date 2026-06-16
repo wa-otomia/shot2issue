@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "shot2issue — Screenshot to GitHub Issue",
+  "version": "1.0.0",
+  "description": "Capture the current tab, annotate it, and file it as a GitHub issue with the screenshot inline. Client-side only; no token required.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "shot2issue — capture and file an issue",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "options_page": "options.html",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://github.com/*"
+  ]
+}

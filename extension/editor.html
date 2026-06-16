@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>shot2issue</title>
+  <link rel="stylesheet" href="editor.css" />
+</head>
+<body>
+  <header>
+    <h1><span class="dot"></span> shot2issue <span class="hint" id="subtitle" data-i18n="editorSubtitle" style="font-weight:400;color:var(--muted);font-size:13px;"></span></h1>
+    <span class="spacer"></span>
+    <span id="loginState" class="hint" style="font-size:12px;color:var(--muted);"></span>
+    <a id="openOptions" class="hint" data-i18n="settings" style="font-size:12px;color:var(--accent);cursor:pointer;margin-left:12px;"></a>
+  </header>
+
+  <div class="layout">
+    <!-- Left: screenshot + annotation tools -->
+    <div class="canvas-col">
+      <div class="toolbar" id="toolbar">
+        <button class="tool active" data-tool="rect" data-i18n="toolRect" data-i18n-title="toolRectTitle"></button>
+        <button class="tool" data-tool="arrow" data-i18n="toolArrow" data-i18n-title="toolArrowTitle"></button>
+        <button class="tool" data-tool="text" data-i18n="toolText" data-i18n-title="toolTextTitle"></button>
+        <button class="tool" data-tool="mosaic" data-i18n="toolMosaic" data-i18n-title="toolMosaicTitle"></button>
+        <span class="sep"></span>
+        <label><span data-i18n="color"></span> <input type="color" id="color" value="#ff3b30" /></label>
+        <label><span data-i18n="thickness"></span> <input type="range" id="width" min="2" max="14" value="4" /></label>
+        <span class="sep"></span>
+        <button id="undo" data-i18n="undo" data-i18n-title="undoTitle"></button>
+        <button id="clear" data-i18n="clear" data-i18n-title="clearTitle"></button>
+        <button id="download" data-i18n="downloadPng" data-i18n-title="downloadPngTitle"></button>
+      </div>
+
+      <div class="canvas-wrap" id="canvasWrap">
+        <canvas id="canvas"></canvas>
+        <input id="textInput" type="text" />
+        <div class="canvas-empty hidden" id="canvasEmpty" data-i18n="canvasEmpty"></div>
+      </div>
+    </div>
+
+    <!-- Right: description + submit -->
+    <div class="form-col">
+      <label for="workspace" data-i18n="fieldWorkspace"></label>
+      <select id="workspace"></select>
+
+      <label for="type" data-i18n="fieldType"></label>
+      <select id="type"></select>
+
+      <label for="title" data-i18n="fieldTitle"></label>
+      <input type="text" id="title" data-i18n-placeholder="titlePlaceholder" />
+
+      <label for="body"><span data-i18n="fieldBody"></span> <span class="hint" data-i18n="bodyHint"></span></label>
+      <textarea id="body" data-i18n-placeholder="bodyPlaceholder"></textarea>
+
+      <div class="actions">
+        <button class="primary" id="submit" data-i18n="submit"></button>
+        <button class="ghost" id="submitNoImage" data-i18n="submitNoImage" data-i18n-title="submitNoImageTitle"></button>
+      </div>
+
+      <div id="status" class="info"></div>
+      <div id="result"></div>
+    </div>
+  </div>
+
+  <script type="module" src="editor.js"></script>
+</body>
+</html>
