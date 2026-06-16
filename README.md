@@ -1,5 +1,7 @@
 # shot2issue
 
+**English** | [简体中文](README.zh-CN.md) | [日本語](README.ja.md)
+
 A Chrome extension (Manifest V3) for filing GitHub issues from a screenshot. Click the
 toolbar icon to capture the current tab, annotate the image, write a title and
 description, and submit. The screenshot is attached as a native GitHub
