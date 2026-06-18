@@ -1,12 +1,12 @@
 // MV3 service worker.
 //
-// Entry point: clicking the toolbar icon captures the visible tab immediately.
-// The manifest declares no default_popup, so action clicks fire onClicked. The
-// capture is staged in session storage and the editor page is opened, where the
-// workspace/type selection, annotation, and submission take place.
+// Entry points: clicking the toolbar icon, or an optional keyboard shortcut, captures
+// the visible tab immediately. The manifest declares no default_popup, so action clicks
+// fire onClicked. The capture is staged in session storage and the editor page is
+// opened, where the workspace/type selection, annotation, and submission take place.
 //
-// Capturing here works because clicking the icon grants activeTab, which lets the
-// worker call captureVisibleTab and read the tab's url/title.
+// Both entry points are user gestures that grant activeTab, which lets the worker call
+// captureVisibleTab and read the tab's url/title.
 
 import { getConfig, setConfig, setPendingShot } from './lib/storage.js';
 import { setLanguage, t } from './lib/i18n.js';
@@ -21,11 +21,11 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   }
 });
 
-chrome.action.onClicked.addListener(async (tab) => {
+/** Capture the given tab, stage the result, and open the editor. */
+async function captureAndOpenEditor(tab) {
   const config = await getConfig();
   setLanguage(config.lang);
   try {
-    // Capture the visible area of the current window (activeTab was just granted).
     const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
     if (!dataUrl) throw new Error('no image data');
 
@@ -47,4 +47,20 @@ chrome.action.onClicked.addListener(async (tab) => {
   }
   // Open the editor either way (it shows the error when capture failed).
   await chrome.tabs.create({ url: chrome.runtime.getURL('editor.html') });
+}
+
+// Toolbar icon.
+chrome.action.onClicked.addListener((tab) => {
+  captureAndOpenEditor(tab);
+});
+
+// Optional keyboard shortcut. The key is bound at chrome://extensions/shortcuts; this
+// handler only acts when the user has enabled the shortcut in Settings (off by default).
+chrome.commands.onCommand.addListener(async (command, tab) => {
+  if (command !== 'capture') return;
+  const config = await getConfig();
+  if (!config.shortcutEnabled) return;
+  let target = tab;
+  if (!target) [target] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (target) captureAndOpenEditor(target);
 });

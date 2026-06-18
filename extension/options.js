@@ -16,6 +16,8 @@ const els = {
   addType: $('addType'),
   lang: $('lang'),
   closeAfterSubmit: $('closeAfterSubmit'),
+  shortcutEnabled: $('shortcutEnabled'),
+  configureShortcut: $('configureShortcut'),
   save: $('save'),
   status: $('status'),
   exportConfig: $('exportConfig'),
@@ -23,7 +25,7 @@ const els = {
   importFile: $('importFile'),
 };
 
-let draft = null; // { workspaces, types, lang, closeAfterSubmit, lastWorkspaceId, lastType }
+let draft = null; // { workspaces, types, lang, closeAfterSubmit, shortcutEnabled, lastWorkspaceId, lastType }
 
 function status(text, cls = '') {
   els.status.className = cls;
@@ -125,6 +127,16 @@ els.closeAfterSubmit.addEventListener('change', () => {
   draft.closeAfterSubmit = els.closeAfterSubmit.checked;
 });
 
+// ---- Keyboard shortcut ----
+els.shortcutEnabled.addEventListener('change', () => {
+  draft.shortcutEnabled = els.shortcutEnabled.checked;
+});
+// The key combination is assigned on Chrome's own shortcuts page; the extension cannot
+// set it programmatically.
+els.configureShortcut.addEventListener('click', () => {
+  chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+});
+
 // ---- Save ----
 els.save.addEventListener('click', async () => {
   const bad = draft.workspaces.find((w) => !w.owner || !w.repo);
@@ -169,6 +181,7 @@ els.importFile.addEventListener('change', async () => {
       types: Array.isArray(obj.types) && obj.types.length ? obj.types : draft.types,
       lang: SUPPORTED_LANGS.includes(obj.lang) ? obj.lang : draft.lang,
       closeAfterSubmit: typeof obj.closeAfterSubmit === 'boolean' ? obj.closeAfterSubmit : draft.closeAfterSubmit,
+      shortcutEnabled: typeof obj.shortcutEnabled === 'boolean' ? obj.shortcutEnabled : draft.shortcutEnabled,
       lastWorkspaceId: typeof obj.lastWorkspaceId === 'string' ? obj.lastWorkspaceId : '',
       lastType: typeof obj.lastType === 'string' ? obj.lastType : '',
     };
@@ -189,6 +202,7 @@ els.importFile.addEventListener('change', async () => {
 function applyDraftToControls() {
   els.lang.value = draft.lang;
   els.closeAfterSubmit.checked = !!draft.closeAfterSubmit;
+  els.shortcutEnabled.checked = !!draft.shortcutEnabled;
 }
 
 (async function init() {

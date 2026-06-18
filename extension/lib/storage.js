@@ -16,6 +16,8 @@ const DEFAULT_CONFIG = {
   lang: 'en',
   // Close the editor and switch back to the captured tab after a successful submit.
   closeAfterSubmit: true,
+  // Allow a keyboard shortcut (configured at chrome://extensions/shortcuts) to capture. Off by default.
+  shortcutEnabled: false,
   // Remembered selection: reused as the default the next time the editor opens.
   lastWorkspaceId: '',
   lastType: '',

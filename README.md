@@ -74,6 +74,9 @@ the **Settings** link in the editor.
 - **Language** — English, Simplified Chinese, or Japanese.
 - **Behavior** — whether to close the editor and switch back to the captured page after a
   successful submission.
+- **Keyboard shortcut** — optionally trigger a capture with a keyboard shortcut. Off by
+  default; enable it here, then assign the key combination on Chrome's shortcuts page
+  (`chrome://extensions/shortcuts`), which the “Set shortcut” button opens.
 - **Backup / restore** — export settings to a JSON file and import them later. Settings
   are stored only in this browser (`chrome.storage.local`).
 
