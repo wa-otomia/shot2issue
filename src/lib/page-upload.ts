@@ -40,17 +40,13 @@ export async function submitIssueViaPage({
   repo,
   title,
   body,
-  dataUrl,
-  filename,
-  withImage,
+  images,
 }: {
   owner: string;
   repo: string;
   title: string;
   body: string;
-  dataUrl: string;
-  filename: string;
-  withImage: boolean;
+  images: Array<{ dataUrl: string; filename: string }>;
 }): Promise<string> {
   const newIssueUrl = `https://github.com/${owner}/${repo}/issues/new`;
   // Background tab (active:false): does not steal focus or interrupt the user.
@@ -63,7 +59,7 @@ export async function submitIssueViaPage({
       target: { tabId },
       world: 'MAIN',
       func: pageCreateIssue,
-      args: [{ title, body, dataUrl: withImage ? dataUrl : '', filename, withImage: !!withImage }],
+      args: [{ title, body, images: images || [] }],
     });
     const res = injections?.[0]?.result as PageCreateResult | undefined;
     if (!res) throw new Error('The injected script returned no result (possibly signed out or no access to the repository).');
@@ -125,11 +121,9 @@ async function waitTabReady(tabId: number): Promise<void> {
 function pageCreateIssue(opts: {
   title: string;
   body: string;
-  dataUrl: string;
-  filename: string;
-  withImage: boolean;
+  images: Array<{ dataUrl: string; filename: string }>;
 }): Promise<{ ok: boolean; error?: string }> {
-  const { title, body, dataUrl, filename, withImage } = opts;
+  const { title, body, images } = opts;
   const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
   function findTitle(): HTMLInputElement | null {
@@ -199,44 +193,48 @@ function pageCreateIssue(opts: {
     setNativeValue(bodyEl, desc ? desc + '\n\n' : '');
     try { bodyEl.focus(); bodyEl.setSelectionRange(bodyEl.value.length, bodyEl.value.length); } catch (_) {}
 
-    // 3) Upload the screenshot (optional): paste first, drop as a fallback, letting
-    //    GitHub append ![](url) and manage the upload. Continue only once the URL is
-    //    present and "Uploading…" is gone (upload truly complete).
-    if (withImage && dataUrl) {
+    // 3) Upload each screenshot in order: paste first, drop as a fallback, letting GitHub
+    //    append ![](url) and manage each upload. Move to the next image only once one more
+    //    attachment URL has appeared and "Uploading…" is gone (that upload truly complete).
+    const re = /https:\/\/github\.com\/(?:user-attachments\/assets|[^/\s)]+\/[^/\s)]+\/assets)\/[^\s)]+/g;
+    const countUrls = (): number => (bodyEl!.value.match(re) || []).length;
+    const makeDT = (file: File): DataTransfer => { const dt = new DataTransfer(); dt.items.add(file); return dt; };
+    const firePaste = (file: File): void => { try { bodyEl!.focus(); bodyEl!.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: makeDT(file) })); } catch (_) {} };
+    const fireDrop = (file: File): void => {
+      try {
+        bodyEl!.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: makeDT(file) }));
+        bodyEl!.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: makeDT(file) }));
+        bodyEl!.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: makeDT(file) }));
+      } catch (_) {}
+    };
+
+    for (let k = 0; k < images.length; k++) {
       let file: File;
       try {
-        file = dataUrlToFile(dataUrl, filename);
+        file = dataUrlToFile(images[k].dataUrl, images[k].filename);
       } catch (e) {
         return { ok: false, error: 'Failed to convert image data: ' + (e && (e as { message?: unknown }).message ? (e as { message: unknown }).message : e) };
       }
-      const makeDT = (): DataTransfer => { const dt = new DataTransfer(); dt.items.add(file); return dt; };
-      const firePaste = (): void => { try { bodyEl!.focus(); bodyEl!.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: makeDT() })); } catch (_) {} };
-      const fireDrop = (): void => {
-        try {
-          bodyEl!.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: makeDT() }));
-          bodyEl!.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: makeDT() }));
-          bodyEl!.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: makeDT() }));
-        } catch (_) {}
-      };
-      firePaste();
-      const re = /https:\/\/github\.com\/(?:user-attachments\/assets|[^/\s)]+\/[^/\s)]+\/assets)\/[^\s)]+/;
+      const before = countUrls();
+      firePaste(file);
       let done = false, sawUploading = false, triedDrop = false;
-      for (let i = 0; i < 160; i++) { // ~48s, allow ample time for the upload
+      for (let i = 0; i < 160; i++) { // ~48s per image, allow ample time for the upload
         const val = bodyEl.value || '';
-        if (/uploading/i.test(val)) sawUploading = true;
-        if (re.test(val) && !/uploading/i.test(val)) { done = true; break; }
-        if (i === 10 && !sawUploading && !triedDrop) { fireDrop(); triedDrop = true; }
+        const uploading = /uploading/i.test(val);
+        if (uploading) sawUploading = true;
+        if (countUrls() >= before + 1 && !uploading) { done = true; break; }
+        if (i === 10 && !sawUploading && !triedDrop) { fireDrop(file); triedDrop = true; }
         await sleep(300);
       }
       if (!done) {
         return {
           ok: false,
           error: sawUploading
-            ? 'Upload timed out: "Uploading…" appeared but did not complete.'
-            : 'Upload timed out: paste/drop did not trigger an upload.',
+            ? `Upload timed out on image ${k + 1}/${images.length}: "Uploading…" appeared but did not complete.`
+            : `Upload timed out on image ${k + 1}/${images.length}: paste/drop did not trigger an upload.`,
         };
       }
-      await sleep(500); // let the editor settle before submitting
+      await sleep(300); // settle before the next image / before submitting
     }
 
     // 4) Click Create (enabled once the title is non-empty). Do not overwrite the body.

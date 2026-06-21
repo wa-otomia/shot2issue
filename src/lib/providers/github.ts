@@ -47,9 +47,7 @@ export const githubProvider: Provider = {
       repo: ws.repo,
       title: ctx.title,
       body: ctx.body,
-      dataUrl: ctx.dataUrl,
-      filename: ctx.filename,
-      withImage: ctx.withImage,
+      images: ctx.withImage ? ctx.images : [],
     });
     const m = url.match(/\/issues\/(\d+)/);
     return { url, number: m ? m[1] : '' };

@@ -108,26 +108,23 @@ export async function createYouTrackIssue({
   project,
   title,
   body,
-  dataUrl,
-  filename,
-  withImage,
+  images,
 }: {
   baseUrl: string;
   token: string;
   project: string;
   title: string;
   body: string;
-  dataUrl: string;
-  filename: string;
-  withImage: boolean;
+  images: Array<{ dataUrl: string; filename: string }>;
 }): Promise<IssueResult> {
   const projectId = await resolveProjectId(baseUrl, token, project);
 
-  // Embed the image by attachment file name; YouTrack markdown resolves it once the
-  // attachment is uploaded to the same issue below.
+  // Embed each image by attachment file name; YouTrack markdown resolves them once the
+  // attachments are uploaded to the same issue below.
   let description = body || "";
-  if (withImage && filename) {
-    description = (description ? description.replace(/\s+$/, "") + "\n\n" : "") + `![${filename}](${filename})`;
+  if (images.length) {
+    const md = images.map((img) => `![${img.filename}](${img.filename})`).join("\n\n");
+    description = (description ? description.replace(/\s+$/, "") + "\n\n" : "") + md;
   }
 
   const createResp = await fetch(api(baseUrl, "/api/issues?fields=id,idReadable"), {
@@ -139,15 +136,16 @@ export async function createYouTrackIssue({
   const issue = (await createResp.json()) as YouTrackIssue;
   const idReadable = issue.idReadable || issue.id;
 
-  if (withImage && dataUrl) {
+  // Upload each attachment sequentially to the created issue.
+  for (const img of images) {
     const fd = new FormData();
-    fd.append("upload", dataUrlToBlob(dataUrl), filename); // documented multipart field name
+    fd.append("upload", dataUrlToBlob(img.dataUrl), img.filename); // documented multipart field name
     const upResp = await fetch(
       api(baseUrl, `/api/issues/${encodeURIComponent(issue.id)}/attachments?fields=id,name`),
       { method: "POST", headers: authHeaders(token), body: fd } // let the browser set the multipart boundary
     );
     if (!upResp.ok) {
-      throw await toError(upResp, `Issue ${idReadable} created, but uploading the screenshot failed`);
+      throw await toError(upResp, `Issue ${idReadable} created, but uploading a screenshot failed`);
     }
   }
 

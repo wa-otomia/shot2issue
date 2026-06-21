@@ -149,6 +149,15 @@ button.ghost {
 }
 button.ghost:disabled { opacity: .5; cursor: not-allowed; color: var(--muted); }
 
+/* Attachment thumbnail strip */
+.thumb-strip { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 0; }
+.thumb { position: relative; width: 72px; height: 54px; border: 2px solid var(--border); border-radius: 6px; overflow: hidden; cursor: pointer; background: #0001; flex: 0 0 auto; }
+.thumb.active { border-color: var(--accent); }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb-del { position: absolute; top: 1px; right: 1px; width: 18px; height: 18px; line-height: 16px; padding: 0; border: none; border-radius: 4px; background: #000a; color: #fff; font-size: 12px; cursor: pointer; }
+.thumb-del:hover { background: var(--danger); }
+.thumb-hint { color: var(--muted); font-size: 12px; }
+
 #status { margin-top: 14px; font-size: 13px; white-space: pre-wrap; }
 #status.info { color: var(--muted); }
 #status.error { color: var(--danger); }

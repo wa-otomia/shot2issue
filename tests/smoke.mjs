@@ -69,7 +69,14 @@ try {
         },
       }),
       chrome.storage.session.set({
-        pendingShot: { dataUrl, pageUrl: 'https://example.com/x', pageTitle: 'Example', type: 'Bug', workspaceId: 'w1' },
+        pendingShots: {
+          attachments: [
+            { id: 'a1', dataUrl, pageUrl: 'https://example.com/x', pageTitle: 'Example', ops: [], createdAt: 1 },
+            { id: 'a2', dataUrl, pageUrl: 'https://example.com/y', pageTitle: 'Example 2', ops: [], createdAt: 2 },
+          ],
+          type: 'Bug',
+          workspaceId: 'w1',
+        },
       }),
     ]);
   }, dataUrl);
@@ -141,6 +148,17 @@ try {
     (await editor.$eval('#title', (el) => el.value)) === '[Bug] Example');
   check('editor: body prefilled from template',
     (await editor.$eval('#body', (el) => el.value)) === 'URL: https://example.com/x');
+
+  // Multi-attachment: the thumbnail strip shows both staged screenshots.
+  check('editor: thumbnail strip shows both attachments',
+    (await editor.$$eval('#thumbStrip .thumb', (els) => els.length)) === 2);
+  // Switching to the 2nd attachment and back keeps the canvas active (attachment 1 active).
+  await editor.click('#thumbStrip .thumb:nth-of-type(2)');
+  await editor.waitForTimeout(150);
+  await editor.click('#thumbStrip .thumb:nth-of-type(1)');
+  await editor.waitForTimeout(150);
+  check('editor: attachment 1 active after switching back',
+    (await editor.$eval('#thumbStrip .thumb:nth-of-type(1)', (el) => el.classList.contains('active'))) === true);
 
   // The AI-title button is disabled AND visually greyed until the assistant is connected.
   const aiBtnState = await editor.$eval('#aiTitle', (el) => ({
@@ -219,6 +237,12 @@ try {
   await editor.waitForSelector('.toast.show', { timeout: 3000 }).catch(() => {});
   const copyToast = await editor.$eval('.toast', (el) => el.textContent || '').catch(() => '');
   check('editor: Copy PNG copies to clipboard', copyToast === 'Copied to clipboard');
+
+  // Delete the 2nd attachment via its thumbnail's remove button → one remains.
+  await editor.click('#thumbStrip .thumb:nth-of-type(2) .thumb-del');
+  await editor.waitForTimeout(150);
+  check('editor: deleting an attachment leaves one thumbnail',
+    (await editor.$$eval('#thumbStrip .thumb', (els) => els.length)) === 1);
 
   // Esc requires two presses. Move focus off the text input first (a non-text tool button).
   await editor.click('.tool[data-tool="rect"]');

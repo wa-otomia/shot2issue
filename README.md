@@ -32,6 +32,9 @@ AI assistant — sign in with a ChatGPT subscription to generate titles:
 ## Features
 
 - One click to capture the visible area of the current tab.
+- Multiple screenshots per issue: each capture adds a thumbnail; annotate each one, switch
+  between them, delete any, and they are all attached on submit. Re-clicking the extension
+  icon while the editor is open adds the new screenshot to it.
 - Canvas annotation: rectangle, numbered box (auto-incrementing badge), arrow, freehand
   pen, wrapping text in a resizable region, and mosaic for redaction. Undo with
   Ctrl/Cmd+Z; close the editor with Esc (pressed twice).

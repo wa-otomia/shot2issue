@@ -5,11 +5,18 @@
 // The screenshot comes from chrome.storage.session, written by the service worker when
 // the toolbar icon was clicked (or the keyboard shortcut was used).
 
-import { getConfig, getPendingShot, clearPendingShot, rememberSelection, getAiAuth } from './lib/storage.js';
+import {
+  getConfig,
+  getPendingShots,
+  setPendingShots,
+  clearPendingShots,
+  rememberSelection,
+  getAiAuth,
+} from './lib/storage.js';
 import { setLanguage, localizeDom, t } from './lib/i18n.js';
 import { getProvider } from './lib/providers/index.js';
 import { generateTitle } from './lib/ai.js';
-import type { Config, Workspace, PendingShot, IssueResult } from './lib/types.js';
+import type { Config, Workspace, Op, Attachment, PendingShots, IssueResult } from './lib/types.js';
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -20,24 +27,6 @@ function wsLabel(ws: Workspace): string {
   const provider = getProvider(wsKind(ws));
   const base = ws.name || provider.describe(ws) || wsKind(ws);
   return `${base} (${provider.label})`;
-}
-
-/** One annotation operation. Rectangle/arrow/mosaic use x0..y1; text uses x/y/size/text. */
-interface Op {
-  tool: string;
-  color: string;
-  width?: number;
-  x0?: number;
-  y0?: number;
-  x1?: number;
-  y1?: number;
-  points?: Array<{ x: number; y: number }>; // freehand pen path
-  num?: number; // numbered-box badge value
-  size?: number;
-  x?: number;
-  y?: number;
-  w?: number; // text wrap width (canvas pixels)
-  text?: string;
 }
 
 // ---- DOM ----
@@ -65,19 +54,37 @@ const els = {
   result: $('result'),
   loginState: $('loginState'),
   openOptions: $('openOptions'),
+  thumbStrip: $('thumbStrip'),
 };
 
 els.openOptions.addEventListener('click', () => chrome.runtime.openOptionsPage());
 
 // ---- State ----
 let config!: Config;
-let pending: PendingShot | null = null;
-const baseImage = new Image(); // source screenshot (used for redraw and mosaic sampling)
-let ops: Op[] = []; // annotation ops
+let shots: PendingShots | null = null; // the staged envelope (metadata + editorTabId)
+let attachments: Attachment[] = []; // ordered screenshots, each with its own ops
+let activeIndex = 0; // which attachment is on the canvas
+const baseImage = new Image(); // the active screenshot (used for redraw and mosaic sampling)
+let ops: Op[] = []; // alias of attachments[activeIndex].ops (a reference, reassigned on switch)
 let currentTool = 'rect';
 let drawing: Op | null = null; // in-progress drag op
 let pendingTextOp: Op | null = null; // op being entered via the floating text input
 let titleDirty = false; // true once the user edits the title (stop auto-filling the default)
+
+/** The attachment currently on the canvas. */
+function active(): Attachment | undefined {
+  return attachments[activeIndex];
+}
+/** The primary (first) attachment — used for the issue's title/body template context. */
+function primary(): Attachment | undefined {
+  return attachments[0];
+}
+/** Persist the in-memory attachments back to session storage (fire-and-forget). */
+function persist(): void {
+  if (!shots) return;
+  shots = { ...shots, attachments };
+  void setPendingShots(shots);
+}
 
 // ============================================================================
 // 1) Init: load config + staged screenshot, populate the form and canvas
@@ -98,43 +105,135 @@ async function init(): Promise<void> {
 
   void refreshAiButton(); // enable the AI-title button only when the assistant is connected
 
-  pending = await getPendingShot();
+  shots = await getPendingShots();
+  attachments = shots ? shots.attachments.slice() : [];
+
+  // Selects + listeners are set up regardless, so a later capture (appended live) works.
+  if (!config.workspaces.length) setStatus(t('statusNeedWorkspace'), 'error');
+  populateSelects();
+  setupDefaults();
+  watchForAppends();
 
   // Capture failed (e.g. a restricted page): the worker stages an error to show here.
-  if (pending && pending.error) {
-    els.canvasEmpty.textContent = pending.error;
+  if (shots && shots.error && !attachments.length) {
+    els.canvasEmpty.textContent = shots.error;
     els.canvasEmpty.classList.remove('hidden');
     canvas.classList.add('hidden');
-    setStatus(pending.error, 'error');
+    setStatus(shots.error, 'error');
     disableSubmit(true);
+    void refreshLoginHint();
     return;
   }
-  if (!pending || !pending.dataUrl) {
+  if (!attachments.length) {
     els.canvasEmpty.classList.remove('hidden');
     canvas.classList.add('hidden');
     setStatus(t('statusNoShot'), 'info');
     disableSubmit(true);
+    void refreshLoginHint();
     return;
   }
 
-  if (!config.workspaces.length) {
-    setStatus(t('statusNeedWorkspace'), 'error');
-  }
+  activeIndex = 0;
+  loadActive();
+  renderThumbs();
+  void refreshLoginHint();
+}
 
-  populateSelects();
-  setupDefaults();
-
-  // Draw the screenshot. The canvas backing store equals the image's native pixels for a
-  // crisp export; CSS max-width:100% scales it down for display.
+/** Load the active attachment onto the canvas and point `ops` at its op list. */
+function loadActive(): void {
+  const a = active();
+  if (!a) return;
+  ops = a.ops;
+  els.canvasEmpty.classList.add('hidden');
+  canvas.classList.remove('hidden');
+  disableSubmit(false);
   baseImage.onload = () => {
     canvas.width = baseImage.naturalWidth;
     canvas.height = baseImage.naturalHeight;
     redraw();
   };
   baseImage.onerror = () => setStatus(t('statusImageLoadFailed'), 'error');
-  baseImage.src = pending.dataUrl;
+  baseImage.src = a.dataUrl;
+}
 
-  void refreshLoginHint();
+/** Switch the canvas to a different attachment, saving the current one's ops first. */
+function selectAttachment(i: number): void {
+  if (i < 0 || i >= attachments.length) return;
+  commitTextIfAny();
+  persist();
+  activeIndex = i;
+  loadActive();
+  renderThumbs();
+}
+
+/** Remove an attachment; pick a neighbor (or show the empty state if none remain). */
+function deleteAttachment(i: number): void {
+  commitTextIfAny();
+  attachments.splice(i, 1);
+  if (activeIndex >= attachments.length) activeIndex = Math.max(0, attachments.length - 1);
+  persist();
+  if (!attachments.length) {
+    canvas.classList.add('hidden');
+    els.canvasEmpty.textContent = t('statusNoShot');
+    els.canvasEmpty.classList.remove('hidden');
+    disableSubmit(true);
+    renderThumbs();
+    return;
+  }
+  loadActive();
+  renderThumbs();
+}
+
+/** Render the thumbnail strip (one tile per attachment, with a delete button). */
+function renderThumbs(): void {
+  els.thumbStrip.innerHTML = '';
+  els.thumbStrip.classList.toggle('hidden', attachments.length === 0);
+  attachments.forEach((a, i) => {
+    const tile = document.createElement('div');
+    tile.className = 'thumb' + (i === activeIndex ? ' active' : '');
+    tile.title = a.pageTitle || '';
+    const img = document.createElement('img');
+    img.src = a.dataUrl;
+    img.alt = '';
+    tile.appendChild(img);
+    const del = document.createElement('button');
+    del.className = 'thumb-del';
+    del.textContent = '✕';
+    del.title = t('attDelete');
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteAttachment(i);
+    });
+    tile.appendChild(del);
+    tile.addEventListener('click', () => selectAttachment(i));
+    els.thumbStrip.appendChild(tile);
+  });
+  if (attachments.length) {
+    const hint = document.createElement('div');
+    hint.className = 'thumb-hint';
+    hint.textContent = t('attAddHint');
+    els.thumbStrip.appendChild(hint);
+  }
+}
+
+/** Live-append screenshots captured while this editor is open (background writes them). */
+function watchForAppends(): void {
+  chrome.storage.session.onChanged.addListener((changes) => {
+    const c = changes['pendingShots'];
+    if (!c || !c.newValue) return;
+    const incoming = c.newValue as PendingShots;
+    const known = new Set(attachments.map((a) => a.id));
+    const added = incoming.attachments.filter((a) => a.id && a.dataUrl && !known.has(a.id));
+    if (!added.length) return;
+    const wasEmpty = attachments.length === 0;
+    attachments.push(...added);
+    if (!shots) shots = incoming;
+    if (wasEmpty) {
+      activeIndex = 0;
+      loadActive();
+    }
+    renderThumbs();
+  });
 }
 
 function populateSelects(): void {
@@ -145,7 +244,7 @@ function populateSelects(): void {
     opt.textContent = wsLabel(ws);
     els.workspace.appendChild(opt);
   }
-  const wsId = (pending && pending.workspaceId) || config.lastWorkspaceId;
+  const wsId = (shots && shots.workspaceId) || config.lastWorkspaceId;
   if (wsId && config.workspaces.some((w) => w.id === wsId)) els.workspace.value = wsId;
 
   els.type.innerHTML = '';
@@ -155,14 +254,15 @@ function populateSelects(): void {
     opt.textContent = ty;
     els.type.appendChild(opt);
   }
-  if (pending && pending.type && config.types.includes(pending.type)) els.type.value = pending.type;
+  if (shots && shots.type && config.types.includes(shots.type)) els.type.value = shots.type;
 }
 
 /** Substitute {pageTitle}, {pageUrl}, {type} (unknown placeholders are left as-is). */
 function applyTemplate(tpl: string): string {
+  const p = primary();
   const vars: Record<string, string> = {
-    pageTitle: (pending && pending.pageTitle) || '',
-    pageUrl: (pending && pending.pageUrl) || '',
+    pageTitle: (p && p.pageTitle) || '',
+    pageUrl: (p && p.pageUrl) || '',
     type: els.type.value || '',
   };
   return tpl.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
@@ -197,15 +297,16 @@ els.aiTitle.addEventListener('click', async () => {
   const label = els.aiTitle.textContent;
   els.aiTitle.textContent = t('aiTitleGenerating');
   try {
-    commitTextIfAny(); // flush any in-progress text so it appears in the screenshot
-    const image = aiImageDataUrl();
+    commitTextIfAny(); // flush any in-progress text so it appears in the screenshots
+    const images = await aiImages(); // all attachments, annotated + downscaled
+    const p = primary();
     const { title } = await generateTitle(
       {
         type: els.type.value,
-        pageTitle: pending?.pageTitle,
-        pageUrl: pending?.pageUrl,
+        pageTitle: p?.pageTitle,
+        pageUrl: p?.pageUrl,
         body: els.body.value,
-        images: image ? [image] : undefined,
+        images: images.length ? images : undefined,
       },
       { instructions: config.aiTitlePrompt || t('aiTitlePromptDefault') }
     );
@@ -263,11 +364,13 @@ els.undo.addEventListener('click', () => {
   commitTextIfAny();
   ops.pop();
   redraw();
+  persist();
 });
 els.clear.addEventListener('click', () => {
   commitTextIfAny();
-  ops = [];
+  ops.length = 0; // clear in place so attachments[activeIndex].ops stays the same array
   redraw();
+  persist();
 });
 
 // Page-level shortcuts:
@@ -321,6 +424,7 @@ window.addEventListener('keydown', (e) => {
     commitTextIfAny();
     ops.pop();
     redraw();
+    persist();
   }
 });
 
@@ -393,14 +497,22 @@ window.addEventListener('mouseup', () => {
     openTextBox(bx, by, bw, bh, size, color);
     return;
   }
+  let added = false;
   if (drawing.tool === 'pen') {
-    if ((drawing.points?.length ?? 0) > 1) ops.push(drawing);
+    if ((drawing.points?.length ?? 0) > 1) {
+      ops.push(drawing);
+      added = true;
+    }
   } else {
     const moved = Math.hypot((drawing.x1 ?? 0) - (drawing.x0 ?? 0), (drawing.y1 ?? 0) - (drawing.y0 ?? 0)) > 3;
-    if (moved) ops.push(drawing);
+    if (moved) {
+      ops.push(drawing);
+      added = true;
+    }
   }
   drawing = null;
   redraw();
+  if (added) persist();
 });
 
 // Text tool: drag a rectangular region, then type into a transparent textarea that fills
@@ -425,16 +537,19 @@ function openTextBox(bx: number, by: number, bw: number, bh: number, size: numbe
 }
 
 function commitTextIfAny(): void {
+  let added = false;
   if (textInput.style.display !== 'none' && textInput.value.trim() && pendingTextOp) {
     // Honor any manual resize: derive the wrap width from the textarea's current width.
     const scale = canvas.width ? canvas.getBoundingClientRect().width / canvas.width : 1;
     const w = scale ? textInput.offsetWidth / scale : pendingTextOp.w;
     ops.push({ ...pendingTextOp, w, text: textInput.value.replace(/\n+$/, '') });
+    added = true;
   }
   textInput.style.display = 'none';
   textInput.blur(); // drop focus so a later Esc closes the editor instead of being swallowed
   pendingTextOp = null;
   redraw();
+  if (added) persist();
 }
 
 textInput.addEventListener('keydown', (e) => {
@@ -452,64 +567,73 @@ textInput.addEventListener('keydown', (e) => {
 });
 textInput.addEventListener('blur', commitTextIfAny);
 
-/** Redraw the whole canvas: base image + committed ops + the in-progress preview. */
+type Img = HTMLImageElement | HTMLCanvasElement;
+
+/** Redraw the visible canvas: active base image + its committed ops + in-progress preview. */
 function redraw(): void {
   if (!canvas.width) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
-  for (const op of ops) drawOp(op);
-  if (drawing) drawOp(drawing);
+  for (const op of ops) drawOne(ctx, baseImage, op);
+  if (drawing) drawOne(ctx, baseImage, drawing);
 }
 
-function drawOp(op: Op): void {
-  ctx.save();
-  ctx.strokeStyle = op.color;
-  ctx.fillStyle = op.color;
-  ctx.lineWidth = op.width || 4;
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
+/** Render a base image plus a list of ops onto an arbitrary context (used for export). */
+function renderOps(c: CanvasRenderingContext2D, base: Img, w: number, h: number, opsList: Op[]): void {
+  c.clearRect(0, 0, w, h);
+  c.drawImage(base, 0, 0, w, h);
+  for (const op of opsList) drawOne(c, base, op);
+}
+
+function drawOne(c: CanvasRenderingContext2D, base: Img, op: Op): void {
+  c.save();
+  c.strokeStyle = op.color;
+  c.fillStyle = op.color;
+  c.lineWidth = op.width || 4;
+  c.lineJoin = 'round';
+  c.lineCap = 'round';
 
   if (op.tool === 'rect') {
     const x = Math.min(op.x0 ?? 0, op.x1 ?? 0);
     const y = Math.min(op.y0 ?? 0, op.y1 ?? 0);
-    ctx.strokeRect(x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)));
+    c.strokeRect(x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)));
   } else if (op.tool === 'numrect') {
-    drawNumRect(op);
+    drawNumRect(c, op);
   } else if (op.tool === 'arrow') {
-    drawArrow(op);
+    drawArrow(c, op);
   } else if (op.tool === 'pen') {
-    drawPen(op);
+    drawPen(c, op);
   } else if (op.tool === 'mosaic') {
-    drawMosaic(op);
+    drawMosaic(c, base, op);
   } else if (op.tool === 'textbox') {
     // In-progress region preview (never committed).
     const x = Math.min(op.x0 ?? 0, op.x1 ?? 0);
     const y = Math.min(op.y0 ?? 0, op.y1 ?? 0);
-    ctx.setLineDash([6, 4]);
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)));
+    c.setLineDash([6, 4]);
+    c.lineWidth = 1.5;
+    c.strokeRect(x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)));
   } else if (op.tool === 'text') {
     const size = op.size || 20;
-    ctx.font = `bold ${size}px system-ui, sans-serif`;
-    ctx.textBaseline = 'top';
-    ctx.lineWidth = Math.max(2, size / 8);
+    c.font = `bold ${size}px system-ui, sans-serif`;
+    c.textBaseline = 'top';
+    c.lineWidth = Math.max(2, size / 8);
     const lineHeight = size * 1.2;
-    wrapText(op.text || '', op.w).forEach((line, i) => {
+    wrapText(c, op.text || '', op.w).forEach((line, i) => {
       const ly = (op.y ?? 0) + i * lineHeight;
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-      ctx.strokeText(line, op.x ?? 0, ly);
-      ctx.fillStyle = op.color;
-      ctx.fillText(line, op.x ?? 0, ly);
+      c.strokeStyle = 'rgba(255,255,255,0.9)';
+      c.strokeText(line, op.x ?? 0, ly);
+      c.fillStyle = op.color;
+      c.fillText(line, op.x ?? 0, ly);
     });
   }
-  ctx.restore();
+  c.restore();
 }
 
 /**
  * Wrap text to a maximum width (canvas pixels), honoring explicit newlines. Long single
- * tokens (e.g. CJK runs) are broken per character. Assumes ctx.font is already set.
+ * tokens (e.g. CJK runs) are broken per character. Assumes c.font is already set.
  */
-function wrapText(text: string, maxW?: number): string[] {
+function wrapText(c: CanvasRenderingContext2D, text: string, maxW?: number): string[] {
   const paragraphs = text.split('\n');
   if (!maxW || maxW <= 0) return paragraphs;
   const out: string[] = [];
@@ -521,14 +645,14 @@ function wrapText(text: string, maxW?: number): string[] {
     let line = '';
     for (const token of para.split(/(\s+)/)) {
       if (line === '') line = token;
-      else if (ctx.measureText(line + token).width <= maxW) line += token;
+      else if (c.measureText(line + token).width <= maxW) line += token;
       else {
         out.push(line.replace(/\s+$/, ''));
         line = token.replace(/^\s+/, '');
       }
-      while (ctx.measureText(line).width > maxW && line.length > 1) {
+      while (c.measureText(line).width > maxW && line.length > 1) {
         let i = line.length;
-        while (i > 1 && ctx.measureText(line.slice(0, i)).width > maxW) i--;
+        while (i > 1 && c.measureText(line.slice(0, i)).width > maxW) i--;
         out.push(line.slice(0, i));
         line = line.slice(i);
       }
@@ -539,54 +663,55 @@ function wrapText(text: string, maxW?: number): string[] {
 }
 
 /** Stroke a freehand pen path. */
-function drawPen(op: Op): void {
+function drawPen(c: CanvasRenderingContext2D, op: Op): void {
   const pts = op.points || [];
   if (pts.length < 2) return;
-  ctx.beginPath();
-  ctx.moveTo(pts[0].x, pts[0].y);
-  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-  ctx.stroke();
+  c.beginPath();
+  c.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y);
+  c.stroke();
 }
 
 /** Draw a rectangle with a numbered, white-outlined circular badge at its top-left corner. */
-function drawNumRect(op: Op): void {
+function drawNumRect(c: CanvasRenderingContext2D, op: Op): void {
   const x = Math.min(op.x0 ?? 0, op.x1 ?? 0);
   const y = Math.min(op.y0 ?? 0, op.y1 ?? 0);
-  ctx.strokeRect(x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)));
+  c.strokeRect(x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)));
 
   const r = Math.max(11, (op.width || 4) * 2.4);
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fillStyle = op.color;
-  ctx.fill();
-  ctx.lineWidth = Math.max(2, r / 6);
-  ctx.strokeStyle = '#ffffff';
-  ctx.stroke();
+  c.beginPath();
+  c.arc(x, y, r, 0, Math.PI * 2);
+  c.fillStyle = op.color;
+  c.fill();
+  c.lineWidth = Math.max(2, r / 6);
+  c.strokeStyle = '#ffffff';
+  c.stroke();
 
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `bold ${Math.round(r * 1.2)}px system-ui, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(String(op.num ?? '?'), x, y + r * 0.04);
+  c.fillStyle = '#ffffff';
+  c.font = `bold ${Math.round(r * 1.2)}px system-ui, sans-serif`;
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  c.fillText(String(op.num ?? '?'), x, y + r * 0.04);
+  c.textAlign = 'start'; // reset for subsequent text ops
 }
 
-function drawArrow(op: Op): void {
+function drawArrow(c: CanvasRenderingContext2D, op: Op): void {
   const x0 = op.x0 ?? 0;
   const y0 = op.y0 ?? 0;
   const x1 = op.x1 ?? 0;
   const y1 = op.y1 ?? 0;
   const head = Math.max(10, (op.width || 4) * 3);
   const angle = Math.atan2(y1 - y0, x1 - x0);
-  ctx.beginPath();
-  ctx.moveTo(x0, y0);
-  ctx.lineTo(x1, y1);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x1 - head * Math.cos(angle - Math.PI / 6), y1 - head * Math.sin(angle - Math.PI / 6));
-  ctx.lineTo(x1 - head * Math.cos(angle + Math.PI / 6), y1 - head * Math.sin(angle + Math.PI / 6));
-  ctx.closePath();
-  ctx.fill();
+  c.beginPath();
+  c.moveTo(x0, y0);
+  c.lineTo(x1, y1);
+  c.stroke();
+  c.beginPath();
+  c.moveTo(x1, y1);
+  c.lineTo(x1 - head * Math.cos(angle - Math.PI / 6), y1 - head * Math.sin(angle - Math.PI / 6));
+  c.lineTo(x1 - head * Math.cos(angle + Math.PI / 6), y1 - head * Math.sin(angle + Math.PI / 6));
+  c.closePath();
+  c.fill();
 }
 
 /**
@@ -594,7 +719,7 @@ function drawArrow(op: Op): void {
  * back enlarged with smoothing off to produce hard pixel blocks. Sampling the base image
  * (not the current canvas) keeps redaction of the original content stable.
  */
-function drawMosaic(op: Op): void {
+function drawMosaic(c: CanvasRenderingContext2D, base: Img, op: Op): void {
   const x = Math.round(Math.min(op.x0 ?? 0, op.x1 ?? 0));
   const y = Math.round(Math.min(op.y0 ?? 0, op.y1 ?? 0));
   const w = Math.round(Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)));
@@ -607,11 +732,11 @@ function drawMosaic(op: Op): void {
   tmp.width = sw;
   tmp.height = sh;
   const tctx = tmp.getContext('2d') as CanvasRenderingContext2D;
-  tctx.drawImage(baseImage, x, y, w, h, 0, 0, sw, sh);
-  ctx.save();
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(tmp, 0, 0, sw, sh, x, y, w, h);
-  ctx.restore();
+  tctx.drawImage(base, x, y, w, h, 0, 0, sw, sh);
+  c.save();
+  c.imageSmoothingEnabled = false;
+  c.drawImage(tmp, 0, 0, sw, sh, x, y, w, h);
+  c.restore();
 }
 
 // ============================================================================
@@ -621,19 +746,55 @@ function canvasToDataUrl(): string {
   return canvas.toDataURL('image/png');
 }
 
-/** A downscaled JPEG of the current canvas for sending to the AI as visual context. */
-function aiImageDataUrl(): string | undefined {
-  if (!canvas.width || !canvas.height) return undefined;
-  const max = 1536;
-  const scale = Math.min(1, max / Math.max(canvas.width, canvas.height));
-  if (scale >= 1) return canvas.toDataURL('image/jpeg', 0.85);
-  const off = document.createElement('canvas');
-  off.width = Math.round(canvas.width * scale);
-  off.height = Math.round(canvas.height * scale);
-  const octx = off.getContext('2d');
-  if (!octx) return canvas.toDataURL('image/jpeg', 0.85);
-  octx.drawImage(canvas, 0, 0, off.width, off.height);
-  return off.toDataURL('image/jpeg', 0.85);
+/** Render one attachment (base image + its ops) to a PNG data URL, off-screen. */
+function renderAttachmentToDataUrl(att: Attachment): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const off = document.createElement('canvas');
+      off.width = img.naturalWidth;
+      off.height = img.naturalHeight;
+      const c = off.getContext('2d');
+      if (!c) {
+        resolve(att.dataUrl);
+        return;
+      }
+      renderOps(c, img, off.width, off.height, att.ops);
+      resolve(off.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(att.dataUrl); // fall back to the raw screenshot
+    img.src = att.dataUrl;
+  });
+}
+
+/** Downscale a data URL to a JPEG (max longest side) for sending to the AI as context. */
+function downscaleDataUrl(src: string, max = 1536): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const off = document.createElement('canvas');
+      off.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      off.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      const c = off.getContext('2d');
+      if (!c) {
+        resolve(src);
+        return;
+      }
+      c.drawImage(img, 0, 0, off.width, off.height);
+      resolve(off.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => resolve(src);
+    img.src = src;
+  });
+}
+
+/** Render every attachment (with annotations) and downscale each for AI visual context. */
+async function aiImages(): Promise<string[]> {
+  const rendered = await buildSubmitImages();
+  const out: string[] = [];
+  for (const r of rendered) out.push(await downscaleDataUrl(r.dataUrl));
+  return out;
 }
 
 els.download.addEventListener('click', () => {
@@ -678,13 +839,23 @@ function selectedWorkspace(): Workspace | null {
 
 /** Validate preconditions. Returns { ws } or throws. */
 function preflight(): { ws: Workspace } {
-  if (!pending) throw new Error(t('errNoShot'));
   const ws = selectedWorkspace();
   if (!ws) throw new Error(t('errSelectWorkspace'));
   const errKey = getProvider(wsKind(ws)).validate(ws);
   if (errKey) throw new Error(t(errKey));
   if (!els.title.value.trim()) throw new Error(t('errTitleEmpty'));
   return { ws };
+}
+
+/** Render every attachment to a {dataUrl, filename} for submission, in order. */
+async function buildSubmitImages(): Promise<Array<{ dataUrl: string; filename: string }>> {
+  const stamp = Date.now();
+  const out: Array<{ dataUrl: string; filename: string }> = [];
+  for (let i = 0; i < attachments.length; i++) {
+    const dataUrl = await renderAttachmentToDataUrl(attachments[i]);
+    out.push({ dataUrl, filename: `shot-${i + 1}-${stamp}.png` });
+  }
+  return out;
 }
 
 els.submit.addEventListener('click', () => void submit({ withImage: true }));
@@ -703,26 +874,28 @@ async function submit({ withImage }: { withImage: boolean }): Promise<void> {
 
   disableSubmit(true);
   try {
+    const images = withImage ? await buildSubmitImages() : [];
     const issue: IssueResult = await getProvider(wsKind(ws)).submit(ws, {
       title: els.title.value.trim(),
       body: els.body.value,
-      dataUrl: withImage ? canvasToDataUrl() : '',
-      filename: `shot-${Date.now()}.png`,
-      withImage,
+      images,
+      withImage: withImage && images.length > 0,
+      dataUrl: images[0]?.dataUrl || '',
+      filename: images[0]?.filename || `shot-${Date.now()}.png`,
       t,
       busy: (key: string) => setStatusBusy(t(key)),
     });
 
     const num = issue.number || '';
     showResult(issue);
-    await clearPendingShot();
+    await clearPendingShots();
 
     // Optionally return to the captured tab and close this editor tab.
-    if (config.closeAfterSubmit && pending && pending.sourceTabId != null) {
+    if (config.closeAfterSubmit && shots && shots.sourceTabId != null) {
       setStatus(num ? t('statusReturning', [num]) : t('statusCreatedNoNumber'), 'ok');
       await sleep(900);
       try {
-        await chrome.tabs.update(pending.sourceTabId, { active: true });
+        await chrome.tabs.update(shots.sourceTabId, { active: true });
       } catch {
         /* the source tab may be gone */
       }

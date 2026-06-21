@@ -6,7 +6,7 @@
 //   when the browser restarts) so large images are not kept on disk.
 // This module only reads and writes; it contains no network logic.
 
-import type { Config, Workspace, PendingShot, AiAuth, AiPendingAuth } from './types.js';
+import type { Config, Workspace, PendingShot, PendingShots, Attachment, AiAuth, AiPendingAuth } from './types.js';
 
 /** Default configuration, used on first install and to backfill missing fields. */
 const DEFAULT_CONFIG: Config = {
@@ -71,29 +71,73 @@ export async function rememberSelection({ workspaceId, type }: { workspaceId?: s
   return patchConfig(patch);
 }
 
-// ---- Pending screenshot (session storage) ----------------------------------
+// ---- Pending screenshots (session storage) ---------------------------------
 //
-// Written by the service worker when the icon is clicked, read by the editor.
-// Single fixed key; one screenshot is processed at a time.
-const PENDING_KEY = 'pendingShot';
+// Written by the service worker when the icon/shortcut captures, read by the editor.
+// Multiple attachments are staged together and edited as one issue. A legacy single-shot
+// envelope (pendingShot) is migrated on read.
+const PENDING_KEY = 'pendingShot'; // legacy single shot
+const PENDING_SHOTS_KEY = 'pendingShots'; // multi-attachment envelope
 
-/**
- * Stage a screenshot and its context for editing.
- * @param shot dataUrl + page metadata, or { error } when capture failed.
- */
-export async function setPendingShot(shot: PendingShot): Promise<void> {
-  await chrome.storage.session.set({ [PENDING_KEY]: shot });
+/** Generate a stable local attachment id. */
+export function makeAttachmentId(): string {
+  return 'att_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
 }
 
-/** Read the staged screenshot. */
-export async function getPendingShot(): Promise<PendingShot | null> {
-  const raw = await chrome.storage.session.get(PENDING_KEY);
-  return (raw[PENDING_KEY] as PendingShot | undefined) ?? null;
+function shotToAttachment(shot: PendingShot): Attachment {
+  return {
+    id: makeAttachmentId(),
+    dataUrl: shot.dataUrl || '',
+    pageUrl: shot.pageUrl,
+    pageTitle: shot.pageTitle,
+    sourceTabId: shot.sourceTabId,
+    sourceWindowId: shot.sourceWindowId,
+    ops: [],
+    createdAt: Date.now(),
+  };
 }
 
-/** Clear the staged screenshot to avoid keeping a large image in memory. */
-export async function clearPendingShot(): Promise<void> {
-  await chrome.storage.session.remove(PENDING_KEY);
+/** Read the staged screenshots, migrating a legacy single shot if that's all there is. */
+export async function getPendingShots(): Promise<PendingShots | null> {
+  const raw = await chrome.storage.session.get([PENDING_SHOTS_KEY, PENDING_KEY]);
+  const envelope = raw[PENDING_SHOTS_KEY] as PendingShots | undefined;
+  if (envelope) return envelope;
+  const legacy = raw[PENDING_KEY] as PendingShot | undefined;
+  if (!legacy) return null;
+  if (legacy.error) return { attachments: [], type: legacy.type, workspaceId: legacy.workspaceId, error: legacy.error };
+  return {
+    attachments: legacy.dataUrl ? [shotToAttachment(legacy)] : [],
+    type: legacy.type,
+    workspaceId: legacy.workspaceId,
+    sourceTabId: legacy.sourceTabId,
+    sourceWindowId: legacy.sourceWindowId,
+  };
+}
+
+/** Stage the full set of screenshots for editing. */
+export async function setPendingShots(p: PendingShots): Promise<void> {
+  await chrome.storage.session.set({ [PENDING_SHOTS_KEY]: p });
+}
+
+/** Update a subset of the staged set (read-modify-write). */
+export async function patchPendingShots(patch: Partial<PendingShots>): Promise<PendingShots> {
+  const current = (await getPendingShots()) ?? { attachments: [] };
+  const next = { ...current, ...patch };
+  await setPendingShots(next);
+  return next;
+}
+
+/** Append one attachment to the staged set (used when re-capturing into an open editor). */
+export async function appendPendingShot(att: Attachment): Promise<PendingShots> {
+  const current = (await getPendingShots()) ?? { attachments: [] };
+  const next: PendingShots = { ...current, error: undefined, attachments: [...current.attachments, att] };
+  await setPendingShots(next);
+  return next;
+}
+
+/** Clear the staged screenshots (both the new and legacy keys). */
+export async function clearPendingShots(): Promise<void> {
+  await chrome.storage.session.remove([PENDING_SHOTS_KEY, PENDING_KEY]);
 }
 
 // ---- AI assistant credentials (local storage) ------------------------------

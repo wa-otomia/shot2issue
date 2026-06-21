@@ -27,7 +27,54 @@ export interface Config {
   lastType: string;
 }
 
-/** The screenshot staged for editing (chrome.storage.session). `error` is set if capture failed. */
+/** One annotation operation. Rectangle/arrow/mosaic use x0..y1; text uses x/y/size/text. */
+export interface Op {
+  tool: string;
+  color: string;
+  width?: number;
+  x0?: number;
+  y0?: number;
+  x1?: number;
+  y1?: number;
+  points?: Array<{ x: number; y: number }>; // freehand pen path
+  num?: number; // numbered-box badge value
+  size?: number;
+  x?: number;
+  y?: number;
+  w?: number; // text wrap width (canvas pixels)
+  text?: string;
+}
+
+/** One captured image plus its own annotation ops, as an entry in the editor's strip. */
+export interface Attachment {
+  id: string;
+  dataUrl: string;
+  pageUrl?: string;
+  pageTitle?: string;
+  sourceTabId?: number;
+  sourceWindowId?: number;
+  /** Capture source id (e.g. 'tab', 'desktop'); set by Stage 2, optional for now. */
+  sourceId?: string;
+  ops: Op[];
+  createdAt: number;
+}
+
+/**
+ * The set of screenshots staged for editing (chrome.storage.session). Multiple attachments
+ * are annotated together and submitted as one issue. `error` is set if capture failed.
+ */
+export interface PendingShots {
+  attachments: Attachment[];
+  type?: string;
+  workspaceId?: string;
+  sourceTabId?: number;
+  sourceWindowId?: number;
+  /** Tab id of the open editor, so re-captures append to it instead of opening another. */
+  editorTabId?: number;
+  error?: string;
+}
+
+/** Legacy single-screenshot envelope; kept only to migrate old sessions to PendingShots. */
 export interface PendingShot {
   dataUrl?: string;
   pageUrl?: string;

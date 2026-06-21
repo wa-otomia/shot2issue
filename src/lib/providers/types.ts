@@ -15,13 +15,23 @@ export interface ProviderField {
   full?: boolean;
 }
 
+/** One screenshot to attach, with the filename it should be uploaded under. */
+export interface SubmitImage {
+  dataUrl: string;
+  filename: string;
+}
+
 /** Context passed to a provider's submit(). */
 export interface SubmitContext {
   title: string;
   body: string;
+  /** All screenshots to embed, in order. Empty when submitting without images. */
+  images: SubmitImage[];
+  /** Whether to attach the screenshots at all. */
+  withImage: boolean;
+  /** First image, kept for back-compat with single-image call sites. */
   dataUrl: string;
   filename: string;
-  withImage: boolean;
   t: TFunc;
   busy: (key: string) => void;
 }

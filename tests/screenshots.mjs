@@ -48,7 +48,14 @@ try {
         },
       }),
       chrome.storage.session.set({
-        pendingShot: { dataUrl, pageUrl: 'https://app.example.com/dashboard', pageTitle: 'Dashboard', type: 'Bug', workspaceId: 'w1' },
+        pendingShots: {
+          attachments: [
+            { id: 'a1', dataUrl, pageUrl: 'https://app.example.com/dashboard', pageTitle: 'Dashboard', ops: [], createdAt: 1 },
+            { id: 'a2', dataUrl, pageUrl: 'https://app.example.com/settings', pageTitle: 'Settings', ops: [], createdAt: 2 },
+          ],
+          type: 'Bug',
+          workspaceId: 'w1',
+        },
       }),
     ]);
   }, dataUrl);
