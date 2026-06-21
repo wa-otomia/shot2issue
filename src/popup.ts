@@ -38,6 +38,10 @@ async function init(): Promise<void> {
 
   $('optWeb').addEventListener('click', () => trigger('capture-web'));
   $('optDesktop').addEventListener('click', () => trigger('capture-desktop'));
+  $('openSettings').addEventListener('click', () => {
+    chrome.runtime.openOptionsPage();
+    window.close();
+  });
   $('setShortcuts').addEventListener('click', () => {
     void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
     window.close();

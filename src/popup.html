@@ -11,6 +11,7 @@
     kbd { font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #8881; border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; color: var(--muted); white-space: nowrap; }
     .foot { margin-top: 6px; text-align: center; }
     .foot a { color: var(--accent); font-size: 12px; cursor: pointer; }
+    .foot .dot { color: var(--muted); font-size: 12px; margin: 0 4px; }
   </style>
 </head>
 <body>
@@ -22,7 +23,11 @@
     <span data-i18n="popupDesktop"></span>
     <kbd id="scDesktop" hidden></kbd>
   </button>
-  <div class="foot"><a id="setShortcuts" data-i18n="popupSetShortcuts"></a></div>
+  <div class="foot">
+    <a id="openSettings" data-i18n="popupSettings"></a>
+    <span class="dot">·</span>
+    <a id="setShortcuts" data-i18n="popupSetShortcuts"></a>
+  </div>
   <script type="module" src="popup.js"></script>
 </body>
 </html>

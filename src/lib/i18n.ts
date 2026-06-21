@@ -188,6 +188,7 @@ const MESSAGES: Record<string, Record<string, string>> = {
     // Popup
     popupWeb: 'Web page screenshot',
     popupDesktop: 'Screen or window',
+    popupSettings: 'Settings',
     popupSetShortcuts: 'Set keyboard shortcuts',
   },
 
@@ -370,6 +371,7 @@ const MESSAGES: Record<string, Record<string, string>> = {
     // 弹出菜单
     popupWeb: '网页截图',
     popupDesktop: '屏幕或窗口',
+    popupSettings: '设置',
     popupSetShortcuts: '设置快捷键',
   },
 
@@ -552,6 +554,7 @@ const MESSAGES: Record<string, Record<string, string>> = {
     // ポップアップ
     popupWeb: 'ウェブページのスクリーンショット',
     popupDesktop: '画面またはウィンドウ',
+    popupSettings: '設定',
     popupSetShortcuts: 'ショートカットを設定',
   },
 };

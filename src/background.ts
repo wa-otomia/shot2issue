@@ -113,13 +113,14 @@ async function captureWeb(tab: chrome.tabs.Tab): Promise<void> {
 }
 
 // ---- capture: screen / window (desktopCapture + offscreen) ------------------
-function chooseDesktopMedia(tab: chrome.tabs.Tab): Promise<string> {
-  // Only screen + window: capturing an arbitrary tab via desktopCapture needs a different
-  // consumption path and fails in the offscreen document with "Error starting tab capture".
-  // The current tab is already covered by the "Web screenshot" option.
+function chooseDesktopMedia(): Promise<string> {
+  // Screen + window only. Do NOT pass a targetTab: a tab-bound stream "can only be used by
+  // the specified tab", so consuming it in the offscreen document fails with
+  // "Error starting tab capture". Omitting targetTab makes the streamId usable anywhere in
+  // the extension. (The current tab is already covered by the "Web screenshot" option.)
   return new Promise((resolve, reject) => {
     try {
-      chrome.desktopCapture.chooseDesktopMedia(['screen', 'window'], tab, (streamId) => {
+      chrome.desktopCapture.chooseDesktopMedia(['screen', 'window'], (streamId) => {
         const err = chrome.runtime.lastError;
         if (err) {
           reject(new Error(err.message || 'picker error'));
@@ -168,7 +169,7 @@ async function captureDesktop(tab: chrome.tabs.Tab): Promise<void> {
   const config = await getConfig();
   setLanguage(config.lang);
   try {
-    const streamId = await chooseDesktopMedia(tab);
+    const streamId = await chooseDesktopMedia();
     if (!streamId) return; // the user cancelled the picker — do nothing, no error
     const dataUrl = await grabViaOffscreen(streamId);
     await stageAndOpen(tab, makeAttachment(dataUrl, tab, 'desktop'));
