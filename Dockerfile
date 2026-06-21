@@ -14,6 +14,8 @@
 
 # ---- Build stage: run build.sh; the artifact lands in /src/dist ----
 FROM node:20-alpine AS build
+# Never fetch Playwright browsers during install (only the test scripts need them).
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 RUN apk add --no-cache bash zip jq
 WORKDIR /src
 COPY . .

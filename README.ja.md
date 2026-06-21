@@ -16,6 +16,16 @@ YouTrack への送信には、指定した永続トークンで REST API を使�
   <img src="src/icons/icon128.png" width="96" alt="shot2issue icon" />
 </p>
 
+## スクリーンショット
+
+エディタ —— スクリーンショットに注釈を付けて送信：
+
+![エディタ](docs/screenshots/editor.png)
+
+設定 —— GitHub と YouTrack のワークスペースを設定：
+
+![設定](docs/screenshots/options.png)
+
 ## 機能
 
 - 現在のタブの表示領域をワンクリックで撮影。

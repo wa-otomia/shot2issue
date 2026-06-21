@@ -15,6 +15,16 @@ permanent token you provide.
   <img src="src/icons/icon128.png" width="96" alt="shot2issue icon" />
 </p>
 
+## Screenshots
+
+Editor — annotate the screenshot and submit:
+
+![Editor](docs/screenshots/editor.png)
+
+Settings — configure GitHub and YouTrack workspaces:
+
+![Settings](docs/screenshots/options.png)
+
 ## Features
 
 - One click to capture the visible area of the current tab.
@@ -220,6 +230,22 @@ archive to a GitHub release:
 ```bash
 git tag v1.0.0 && git push origin v1.0.0
 ```
+
+## Testing
+
+A Playwright smoke test ([`tests/smoke.mjs`](tests/smoke.mjs)) loads the built extension
+and checks the in-extension surfaces — provider field switching and i18n on the options
+page, and the editor's annotation tools (rectangle, pen, transparent text), undo, and
+Esc-to-close. It does not exercise live submission to GitHub or YouTrack, which needs real
+accounts and sessions.
+
+```bash
+npm run build
+npx playwright install chromium   # first run only
+xvfb-run -a npm test              # on Linux without a display; otherwise: npm test
+```
+
+The README screenshots are produced the same way with `npm run screenshots`.
 
 ## Adding an issue backend
 

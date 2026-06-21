@@ -13,6 +13,16 @@ Personal Access Token——复用你当前的 github.com 浏览器会话；提�
   <img src="src/icons/icon128.png" width="96" alt="shot2issue icon" />
 </p>
 
+## 截图
+
+编辑页 —— 标注截图并提交：
+
+![编辑页](docs/screenshots/editor.png)
+
+设置页 —— 配置 GitHub 与 YouTrack 工作空间：
+
+![设置页](docs/screenshots/options.png)
+
 ## 功能
 
 - 一键截取当前标签页的可见区域。

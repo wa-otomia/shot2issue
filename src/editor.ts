@@ -14,9 +14,11 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 
 /** Workspace backend kind; workspaces created before this field default to GitHub. */
 const wsKind = (ws: Workspace): string => ws.kind || 'github';
-/** Human-readable label for a workspace option. */
+/** Human-readable label for a workspace option, tagged with its backend. */
 function wsLabel(ws: Workspace): string {
-  return ws.name || getProvider(wsKind(ws)).describe(ws) || wsKind(ws);
+  const provider = getProvider(wsKind(ws));
+  const base = ws.name || provider.describe(ws) || wsKind(ws);
+  return `${base} (${provider.label})`;
 }
 
 /** One annotation operation. Rectangle/arrow/mosaic use x0..y1; text uses x/y/size/text. */
@@ -28,6 +30,7 @@ interface Op {
   y0?: number;
   x1?: number;
   y1?: number;
+  points?: Array<{ x: number; y: number }>; // freehand pen path
   size?: number;
   x?: number;
   y?: number;
@@ -39,7 +42,7 @@ const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElemen
 const canvas = $('canvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
 const canvasWrap = $('canvasWrap');
-const textInput = $('textInput') as HTMLInputElement;
+const textInput = $('textInput') as HTMLTextAreaElement;
 const els = {
   canvasEmpty: $('canvasEmpty'),
   color: $('color') as HTMLInputElement,
@@ -255,6 +258,10 @@ canvas.addEventListener('mousedown', (e) => {
     openTextInput(p, e);
     return;
   }
+  if (currentTool === 'pen') {
+    drawing = { tool: 'pen', color: els.color.value, width: Number(els.width.value), points: [{ x: p.x, y: p.y }] };
+    return;
+  }
   drawing = {
     tool: currentTool,
     color: els.color.value,
@@ -269,56 +276,78 @@ canvas.addEventListener('mousedown', (e) => {
 canvas.addEventListener('mousemove', (e) => {
   if (!drawing) return;
   const p = toCanvasXY(e);
-  drawing.x1 = p.x;
-  drawing.y1 = p.y;
+  if (drawing.tool === 'pen') {
+    drawing.points?.push({ x: p.x, y: p.y });
+  } else {
+    drawing.x1 = p.x;
+    drawing.y1 = p.y;
+  }
   redraw();
 });
 
 window.addEventListener('mouseup', () => {
   if (!drawing) return;
-  const moved = Math.hypot((drawing.x1 ?? 0) - (drawing.x0 ?? 0), (drawing.y1 ?? 0) - (drawing.y0 ?? 0)) > 3;
-  if (moved) ops.push(drawing);
+  if (drawing.tool === 'pen') {
+    if ((drawing.points?.length ?? 0) > 1) ops.push(drawing);
+  } else {
+    const moved = Math.hypot((drawing.x1 ?? 0) - (drawing.x0 ?? 0), (drawing.y1 ?? 0) - (drawing.y0 ?? 0)) > 3;
+    if (moved) ops.push(drawing);
+  }
   drawing = null;
   redraw();
 });
 
-// Text tool: float an input over the canvas; commit a text op on Enter/blur.
+// Text tool: float a transparent textarea over the canvas so you type directly on the
+// image. The font size tracks the current width (WYSIWYG); the on-screen size accounts
+// for the canvas being scaled to fit. Enter inserts a newline; Ctrl/Cmd+Enter or clicking
+// away commits; Esc cancels.
 function openTextInput(p: { x: number; y: number }, evt: MouseEvent): void {
   const wrapRect = canvasWrap.getBoundingClientRect();
-  textInput.style.left = evt.clientX - wrapRect.left + canvasWrap.scrollLeft + 'px';
-  textInput.style.top = evt.clientY - wrapRect.top + canvasWrap.scrollTop + 'px';
-  textInput.style.display = 'block';
+  const size = Math.max(14, Number(els.width.value) * 5); // backing-pixel size (as rendered)
+  const scale = canvas.width ? canvas.getBoundingClientRect().width / canvas.width : 1;
+  textInput.style.left = evt.clientX - wrapRect.left + 'px';
+  textInput.style.top = evt.clientY - wrapRect.top + 'px';
+  textInput.style.fontSize = size * scale + 'px';
   textInput.style.color = els.color.value;
+  textInput.style.display = 'block';
   textInput.value = '';
-  pendingTextOp = {
-    tool: 'text',
-    color: els.color.value,
-    size: Math.max(14, Number(els.width.value) * 5),
-    x: p.x,
-    y: p.y,
-  };
+  pendingTextOp = { tool: 'text', color: els.color.value, size, x: p.x, y: p.y };
+  autoSizeTextInput();
   setTimeout(() => textInput.focus(), 0);
+}
+
+/** Grow the transparent textarea to fit its content (wrap is off, so it matches render). */
+function autoSizeTextInput(): void {
+  textInput.style.width = '2px';
+  textInput.style.width = Math.max(textInput.scrollWidth + 4, 12) + 'px';
+  textInput.style.height = 'auto';
+  textInput.style.height = textInput.scrollHeight + 'px';
 }
 
 function commitTextIfAny(): void {
   if (textInput.style.display !== 'none' && textInput.value.trim() && pendingTextOp) {
-    ops.push({ ...pendingTextOp, text: textInput.value });
+    ops.push({ ...pendingTextOp, text: textInput.value.replace(/\n+$/, '') });
   }
   textInput.style.display = 'none';
+  textInput.blur(); // drop focus so a later Esc closes the editor instead of being swallowed
   pendingTextOp = null;
   redraw();
 }
 
 textInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
     commitTextIfAny();
+    return;
   }
   if (e.key === 'Escape') {
+    e.preventDefault();
     textInput.style.display = 'none';
+    textInput.blur();
     pendingTextOp = null;
   }
 });
+textInput.addEventListener('input', autoSizeTextInput);
 textInput.addEventListener('blur', commitTextIfAny);
 
 /** Redraw the whole canvas: base image + committed ops + the in-progress preview. */
@@ -344,18 +373,35 @@ function drawOp(op: Op): void {
     ctx.strokeRect(x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)));
   } else if (op.tool === 'arrow') {
     drawArrow(op);
+  } else if (op.tool === 'pen') {
+    drawPen(op);
   } else if (op.tool === 'mosaic') {
     drawMosaic(op);
   } else if (op.tool === 'text') {
-    ctx.font = `bold ${op.size || 20}px system-ui, sans-serif`;
+    const size = op.size || 20;
+    ctx.font = `bold ${size}px system-ui, sans-serif`;
     ctx.textBaseline = 'top';
-    ctx.lineWidth = Math.max(2, (op.size || 20) / 8);
-    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-    ctx.strokeText(op.text || '', op.x ?? 0, op.y ?? 0);
-    ctx.fillStyle = op.color;
-    ctx.fillText(op.text || '', op.x ?? 0, op.y ?? 0);
+    ctx.lineWidth = Math.max(2, size / 8);
+    const lineHeight = size * 1.2;
+    (op.text || '').split('\n').forEach((line, i) => {
+      const ly = (op.y ?? 0) + i * lineHeight;
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.strokeText(line, op.x ?? 0, ly);
+      ctx.fillStyle = op.color;
+      ctx.fillText(line, op.x ?? 0, ly);
+    });
   }
   ctx.restore();
+}
+
+/** Stroke a freehand pen path. */
+function drawPen(op: Op): void {
+  const pts = op.points || [];
+  if (pts.length < 2) return;
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.stroke();
 }
 
 function drawArrow(op: Op): void {
