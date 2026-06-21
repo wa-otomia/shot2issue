@@ -43,10 +43,10 @@
     a { color: var(--accent); }
     .hidden { display: none; }
     .ai-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-top: 10px; }
-    .ai-card select { width: 100%; max-width: none; }
     .ai-manual { border: 1px dashed var(--border); border-radius: 8px; padding: 12px; margin-top: 10px; }
-    .ai-row { margin: 4px 0; }
-    .ai-k { color: var(--muted); display: inline-block; min-width: 76px; }
+    .ai-row { margin: 6px 0; }
+    .ai-k { color: var(--muted); display: inline-block; min-width: 76px; vertical-align: middle; }
+    .ai-row select { width: auto; max-width: 340px; padding: 5px 8px; vertical-align: middle; }
     #aiStatus { font-size: 13px; margin-top: 8px; }
     #aiStatus.ok { color: var(--ok); }
     #aiStatus.error { color: var(--danger); }
@@ -109,9 +109,8 @@
     <div id="aiConnectedBox" class="ai-card hidden">
       <div class="ai-row"><span class="ai-k" data-i18n="aiAccount"></span> <span id="aiAccount"></span></div>
       <div class="ai-row"><span class="ai-k" data-i18n="aiPlan"></span> <span id="aiPlan" class="chip"></span></div>
-      <label for="aiModel" data-i18n="aiModel"></label>
-      <select id="aiModel"></select>
-      <div class="ai-row" style="margin-top:10px;"><span class="ai-k" data-i18n="aiUsage"></span> <span id="aiUsage"></span></div>
+      <div class="ai-row"><span class="ai-k" data-i18n="aiModel"></span> <select id="aiModel"></select></div>
+      <div class="ai-row"><span class="ai-k" data-i18n="aiUsage"></span> <span id="aiUsage"></span></div>
       <div class="row" style="margin-top:10px;">
         <button id="aiRefresh" data-i18n="aiRefresh"></button>
         <button id="aiSignOut" class="danger" data-i18n="aiSignOut"></button>
