@@ -17,6 +17,10 @@ permanent token you provide.
 
 ## Screenshots
 
+Toolbar popup — choose a capture source (each shows its shortcut when set):
+
+![Popup](docs/screenshots/popup.png)
+
 Editor — annotate the screenshot and submit:
 
 ![Editor](docs/screenshots/editor.png)
@@ -31,7 +35,9 @@ AI assistant — sign in with a ChatGPT subscription to generate titles:
 
 ## Features
 
-- One click to capture the visible area of the current tab.
+- Capture the current tab, or — via the toolbar popup — your whole screen, a specific
+  window, or another application (`chrome.desktopCapture`). Each source can be bound to its
+  own keyboard shortcut, which is shown in the popup when set.
 - Multiple screenshots per issue: each capture adds a thumbnail; annotate each one, switch
   between them, delete any, and they are all attached on submit. Re-clicking the extension
   icon while the editor is open adds the new screenshot to it.
@@ -191,6 +197,8 @@ the current interface language's default.
 | `activeTab` | Granted when the icon is clicked; used to capture the visible tab and read its title and URL. |
 | `storage` | Stores settings in `chrome.storage.local` and the pending screenshot in `chrome.storage.session`. |
 | `scripting` | Injects the submission script into the background github.com tab. |
+| `desktopCapture` | Shows the screen/window picker when you choose “Screen or window”. Only used for that capture source. |
+| `offscreen` | Runs the one-frame screen grab in an offscreen document (the service worker has no `getUserMedia`). |
 | `identity` | Runs the AI assistant's OAuth sign-in (`launchWebAuthFlow`). Only used if you connect the assistant. |
 
 Host permissions are limited to `https://github.com/*` by default, the only origin the

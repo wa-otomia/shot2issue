@@ -312,6 +312,19 @@ try {
   check('editor: AI title button enabled when connected',
     (await editor2.$eval('#aiTitle', (el) => el.disabled)) === false);
 
+  // --- Popup: two capture sources; shortcut chips hidden until bound ---
+  const popup = await context.newPage();
+  popup.on('pageerror', (e) => pageErrors.push(String(e)));
+  await popup.goto(`chrome-extension://${extId}/popup.html`);
+  await popup.waitForSelector('#optWeb');
+  check('popup: shows web + desktop capture options',
+    !!(await popup.$('#optWeb')) && !!(await popup.$('#optDesktop')));
+  check('popup: option labels are localized',
+    (await popup.$eval('#optWeb', (el) => (el.textContent || '').trim())).length > 0);
+  check('popup: shortcut chip hidden when none is bound',
+    (await popup.$eval('#scWeb', (el) => el.hidden)) === true);
+  await popup.close();
+
   check('no uncaught page errors during flows', pageErrors.length === 0);
   if (pageErrors.length) console.log('  page errors:\n' + pageErrors.map((e) => '    ' + e).join('\n'));
 } catch (e) {

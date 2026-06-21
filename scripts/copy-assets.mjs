@@ -18,7 +18,7 @@ const BUILD_DIR = join(ROOT_DIR, "build");
 mkdirSync(BUILD_DIR, { recursive: true });
 
 // Individual static files copied to the build root.
-const files = ["manifest.json", "editor.html", "editor.css", "options.html"];
+const files = ["manifest.json", "editor.html", "editor.css", "options.html", "popup.html", "offscreen.html"];
 for (const file of files) {
   cpSync(join(SRC_DIR, file), join(BUILD_DIR, file), { recursive: true });
 }

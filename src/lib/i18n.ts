@@ -174,6 +174,11 @@ const MESSAGES: Record<string, Record<string, string>> = {
 
     // Background
     captureFailed: 'Screenshot failed: {0} (restricted pages such as chrome:// cannot be captured)',
+    captureDesktopFailed: 'Screen capture failed: {0}',
+    // Popup
+    popupWeb: 'Web page screenshot',
+    popupDesktop: 'Screen or window',
+    popupSetShortcuts: 'Set keyboard shortcuts',
   },
 
   zh: {
@@ -341,6 +346,11 @@ const MESSAGES: Record<string, Record<string, string>> = {
     aiTitleFailed: 'AI 生成标题失败：{0}',
 
     captureFailed: '截图失败：{0}（chrome:// 等受限页面无法截图）',
+    captureDesktopFailed: '屏幕截图失败：{0}',
+    // 弹出菜单
+    popupWeb: '网页截图',
+    popupDesktop: '屏幕或窗口',
+    popupSetShortcuts: '设置快捷键',
   },
 
   ja: {
@@ -508,6 +518,11 @@ const MESSAGES: Record<string, Record<string, string>> = {
     aiTitleFailed: 'AI タイトル生成に失敗しました：{0}',
 
     captureFailed: 'スクリーンショットに失敗しました：{0}（chrome:// などの制限付きページは撮影できません）',
+    captureDesktopFailed: '画面キャプチャに失敗しました：{0}',
+    // ポップアップ
+    popupWeb: 'ウェブページのスクリーンショット',
+    popupDesktop: '画面またはウィンドウ',
+    popupSetShortcuts: 'ショートカットを設定',
   },
 };
 

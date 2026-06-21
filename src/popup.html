@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    :root { color-scheme: light dark; --border: #8884; --accent: #1f6feb; --muted: #57606a; }
+    * { box-sizing: border-box; }
+    body { font: 14px/1.4 system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Hiragino Kaku Gothic ProN", sans-serif; margin: 0; width: 248px; padding: 8px; }
+    .opt { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 10px 12px; margin: 4px 0; border: 1px solid var(--border); border-radius: 8px; background: Field; color: FieldText; cursor: pointer; font: inherit; text-align: left; }
+    .opt:hover { border-color: var(--accent); }
+    kbd { font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #8881; border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; color: var(--muted); white-space: nowrap; }
+    .foot { margin-top: 6px; text-align: center; }
+    .foot a { color: var(--accent); font-size: 12px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <button class="opt" id="optWeb">
+    <span data-i18n="popupWeb"></span>
+    <kbd id="scWeb" hidden></kbd>
+  </button>
+  <button class="opt" id="optDesktop">
+    <span data-i18n="popupDesktop"></span>
+    <kbd id="scDesktop" hidden></kbd>
+  </button>
+  <div class="foot"><a id="setShortcuts" data-i18n="popupSetShortcuts"></a></div>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

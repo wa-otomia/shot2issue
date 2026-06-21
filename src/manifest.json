@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "shot2issue — Screenshot to GitHub Issue",
-  "version": "1.8.0",
-  "description": "Capture the current tab, annotate it, and file it as a GitHub or YouTrack issue with the screenshot inline. Client-side only; optional AI title assistant.",
+  "version": "1.9.0",
+  "description": "Capture a tab or your screen/window, annotate it, and file it as a GitHub or YouTrack issue with the screenshot inline. Client-side only; optional AI title assistant.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -10,6 +10,7 @@
   },
   "action": {
     "default_title": "shot2issue — capture and file an issue",
+    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -24,13 +25,18 @@
   "commands": {
     "capture": {
       "description": "Capture the current tab and open the editor"
+    },
+    "capture-desktop": {
+      "description": "Capture the screen or a window and open the editor"
     }
   },
   "permissions": [
     "activeTab",
     "storage",
     "scripting",
-    "identity"
+    "identity",
+    "desktopCapture",
+    "offscreen"
   ],
   "host_permissions": [
     "https://github.com/*"

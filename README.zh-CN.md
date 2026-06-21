@@ -15,6 +15,10 @@ Personal Access Token——复用你当前的 github.com 浏览器会话；提�
 
 ## 截图
 
+工具栏弹出菜单 —— 选择截图来源（绑定快捷键后会显示）：
+
+![弹出菜单](docs/screenshots/popup.png)
+
 编辑页 —— 标注截图并提交：
 
 ![编辑页](docs/screenshots/editor.png)
@@ -29,7 +33,7 @@ AI 助手 —— 使用 ChatGPT 订阅账号登录以生成标题：
 
 ## 功能
 
-- 一键截取当前标签页的可见区域。
+- 既可截取当前标签页，也可通过工具栏弹出菜单截取**整个屏幕、某个窗口或其他应用**（`chrome.desktopCapture`）。每种来源都可绑定各自的快捷键，绑定后会显示在弹出菜单里。
 - 一个 issue 可包含多张截图：每次截图都会新增一个缩略图；可分别标注、切换、删除，提交时一并附上。编辑器打开时再次点击扩展图标，会把新截图追加进当前编辑器。
 - 基于 Canvas 的标注：矩形、编号框（自动递增徽标）、箭头、画笔、可调整大小并自动换行的文字框，以及用于遮挡敏感内容的马赛克。可用 Ctrl/Cmd+Z 撤销，连按两次 Esc 关闭编辑页。
 - 标注后的图片可下载为 PNG，或直接复制到剪贴板。
@@ -155,6 +159,8 @@ Codex 标准的 OAuth 使用 http://localhost:1455 回调，而浏览器扩展�
 | `activeTab` | 点击图标时授予；用于截取可见标签页并读取其标题和 URL。 |
 | `storage` | 在 `chrome.storage.local` 中保存设置，在 `chrome.storage.session` 中暂存待编辑的截图。 |
 | `scripting` | 向后台的 github.com 标签页注入提交脚本。 |
+| `desktopCapture` | 选择「屏幕或窗口」时弹出选择器。仅用于该截图来源。 |
+| `offscreen` | 在 offscreen 文档中抓取一帧画面（service worker 没有 `getUserMedia`）。 |
 | `identity` | 运行 AI 助手的 OAuth 登录（`launchWebAuthFlow`）。仅在你连接该助手时使用。 |
 
 默认主机权限仅限 `https://github.com/*`，即 GitHub 提交时唯一访问的来源。截图的字节由 GitHub

@@ -132,6 +132,28 @@ try {
     });
     console.log('wrote docs/screenshots/ai.png');
   }
+
+  // --- Popup: the two capture sources, with sample shortcuts shown ---
+  const pop = await context.newPage();
+  await pop.setViewportSize({ width: 280, height: 200 });
+  await pop.goto(`chrome-extension://${extId}/popup.html`);
+  await pop.waitForSelector('#optWeb');
+  // Inject sample shortcuts so the doc shows what bound shortcuts look like.
+  await pop.evaluate(() => {
+    const set = (id, text) => {
+      const el = document.getElementById(id);
+      el.textContent = text;
+      el.hidden = false;
+    };
+    set('scWeb', 'Ctrl+Shift+S');
+    set('scDesktop', 'Ctrl+Shift+D');
+  });
+  await pop.waitForTimeout(150);
+  const body = await pop.$('body');
+  if (body) {
+    await body.screenshot({ path: resolve(outDir, 'popup.png') });
+    console.log('wrote docs/screenshots/popup.png');
+  }
 } finally {
   await context.close();
 }

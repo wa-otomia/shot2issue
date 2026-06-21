@@ -1,12 +1,12 @@
 // MV3 service worker.
 //
-// Entry points: clicking the toolbar icon, or an optional keyboard shortcut, captures the
-// visible tab immediately. The capture is staged in session storage and the editor page is
-// opened. Re-capturing while an editor is already open APPENDS the new screenshot to that
-// editor's attachment list (and focuses it) instead of opening a second editor.
+// The toolbar icon opens a small popup (popup.html) with two capture sources: the current
+// tab, or the screen/window (via chrome.desktopCapture). Each source can also be bound to
+// its own keyboard shortcut. A capture is staged in session storage and the editor is
+// opened; re-capturing while an editor is open APPENDS the new screenshot to it.
 //
-// Both entry points are user gestures that grant activeTab, which lets the worker call
-// captureVisibleTab and read the tab's url/title.
+// Desktop capture needs getUserMedia, which the service worker lacks, so it runs in an
+// offscreen document.
 
 import {
   getConfig,
@@ -22,16 +22,12 @@ import { setLanguage, t } from './lib/i18n.js';
 import type { Attachment, PendingShots } from './lib/types.js';
 
 chrome.runtime.onInstalled.addListener(async (details) => {
-  // Ensure local storage holds a configuration with defaults.
   const config = await getConfig();
   await setConfig(config);
-  // On a fresh install, open the options page to guide initial setup.
-  if (details.reason === 'install') {
-    chrome.runtime.openOptionsPage();
-  }
+  if (details.reason === 'install') chrome.runtime.openOptionsPage();
 });
 
-/** True if the given tab id still exists. */
+// ---- helpers ---------------------------------------------------------------
 async function tabAlive(id?: number): Promise<boolean> {
   if (id == null) return false;
   try {
@@ -42,7 +38,6 @@ async function tabAlive(id?: number): Promise<boolean> {
   }
 }
 
-/** Bring a tab (and its window) to the foreground. */
 async function focusTab(id: number): Promise<void> {
   try {
     const tab = await chrome.tabs.update(id, { active: true });
@@ -52,43 +47,36 @@ async function focusTab(id: number): Promise<void> {
   }
 }
 
-/** Capture the given tab and either append to an open editor or open a new one. */
-async function captureAndOpenEditor(tab: chrome.tabs.Tab): Promise<void> {
+function makeAttachment(dataUrl: string, tab: chrome.tabs.Tab, sourceId: string): Attachment {
+  return {
+    id: makeAttachmentId(),
+    dataUrl,
+    pageUrl: tab.url || '',
+    pageTitle: tab.title || '',
+    sourceTabId: tab.id,
+    sourceWindowId: tab.windowId,
+    sourceId,
+    ops: [],
+    createdAt: Date.now(),
+  };
+}
+
+/** Append to an open editor (and focus it), or stage a fresh envelope and open the editor. */
+async function stageAndOpen(
+  tab: chrome.tabs.Tab,
+  attachment: Attachment | null,
+  captureError: string | undefined
+): Promise<void> {
   const config = await getConfig();
-  setLanguage(config.lang);
-
-  let attachment: Attachment | null = null;
-  let captureError: string | undefined;
-  try {
-    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
-    if (!dataUrl) throw new Error('no image data');
-    attachment = {
-      id: makeAttachmentId(),
-      dataUrl,
-      pageUrl: tab.url || '',
-      pageTitle: tab.title || '',
-      sourceTabId: tab.id,
-      sourceWindowId: tab.windowId,
-      sourceId: 'tab',
-      ops: [],
-      createdAt: Date.now(),
-    };
-  } catch (e) {
-    // Restricted pages (chrome://, the Web Store, etc.) cannot be captured.
-    captureError = t('captureFailed', [e instanceof Error && e.message ? e.message : String(e)]);
-  }
-
   const existing = await getPendingShots();
   const editorOpen = !!existing && (await tabAlive(existing.editorTabId));
 
-  // An editor is already open: append the new shot (if any) and focus it; never open a 2nd.
   if (editorOpen && existing) {
     if (attachment) await appendPendingShot(attachment);
     await focusTab(existing.editorTabId as number);
     return;
   }
 
-  // Fresh session: stage the envelope (with the shot, or the capture error) and open the editor.
   const envelope: PendingShots = {
     attachments: attachment ? [attachment] : [],
     type: config.lastType || config.types[0] || '',
@@ -102,20 +90,105 @@ async function captureAndOpenEditor(tab: chrome.tabs.Tab): Promise<void> {
   if (editorTab.id != null) await patchPendingShots({ editorTabId: editorTab.id });
 }
 
-// Toolbar icon.
-chrome.action.onClicked.addListener((tab) => {
-  captureAndOpenEditor(tab);
+// ---- capture: current tab --------------------------------------------------
+async function captureWeb(tab: chrome.tabs.Tab): Promise<void> {
+  const config = await getConfig();
+  setLanguage(config.lang);
+  let attachment: Attachment | null = null;
+  let captureError: string | undefined;
+  try {
+    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+    if (!dataUrl) throw new Error('no image data');
+    attachment = makeAttachment(dataUrl, tab, 'tab');
+  } catch (e) {
+    captureError = t('captureFailed', [e instanceof Error && e.message ? e.message : String(e)]);
+  }
+  await stageAndOpen(tab, attachment, captureError);
+}
+
+// ---- capture: screen / window (desktopCapture + offscreen) ------------------
+function chooseDesktopMedia(tab: chrome.tabs.Tab): Promise<string> {
+  return new Promise((resolve) => {
+    try {
+      chrome.desktopCapture.chooseDesktopMedia(['screen', 'window', 'tab'], tab, (streamId) => resolve(streamId || ''));
+    } catch {
+      resolve('');
+    }
+  });
+}
+
+async function ensureOffscreen(): Promise<void> {
+  try {
+    await chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: [chrome.offscreen.Reason.USER_MEDIA],
+      justification: 'Capture a frame of the chosen screen or window for the screenshot.',
+    });
+  } catch (e) {
+    // A document already exists (e.g. a quick second capture) — reuse it.
+    if (!String(e).toLowerCase().includes('single offscreen')) throw e;
+  }
+}
+
+async function grabViaOffscreen(streamId: string): Promise<string> {
+  await ensureOffscreen();
+  try {
+    const res = (await chrome.runtime.sendMessage({ target: 'offscreen', type: 'grab-frame', streamId })) as
+      | { ok: boolean; dataUrl?: string; error?: string }
+      | undefined;
+    if (!res || !res.ok || !res.dataUrl) throw new Error(res?.error || 'capture failed');
+    return res.dataUrl;
+  } finally {
+    try {
+      await chrome.offscreen.closeDocument();
+    } catch {
+      /* already closed */
+    }
+  }
+}
+
+async function captureDesktop(tab: chrome.tabs.Tab): Promise<void> {
+  const config = await getConfig();
+  setLanguage(config.lang);
+  let attachment: Attachment | null = null;
+  let captureError: string | undefined;
+  try {
+    const streamId = await chooseDesktopMedia(tab);
+    if (!streamId) return; // the user cancelled the picker — do nothing
+    const dataUrl = await grabViaOffscreen(streamId);
+    attachment = makeAttachment(dataUrl, tab, 'desktop');
+  } catch (e) {
+    captureError = t('captureDesktopFailed', [e instanceof Error && e.message ? e.message : String(e)]);
+  }
+  await stageAndOpen(tab, attachment, captureError);
+}
+
+async function activeTab(): Promise<chrome.tabs.Tab | undefined> {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab;
+}
+
+// ---- triggers --------------------------------------------------------------
+// Popup buttons.
+chrome.runtime.onMessage.addListener((msg: { type?: string }) => {
+  if (!msg || (msg.type !== 'capture-web' && msg.type !== 'capture-desktop')) return;
+  void (async () => {
+    const tab = await activeTab();
+    if (!tab) return;
+    if (msg.type === 'capture-web') await captureWeb(tab);
+    else await captureDesktop(tab);
+  })();
 });
 
-// Optional keyboard shortcut. The key is bound at chrome://extensions/shortcuts; this
-// handler only acts when the user has enabled the shortcut in Settings (off by default).
+// Keyboard shortcuts (bound at chrome://extensions/shortcuts), gated by the Settings toggle.
 chrome.commands.onCommand.addListener(async (command: string, tab?: chrome.tabs.Tab) => {
-  if (command !== 'capture') return;
+  if (command !== 'capture' && command !== 'capture-desktop') return;
   const config = await getConfig();
   if (!config.shortcutEnabled) return;
-  let target = tab;
-  if (!target) [target] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (target) captureAndOpenEditor(target);
+  const target = tab || (await activeTab());
+  if (!target) return;
+  if (command === 'capture') await captureWeb(target);
+  else await captureDesktop(target);
 });
 
 // Closing the editor ends the staging session (frees the image data held in memory).
