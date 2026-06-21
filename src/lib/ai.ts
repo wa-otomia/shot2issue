@@ -2,13 +2,13 @@
 // OAuth (PKCE), then use the subscription to list models, read usage quota, and generate
 // issue titles.
 //
-// Chrome extensions cannot run Codex's standard localhost callback, so two sign-in paths
-// are offered:
-//   1. Automatic — chrome.identity.launchWebAuthFlow with the extension's own
-//      chromiumapp.org redirect. Works only if OpenAI accepts that redirect_uri.
-//   2. Manual — open the authorize page with Codex's localhost redirect; after signing in
-//      the browser lands on an unreachable localhost URL that carries ?code=…; the user
-//      pastes that URL back and we finish the exchange.
+// Codex's OAuth client only registers the localhost:1455 redirect (chromiumapp.org is
+// rejected with authorize_hydra_invalid_request), and an extension cannot listen on
+// localhost. So sign-in opens the authorize page with Codex's localhost redirect, and:
+//   - Automatic — the service worker / page watches the sign-in tab via chrome.tabs and,
+//     when it navigates to the unreachable http://localhost:1455/auth/callback?code=…,
+//     reads the ?code= straight from the tab URL (needs localhost host permission).
+//   - Manual fallback — the user copies that localhost URL and pastes it back.
 //
 // The pure helpers (PKCE, JWT/redirect/quota parsing, URL building, prompt) carry no
 // dependency on chrome and are unit-tested directly.
@@ -34,8 +34,11 @@ export const MODELS_URL = 'https://chatgpt.com/backend-api/codex/models';
  * a value caps the list (e.g. hides gpt-5.5). Bump this as new Codex releases ship.
  */
 export const CODEX_CLIENT_VERSION = '0.141.0';
-/** Origins the assistant needs; requested as optional host permissions on a gesture. */
-export const AI_ORIGINS = ['https://auth.openai.com/*', 'https://chatgpt.com/*'];
+/**
+ * Origins the assistant needs; requested as optional host permissions on a gesture. The
+ * localhost callback is included so the OAuth ?code= can be auto-captured from the tab URL.
+ */
+export const AI_ORIGINS = ['https://auth.openai.com/*', 'https://chatgpt.com/*', 'http://localhost:1455/*'];
 /**
  * Models selectable with Codex when signed in with a ChatGPT account (mid-2026). Note the
  * dotted slugs: the consumer web /backend-api/models endpoint returns dashed slugs like
@@ -385,9 +388,6 @@ function nowMs(): number {
 }
 
 // ---- High-level flows (chrome) ---------------------------------------------
-function extensionRedirectUri(): string {
-  return chrome.identity.getRedirectURL();
-}
 
 /** Ensure the assistant's host permissions are granted (call on a user gesture). */
 export async function ensureAiPermissions(): Promise<boolean> {
@@ -400,22 +400,48 @@ export async function ensureAiPermissions(): Promise<boolean> {
 }
 
 /**
- * Try the automatic flow via launchWebAuthFlow with the extension's own redirect. Resolves
- * to the new auth on success; throws if OpenAI rejects the redirect or the user cancels —
- * the caller then falls back to {@link beginManualAuth}.
+ * Sign in by opening Codex's authorize page (localhost redirect) and AUTOMATICALLY capturing
+ * the ?code= when the browser navigates to the unreachable localhost callback — no manual
+ * paste. Reading the failing tab's URL needs host permission for the localhost callback
+ * (part of AI_ORIGINS). On timeout the caller's manual paste box is the fallback.
+ *
+ * Note: this does NOT use chrome.identity / chromiumapp.org — that redirect is not registered
+ * for the public Codex client and is rejected with authorize_hydra_invalid_request.
  */
-export async function connectAuto(): Promise<AiAuth> {
-  const redirectUri = extensionRedirectUri();
-  const { verifier, challenge } = await genPkce();
-  const state = randomState();
-  const url = buildAuthorizeUrl({ redirectUri, challenge, state });
-  const resultUrl = await chrome.identity.launchWebAuthFlow({ url, interactive: true });
-  if (!resultUrl) throw new Error('Sign-in was cancelled.');
-  const parsed = parseRedirect(resultUrl);
-  if (parsed.state !== state) throw new Error('State mismatch; sign-in aborted.');
-  const auth = await exchangeCode({ code: parsed.code, verifier, redirectUri });
-  await finalizeAuth(auth);
-  return auth;
+export async function connectViaCallbackCapture(): Promise<AiAuth> {
+  const { url } = await beginManualAuth(); // redirect = LOCALHOST_REDIRECT, PKCE stashed
+  const tab = await chrome.tabs.create({ url });
+  const tabId = tab.id;
+  return new Promise<AiAuth>((resolve, reject) => {
+    let settled = false;
+    const finish = (run: () => void): void => {
+      if (settled) return;
+      settled = true;
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      clearTimeout(timer);
+      run();
+    };
+    const onUpdated = (id: number, info: chrome.tabs.TabChangeInfo): void => {
+      if (id !== tabId || !info.url || !info.url.startsWith('http://localhost:1455/auth/callback')) return;
+      const callbackUrl = info.url;
+      finish(() => {
+        try {
+          if (tabId != null) void chrome.tabs.remove(tabId);
+        } catch {
+          /* tab already gone */
+        }
+        completeManualAuth(callbackUrl)
+          .then(resolve)
+          .catch(async (e) => {
+            const existing = await getAiAuth(); // a manual paste may have already finished it
+            if (existing) resolve(existing);
+            else reject(e instanceof Error ? e : new Error(String(e)));
+          });
+      });
+    };
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    const timer = setTimeout(() => finish(() => reject(new Error('Sign-in timed out.'))), 180000);
+  });
 }
 
 /**

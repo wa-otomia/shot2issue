@@ -148,12 +148,12 @@ GitLab 同样有文档化的 REST API。使用账号里的个人访问令牌（`
 
 可选的 AI 助手会使用 OpenAI Codex / ChatGPT 订阅账号登录（OAuth、PKCE），从而能够根据你的描述生成 issue 标题，并显示可用的模型和用量。它使用的是你的订阅，而非按量计费的 API key。
 
-Codex 标准的 OAuth 使用 http://localhost:1455 回调，而浏览器扩展无法在该地址上监听，因此提供了两种登录方式：
+Codex 的 OAuth client 只注册了 `http://localhost:1455` 回调（扩展自身的 chromiumapp.org 重定向会被拒绝、报 `authorize_hydra_invalid_request`），而扩展又无法在 localhost 上监听。因此点击「使用 ChatGPT 登录」会打开带该 localhost 重定向的授权页，然后：
 
-1. **自动** —— 使用 chrome.identity.launchWebAuthFlow，配合扩展自身的 https://<id>.chromiumapp.org/ 重定向。仅当 OpenAI 为公共 Codex client 接受该重定向 URI 时才有效。
-2. **手动（粘贴链接）** —— 作为回退方式使用。扩展会打开授权页面并使用 Codex 的 localhost 重定向；登录后，浏览器会停留在一个「无法访问 localhost」的页面，其地址中包含 ?code=…。复制该完整地址并粘贴回来，扩展便会自行完成 PKCE token 交换。
+1. **自动** —— 扩展监听登录标签页，当它跳转到打不开的 `http://localhost:1455/auth/callback?code=…` 时，直接从标签页地址里读出 `?code=`（无需手动操作）。这需要 localhost 回调的主机权限，会在你连接时与 OpenAI 的来源一起申请。
+2. **手动（粘贴链接）** —— 同时显示的兜底方式：若没被自动捕获，复制那条「无法访问 localhost」的地址粘贴回来，扩展便会自行完成 PKCE token 交换。
 
-点击「使用 ChatGPT 登录」会先尝试自动方式，并在失败时自动回退到手动方式。随后在编辑页中，「总结标题」会根据当前的类型、页面标题、页面 URL、描述以及截图生成标题。模型列表从 Codex models 接口动态获取（并提供内置兜底列表）。生成所用的系统提示词可在设置中编辑，并提供「恢复默认提示词」按钮，将其重置为当前界面语言的默认提示词。
+随后在编辑页中，「总结标题」会根据当前的类型、页面标题、页面 URL、描述以及截图生成标题。模型列表从 Codex models 接口动态获取（并提供内置兜底列表）。生成所用的系统提示词可在设置中编辑，并提供「恢复默认提示词」按钮，将其重置为当前界面语言的默认提示词。
 
 **「智能口述」。**「智能口述」按钮会弹出一个对话框，你可以**打字输入**描述，或**点录音口述**（录音会用你的 ChatGPT 订阅 `whisper-1` 转成文字）。随后模型根据这段文本、截图和页面元数据撰写标题与 Markdown 正文（结构化 JSON 输出），并会**结合截图里的编号框**进行描述。对话框内容在多次打开间保留，可重复生成。注意：该转写接口属于 Codex 桌面版、未公开，且仅接受 ChatGPT 会话令牌（不接受 API key），因此口述转写是尽力而为、可能变动（打字始终可用）。截图失败（含屏幕截图）会以系统通知的形式提示。和标题提示词一样，口述的系统提示词也可在设置中编辑，各自带有「恢复默认提示词」按钮。
 
@@ -168,13 +168,12 @@ Codex 标准的 OAuth 使用 http://localhost:1455 回调，而浏览器扩展�
 | `scripting` | 向后台的 github.com 标签页注入提交脚本。 |
 | `desktopCapture` | 选择「屏幕或窗口」时弹出选择器。仅用于该截图来源。 |
 | `offscreen` | 在 offscreen 文档中抓取一帧画面（service worker 没有 `getUserMedia`）。 |
-| `identity` | 运行 AI 助手的 OAuth 登录（`launchWebAuthFlow`）。仅在你连接该助手时使用。 |
 
 默认主机权限仅限 `https://github.com/*`，即 GitHub 提交时唯一访问的来源。截图的字节由 GitHub
 自己的页面代码上传至其存储，因此扩展无需声明那些存储主机的权限。
 
 YouTrack 实例 URL 无法预先确定，因此以 `optional_host_permissions` 声明并在运行时请求：首次
-保存或提交到某个实例时，Chrome 会请求访问该来源的权限。当你连接 AI 助手时，它同样会请求访问 `https://auth.openai.com/*` 和 `https://chatgpt.com/*`。
+保存或提交到某个实例时，Chrome 会请求访问该来源的权限。当你连接 AI 助手时，它同样会请求访问 `https://auth.openai.com/*`、`https://chatgpt.com/*` 和 `http://localhost:1455/*`（用于自动读取登录回调）。
 
 ## 隐私
 

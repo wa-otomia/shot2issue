@@ -21,7 +21,7 @@ import {
 import { setLanguage, localizeDom, t, SUPPORTED_LANGS } from './lib/i18n.js';
 import { PROVIDER_LIST, getProvider, isAccountBased, accountKinds } from './lib/providers/index.js';
 import {
-  connectAuto,
+  connectViaCallbackCapture,
   beginManualAuth,
   completeManualAuth,
   ensureAiPermissions,
@@ -379,20 +379,22 @@ els.aiConnect.addEventListener('click', async () => {
     return;
   }
   aiStatus(t('aiConnecting'));
+  els.aiManual.classList.remove('hidden'); // show the paste fallback alongside auto-capture
   els.aiConnect.disabled = true;
   try {
-    const auth = await connectAuto();
+    // Opens the sign-in tab and auto-captures the localhost ?code= (no manual paste needed).
+    const auth = await connectViaCallbackCapture();
+    els.aiManual.classList.add('hidden');
     aiStatus(t('aiConnectedOk', [auth.email || auth.accountId || '']), 'ok');
     await renderAi();
-  } catch {
-    // Automatic redirect was rejected or cancelled: fall back to the manual paste flow.
-    try {
-      const { url } = await beginManualAuth();
-      els.aiManual.classList.remove('hidden');
-      await chrome.tabs.create({ url });
-      aiStatus(t('aiAutoFailedManual')); // recoverable: a tab opened, awaiting the pasted link
-    } catch (e) {
-      aiStatus(t('aiConnectFailed', [e instanceof Error ? e.message : String(e)]), 'error');
+  } catch (e) {
+    // Auto-capture timed out — but a manual paste may have completed it in the meantime.
+    if (await getAiAuth()) {
+      els.aiManual.classList.add('hidden');
+      aiStatus(t('aiConnectedOk', ['']), 'ok');
+      await renderAi();
+    } else {
+      aiStatus(t('aiAutoFailedManual')); // the tab + paste box are available to finish manually
     }
   } finally {
     els.aiConnect.disabled = false;

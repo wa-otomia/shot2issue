@@ -188,19 +188,20 @@ The optional AI assistant signs in with an OpenAI Codex / ChatGPT-subscription a
 (OAuth, PKCE) so it can generate an issue title from your description and show the
 available models and usage. It uses your subscription rather than a pay-per-use API key.
 
-Codex's standard OAuth uses a `http://localhost:1455` callback, which a browser extension
-cannot listen on, so two sign-in paths are offered:
+Codex's OAuth client only registers a `http://localhost:1455` callback (the extension's own
+`chromiumapp.org` redirect is rejected with `authorize_hydra_invalid_request`), and an
+extension can't listen on localhost. So **Sign in with ChatGPT** opens the authorize page
+with that localhost redirect and then:
 
-1. **Automatic** — `chrome.identity.launchWebAuthFlow` with the extension's own
-   `https://<id>.chromiumapp.org/` redirect. This works only if OpenAI accepts that
-   redirect URI for the public Codex client.
-2. **Manual (paste link)** — used as a fallback. The extension opens the authorize page
-   with Codex's localhost redirect; after you sign in, the browser lands on a “can't reach
-   localhost” page whose address contains `?code=…`. Copy that full address and paste it
-   back, and the extension completes the PKCE token exchange itself.
+1. **Automatic** — the extension watches the sign-in tab and, when it navigates to the
+   unreachable `http://localhost:1455/auth/callback?code=…`, reads the `?code=` straight
+   from the tab's URL (no manual step). This needs host permission for the localhost
+   callback, which is requested together with the OpenAI origins when you connect.
+2. **Manual (paste link)** — the fallback shown alongside: if you aren't captured
+   automatically, copy that “can't reach localhost” address and paste it back, and the
+   extension completes the PKCE token exchange itself.
 
-Clicking **Sign in with ChatGPT** tries the automatic path first and falls back to the
-manual path automatically. In the editor, **Summarize title** then generates a title from
+In the editor, **Summarize title** then generates a title from
 the current type, page title, page URL, description, and the screenshot. The model list is
 fetched dynamically from the Codex models endpoint (with a curated fallback). The system
 prompt is editable in Settings, with a **Restore default prompt** button that resets it to
@@ -231,7 +232,6 @@ each with its own **Restore default prompt** button.
 | `scripting` | Injects the submission script into the background github.com tab. |
 | `desktopCapture` | Shows the screen/window picker when you choose “Screen or window”. Only used for that capture source. |
 | `offscreen` | Runs the one-frame screen grab in an offscreen document (the service worker has no `getUserMedia`). |
-| `identity` | Runs the AI assistant's OAuth sign-in (`launchWebAuthFlow`). Only used if you connect the assistant. |
 
 Host permissions are limited to `https://github.com/*` by default, the only origin the
 extension contacts for GitHub. The screenshot bytes are uploaded to GitHub's storage by
@@ -240,8 +240,8 @@ GitHub's own page code, so the extension does not need permission for those stor
 YouTrack instance URLs are not known in advance, so they are declared as
 `optional_host_permissions` and requested at runtime: the first time you save or submit
 to an instance, Chrome asks permission to access that specific origin. The AI assistant
-similarly requests `https://auth.openai.com/*` and `https://chatgpt.com/*` when you connect
-it.
+similarly requests `https://auth.openai.com/*`, `https://chatgpt.com/*`, and
+`http://localhost:1455/*` (to auto-read the sign-in callback) when you connect it.
 
 ## Privacy
 
