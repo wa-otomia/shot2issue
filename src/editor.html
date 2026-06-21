@@ -53,10 +53,6 @@
 
       <label for="title" data-i18n="fieldTitle"></label>
       <input type="text" id="title" data-i18n-placeholder="titlePlaceholder" />
-      <div class="row" style="margin-top:6px;gap:8px;display:flex;flex-wrap:wrap;">
-        <button id="aiTitle" class="ghost" data-i18n="aiTitle" data-i18n-title="aiTitleTitle"></button>
-        <button id="complaint" class="ghost" data-i18n="complaint" data-i18n-title="complaintTitle"></button>
-      </div>
 
       <label for="body"><span data-i18n="fieldBody"></span> <span class="hint" data-i18n="bodyHint"></span></label>
       <textarea id="body" data-i18n-placeholder="bodyPlaceholder"></textarea>
@@ -68,6 +64,13 @@
 
       <div id="status" class="info"></div>
       <div id="result"></div>
+
+      <!-- AI actions, kept below the form -->
+      <div class="ai-actions" id="aiActions">
+        <select id="aiModel" class="hidden" data-i18n-title="aiModel"></select>
+        <button id="aiTitle" class="ghost" data-i18n="aiTitle" data-i18n-title="aiTitleTitle"></button>
+        <button id="complaint" class="ghost" data-i18n="complaint" data-i18n-title="complaintTitle"></button>
+      </div>
     </div>
   </div>
 

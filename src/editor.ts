@@ -12,6 +12,7 @@ import {
   clearPendingShots,
   rememberSelection,
   getAiAuth,
+  patchAiAuth,
 } from './lib/storage.js';
 import { setLanguage, localizeDom, t } from './lib/i18n.js';
 import { getProvider } from './lib/providers/index.js';
@@ -46,6 +47,7 @@ const els = {
   workspace: $('workspace') as HTMLSelectElement,
   type: $('type') as HTMLSelectElement,
   title: $('title') as HTMLInputElement,
+  aiModel: $('aiModel') as HTMLSelectElement,
   aiTitle: $('aiTitle') as HTMLButtonElement,
   complaint: $('complaint') as HTMLButtonElement,
   body: $('body') as HTMLTextAreaElement,
@@ -174,6 +176,8 @@ function deleteAttachment(i: number): void {
   if (activeIndex >= attachments.length) activeIndex = Math.max(0, attachments.length - 1);
   persist();
   if (!attachments.length) {
+    // No screenshots left: blank the editing area.
+    if (canvas.width) ctx.clearRect(0, 0, canvas.width, canvas.height);
     canvas.classList.add('hidden');
     els.canvasEmpty.textContent = t('statusNoShot');
     els.canvasEmpty.classList.remove('hidden');
@@ -226,13 +230,11 @@ function watchForAppends(): void {
     const known = new Set(attachments.map((a) => a.id));
     const added = incoming.attachments.filter((a) => a.id && a.dataUrl && !known.has(a.id));
     if (!added.length) return;
-    const wasEmpty = attachments.length === 0;
+    commitTextIfAny();
     attachments.push(...added);
     if (!shots) shots = incoming;
-    if (wasEmpty) {
-      activeIndex = 0;
-      loadActive();
-    }
+    activeIndex = attachments.length - 1; // jump to the newly added screenshot
+    loadActive();
     renderThumbs();
   });
 }
@@ -282,7 +284,7 @@ els.title.addEventListener('input', () => {
   titleDirty = true;
 });
 
-/** Enable the AI buttons only when the assistant is connected. */
+/** Enable the AI buttons (and show the model picker) only when the assistant is connected. */
 async function refreshAiButton(): Promise<void> {
   const auth = await getAiAuth();
   els.aiTitle.disabled = !auth;
@@ -291,7 +293,26 @@ async function refreshAiButton(): Promise<void> {
     els.complaint.disabled = !auth;
     els.complaint.title = auth ? t('complaintTitle') : t('aiTitleNeedConnect');
   }
+  // Model picker: same options as Settings, kept in sync (auth.model is shared).
+  const models = auth && auth.models && auth.models.length ? auth.models : [];
+  if (models.length) {
+    els.aiModel.innerHTML = '';
+    for (const m of models) {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      els.aiModel.appendChild(opt);
+    }
+    els.aiModel.value = auth?.model && models.includes(auth.model) ? auth.model : models[0];
+    els.aiModel.classList.remove('hidden');
+  } else {
+    els.aiModel.classList.add('hidden');
+  }
 }
+
+els.aiModel.addEventListener('change', () => {
+  void patchAiAuth({ model: els.aiModel.value });
+});
 
 // ---- Voice "Complaint": record → transcribe → AI writes title + body ----
 let recording = false;
@@ -512,6 +533,15 @@ window.addEventListener('keydown', (e) => {
     ops.pop();
     redraw();
     persist();
+  }
+  // Ctrl/Cmd+C copies the current screenshot — unless the user is selecting text or typing.
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'c' || e.key === 'C')) {
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return;
+    if ((window.getSelection()?.toString() || '').trim()) return;
+    if (!attachments.length) return;
+    e.preventDefault();
+    void copyCanvas();
   }
 });
 
@@ -892,7 +922,9 @@ els.download.addEventListener('click', () => {
   a.click();
 });
 
-els.copy.addEventListener('click', async () => {
+/** Copy the current canvas (with annotations) to the clipboard. */
+async function copyCanvas(): Promise<void> {
+  if (!attachments.length) return;
   commitTextIfAny();
   try {
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
@@ -902,7 +934,9 @@ els.copy.addEventListener('click', async () => {
   } catch (e) {
     showToast(t('copyFailed', [e instanceof Error ? e.message : String(e)]));
   }
-});
+}
+
+els.copy.addEventListener('click', () => void copyCanvas());
 
 // ============================================================================
 // 4) Submit (delegated to the workspace's provider)

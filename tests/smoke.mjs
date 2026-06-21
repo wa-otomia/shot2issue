@@ -323,6 +323,9 @@ try {
     (await editor2.$eval('#aiTitle', (el) => el.disabled)) === false);
   check('editor: Complaint button enabled when connected',
     (await editor2.$eval('#complaint', (el) => el.disabled)) === false);
+  check('editor: model picker shown + populated when connected',
+    (await editor2.$eval('#aiModel', (el) => !el.classList.contains('hidden'))) === true &&
+      (await editor2.$$eval('#aiModel option', (opts) => opts.length)) >= 1);
 
   // --- Popup: two capture sources; shortcut chips hidden until bound ---
   const popup = await context.newPage();

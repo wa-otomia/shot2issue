@@ -150,6 +150,10 @@ button.ghost {
 button.ghost:disabled { opacity: .5; cursor: not-allowed; color: var(--muted); }
 button.ghost.recording { color: #fff; background: var(--danger); border-color: var(--danger); }
 
+/* AI actions row (below the form) */
+.ai-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
+.ai-actions select { width: auto; max-width: 200px; padding: 7px 8px; border-radius: 6px; border: 1px solid var(--border); background: Field; color: FieldText; font: inherit; }
+
 /* Attachment thumbnail strip */
 .thumb-strip { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 0; }
 .thumb { position: relative; width: 72px; height: 54px; border: 2px solid var(--border); border-radius: 6px; overflow: hidden; cursor: pointer; background: #0001; flex: 0 0 auto; }
