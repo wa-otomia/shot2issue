@@ -15,7 +15,8 @@ import {
   ensureAiPermissions,
   ensureFreshAuth,
   fetchModels,
-  normalizeModel,
+  isValidModelSlug,
+  MODEL_DATES,
   DEFAULT_MODELS,
 } from './lib/ai.js';
 import type { Config, Workspace, AiAuth, AiQuota } from './lib/types.js';
@@ -236,27 +237,27 @@ async function renderAi(): Promise<void> {
   els.aiConnectedBox.classList.toggle('hidden', !connected);
   if (!auth) return;
 
-  // Heal a stale/invalid model or list (e.g. dashed web slugs from an older version) so the
-  // dropdown and the stored selection are valid Codex models — no re-login required.
-  const badList = !auth.models || !auth.models.length || auth.models.some((m) => !DEFAULT_MODELS.includes(m));
-  const badModel = !auth.model || !DEFAULT_MODELS.includes(auth.model);
-  if (badList || badModel) {
-    auth = (await patchAiAuth({ models: DEFAULT_MODELS.slice(), model: normalizeModel(auth.model) })) || auth;
+  // Drop any legacy dashed slugs (e.g. "gpt-5-5" from an older version) and fix the selected
+  // model — no re-login required. A real list is fetched on connect / Refresh.
+  const sane = (auth.models || []).filter(isValidModelSlug);
+  const models = sane.length ? sane : DEFAULT_MODELS.slice();
+  const model = models.includes(auth.model || '') ? (auth.model as string) : models[0];
+  if (model !== auth.model || sane.length !== (auth.models?.length ?? 0)) {
+    auth = (await patchAiAuth({ models, model })) || auth;
   }
 
   els.aiAccount.textContent = auth.email || auth.accountId || '—';
   els.aiPlan.textContent = auth.planType || '—';
   els.aiUsage.textContent = renderUsage(auth.quota);
 
-  const models = auth.models && auth.models.length ? auth.models : DEFAULT_MODELS;
   els.aiModel.innerHTML = '';
   for (const m of models) {
     const opt = document.createElement('option');
     opt.value = m;
-    opt.textContent = m;
+    opt.textContent = MODEL_DATES[m] ? `${m} (${t('aiModelAdded', [MODEL_DATES[m]])})` : m;
     els.aiModel.appendChild(opt);
   }
-  els.aiModel.value = normalizeModel(auth.model);
+  els.aiModel.value = model;
 }
 
 els.aiConnect.addEventListener('click', async () => {

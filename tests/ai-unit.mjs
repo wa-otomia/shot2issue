@@ -15,6 +15,8 @@ import {
   cleanTitle,
   extractOutputText,
   normalizeModel,
+  isValidModelSlug,
+  parseModelsResponse,
   DEFAULT_MODELS,
   DEFAULT_TITLE_PROMPT,
   CLIENT_ID,
@@ -112,6 +114,25 @@ check('models: default list uses dotted Codex slugs', DEFAULT_MODELS.includes('g
 check('models: normalize keeps a valid model', normalizeModel('gpt-5.4') === 'gpt-5.4');
 check('models: normalize coerces a bad web slug to the default', normalizeModel('gpt-5-5') === DEFAULT_MODELS[0]);
 check('models: normalize handles undefined', normalizeModel(undefined) === DEFAULT_MODELS[0]);
+check('models: normalize honors an allowed list', normalizeModel('gpt-6.0', ['gpt-6.0', 'gpt-5.5']) === 'gpt-6.0');
+check('models: isValidModelSlug accepts dotted, rejects dashed', isValidModelSlug('gpt-5.5') && isValidModelSlug('gpt-6.1-codex') && !isValidModelSlug('gpt-5-5'));
+// parseModelsResponse: visibility filter, priority sort, dashed-slug drop
+const modelsBody = JSON.stringify({
+  models: [
+    { slug: 'gpt-5.4', priority: 2, visibility: 'list' },
+    { slug: 'gpt-5.5', priority: 1, visibility: 'list' },
+    { slug: 'gpt-5.3-hidden', priority: 0, visibility: 'hide' },
+    { slug: 'gpt-5-5', priority: 3, visibility: 'list' },
+  ],
+});
+check('models: parse sorts by priority + filters visibility/dashed',
+  JSON.stringify(parseModelsResponse(modelsBody)) === JSON.stringify(['gpt-5.5', 'gpt-5.4']));
+check('models: parse returns [] on garbage', parseModelsResponse('not json').length === 0);
+
+// --- responses request: images become input_image parts ---
+const reqImg = buildResponsesRequest({ model: 'gpt-5.5', instructions: 'i', input: 'x', images: ['data:image/png;base64,AAAA'] });
+check('responses: image is added as input_image', reqImg.input[0].content.length === 2 && reqImg.input[0].content[1].type === 'input_image' && reqImg.input[0].content[1].image_url === 'data:image/png;base64,AAAA');
+check('responses: no image -> only text part', buildResponsesRequest({ model: 'm', instructions: 'i', input: 'x' }).input[0].content.length === 1);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

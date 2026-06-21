@@ -172,9 +172,10 @@ cannot listen on, so two sign-in paths are offered:
 
 Clicking **Sign in with ChatGPT** tries the automatic path first and falls back to the
 manual path automatically. In the editor, **AI title** then generates a title from the
-current type, page title, page URL, and description. The system prompt used for this is
-editable in Settings, with a **Restore default prompt** button that resets it to the
-current interface language's default.
+current type, page title, page URL, description, and the screenshot. The model list is
+fetched dynamically from the Codex models endpoint (with a curated fallback). The system
+prompt is editable in Settings, with a **Restore default prompt** button that resets it to
+the current interface language's default.
 
 > Note: the assistant talks to undocumented `chatgpt.com` endpoints that may change, and is
 > subject to OpenAI's terms for your account. Tokens are stored in `chrome.storage.local`
@@ -204,10 +205,10 @@ it.
 - Only the screenshot, title, description, and the current page URL are used. The
   extension does not collect console output, network activity, or device information,
   and includes no telemetry.
-- The AI assistant is off until you connect it. When you use **AI title**, the title,
-  type, description, and page URL (not the screenshot) are sent to OpenAI to generate a
-  title. Its tokens are stored in `chrome.storage.local` only and are excluded from
-  settings backups.
+- The AI assistant is off until you connect it. When you use **AI title**, the type,
+  description, page URL, and the current (annotated) screenshot are sent to OpenAI to
+  generate a title. Its tokens are stored in `chrome.storage.local` only and are excluded
+  from settings backups.
 - Attachment visibility follows repository visibility. Attachments in private
   repositories require sign-in to view (since 2023-05); attachments in public
   repositories are visible anonymously. Choose the target repository accordingly.

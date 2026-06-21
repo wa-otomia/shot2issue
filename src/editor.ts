@@ -197,12 +197,15 @@ els.aiTitle.addEventListener('click', async () => {
   const label = els.aiTitle.textContent;
   els.aiTitle.textContent = t('aiTitleGenerating');
   try {
+    commitTextIfAny(); // flush any in-progress text so it appears in the screenshot
+    const image = aiImageDataUrl();
     const { title } = await generateTitle(
       {
         type: els.type.value,
         pageTitle: pending?.pageTitle,
         pageUrl: pending?.pageUrl,
         body: els.body.value,
+        images: image ? [image] : undefined,
       },
       { instructions: config.aiTitlePrompt || t('aiTitlePromptDefault') }
     );
@@ -616,6 +619,21 @@ function drawMosaic(op: Op): void {
 // ============================================================================
 function canvasToDataUrl(): string {
   return canvas.toDataURL('image/png');
+}
+
+/** A downscaled JPEG of the current canvas for sending to the AI as visual context. */
+function aiImageDataUrl(): string | undefined {
+  if (!canvas.width || !canvas.height) return undefined;
+  const max = 1536;
+  const scale = Math.min(1, max / Math.max(canvas.width, canvas.height));
+  if (scale >= 1) return canvas.toDataURL('image/jpeg', 0.85);
+  const off = document.createElement('canvas');
+  off.width = Math.round(canvas.width * scale);
+  off.height = Math.round(canvas.height * scale);
+  const octx = off.getContext('2d');
+  if (!octx) return canvas.toDataURL('image/jpeg', 0.85);
+  octx.drawImage(canvas, 0, 0, off.width, off.height);
+  return off.toDataURL('image/jpeg', 0.85);
 }
 
 els.download.addEventListener('click', () => {

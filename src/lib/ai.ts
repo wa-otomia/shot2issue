@@ -26,6 +26,10 @@ export const SCOPES = 'openid profile email offline_access';
 export const ORIGINATOR = 'codex_cli_rs';
 /** Subscription model calls go here (not api.openai.com, which needs an API key). */
 export const RESPONSES_URL = 'https://chatgpt.com/backend-api/codex/responses';
+/** Dynamic model list for Codex-with-ChatGPT (returns dotted slugs; no timestamps). */
+export const MODELS_URL = 'https://chatgpt.com/backend-api/codex/models';
+/** Sent as the client_version query param required by the models endpoint. */
+export const CODEX_CLIENT_VERSION = '0.105.0';
 /** Origins the assistant needs; requested as optional host permissions on a gesture. */
 export const AI_ORIGINS = ['https://auth.openai.com/*', 'https://chatgpt.com/*'];
 /**
@@ -36,9 +40,43 @@ export const AI_ORIGINS = ['https://auth.openai.com/*', 'https://chatgpt.com/*']
  */
 export const DEFAULT_MODELS = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'];
 
-/** Coerce a possibly-stale or web-form model slug to a valid Codex model. */
-export function normalizeModel(model?: string): string {
-  return model && DEFAULT_MODELS.includes(model) ? model : DEFAULT_MODELS[0];
+/**
+ * Release dates per model. The models endpoint carries no timestamps, so "added" dates come
+ * from this curated changelog map and are shown in the model dropdown.
+ */
+export const MODEL_DATES: Record<string, string> = {
+  'gpt-5.5': '2026-04-23',
+  'gpt-5.4-mini': '2026-03-17',
+  'gpt-5.4': '2026-03-05',
+  'gpt-5.3-codex-spark': '2026-02-12',
+};
+
+/** A plausible Codex model slug: dotted (e.g. gpt-5.5), not a dashed web slug (gpt-5-5). */
+export function isValidModelSlug(m: string): boolean {
+  return DEFAULT_MODELS.includes(m) || /^gpt-\d+\.\d/.test(m);
+}
+
+/** Coerce a model to one of `allowed` (defaults to the curated list). */
+export function normalizeModel(model?: string, allowed: string[] = DEFAULT_MODELS): string {
+  const list = allowed.length ? allowed : DEFAULT_MODELS;
+  return model && list.includes(model) ? model : list[0];
+}
+
+/** Parse the codex/models response into an ordered list of usable dotted slugs. */
+export function parseModelsResponse(body: string): string[] {
+  try {
+    const data = JSON.parse(body) as Record<string, unknown>;
+    const arr = (Array.isArray(data.models) ? data.models : Array.isArray(data.data) ? data.data : []) as Array<
+      Record<string, unknown>
+    >;
+    const items = arr.filter(
+      (m) => m && typeof m.slug === 'string' && (m.visibility === undefined || m.visibility === 'list')
+    );
+    items.sort((a, b) => ((a.priority as number) ?? 999) - ((b.priority as number) ?? 999));
+    return items.map((m) => m.slug as string).filter(isValidModelSlug);
+  } catch {
+    return [];
+  }
 }
 
 // ---- base64url + random ----------------------------------------------------
@@ -206,12 +244,17 @@ export function buildResponsesRequest(opts: {
   model: string;
   instructions: string;
   input: string;
+  images?: string[];
   stream?: boolean;
 }): Record<string, unknown> {
+  const content: Array<Record<string, unknown>> = [{ type: 'input_text', text: opts.input }];
+  for (const img of opts.images || []) {
+    if (img) content.push({ type: 'input_image', image_url: img, detail: 'auto' });
+  }
   return {
     model: opts.model,
     instructions: opts.instructions,
-    input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: opts.input }] }],
+    input: [{ type: 'message', role: 'user', content }],
     store: false,
     stream: opts.stream !== false,
   };
@@ -434,13 +477,21 @@ function authHeaders(auth: AiAuth): Record<string, string> {
 }
 
 /**
- * The list of Codex-account models. The consumer https://chatgpt.com/backend-api/models
- * endpoint returns dashed consumer slugs (e.g. "gpt-5-5") that the Codex responses endpoint
- * rejects with HTTP 400, so we return the curated dotted list. A dynamic Codex models
- * endpoint (with per-model timestamps) is being wired in a follow-up.
+ * Fetch the Codex-account model list from the codex/models endpoint (dotted slugs). Falls
+ * back to the curated list on any failure. Note: the consumer /backend-api/models endpoint
+ * returns dashed slugs (gpt-5-5) the responses endpoint rejects — this uses the codex one.
  */
-export async function fetchModels(_auth: AiAuth): Promise<string[]> {
-  return DEFAULT_MODELS.slice();
+export async function fetchModels(auth: AiAuth): Promise<string[]> {
+  try {
+    const res = await fetch(`${MODELS_URL}?client_version=${encodeURIComponent(CODEX_CLIENT_VERSION)}`, {
+      headers: { ...authHeaders(auth), Accept: 'application/json' },
+    });
+    if (!res.ok) return DEFAULT_MODELS.slice();
+    const slugs = parseModelsResponse(await res.text());
+    return slugs.length ? slugs : DEFAULT_MODELS.slice();
+  } catch {
+    return DEFAULT_MODELS.slice();
+  }
 }
 
 /**
@@ -448,33 +499,44 @@ export async function fetchModels(_auth: AiAuth): Promise<string[]> {
  * provides them, an updated quota snapshot. Refreshes the token first if needed.
  */
 export async function generateTitle(
-  content: { type?: string; pageTitle?: string; pageUrl?: string; body?: string },
+  content: { type?: string; pageTitle?: string; pageUrl?: string; body?: string; images?: string[] },
   opts?: { model?: string; instructions?: string }
 ): Promise<{ title: string; quota?: AiQuota; auth: AiAuth }> {
   let auth = await getAiAuth();
   if (!auth) throw new Error('Not connected. Sign in to the AI assistant in Settings.');
   auth = await ensureFreshAuth(auth);
-  const model = normalizeModel(opts?.model || auth.model);
-  // Self-heal a stale/invalid stored model or list (e.g. a web "gpt-5-5" slug) so the
-  // saved state and the request both use a valid Codex model.
-  const storedBad = normalizeModel(auth.model) !== auth.model || !auth.models || auth.models.some((m) => !DEFAULT_MODELS.includes(m));
-  if (storedBad) {
-    auth = { ...auth, model: normalizeModel(auth.model), models: DEFAULT_MODELS.slice() };
+  // Self-heal a stale/invalid stored model or list (e.g. legacy dashed "gpt-5-5" slugs) so
+  // the saved state and the request use a valid Codex model; keep a valid fetched list.
+  const sane = (auth.models || []).filter(isValidModelSlug);
+  const allowed = sane.length ? sane : DEFAULT_MODELS;
+  const model = normalizeModel(opts?.model || auth.model, allowed);
+  if (model !== auth.model || sane.length !== (auth.models?.length ?? 0)) {
+    auth = { ...auth, model, models: allowed.slice() };
     await setAiAuth(auth);
   }
   const { instructions, input } = buildTitlePrompt(content, opts?.instructions);
-  const res = await fetch(RESPONSES_URL, {
-    method: 'POST',
-    headers: { ...authHeaders(auth), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-    body: JSON.stringify(buildResponsesRequest({ model, instructions, input })),
-  });
-  const text = await res.text();
+  const images = (content.images || []).filter(Boolean);
+
+  const post = (withImages: boolean): Promise<Response> =>
+    fetch(RESPONSES_URL, {
+      method: 'POST',
+      headers: { ...authHeaders(auth), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      body: JSON.stringify(buildResponsesRequest({ model, instructions, input, images: withImages ? images : undefined })),
+    });
+
+  // Send the screenshot for visual context; if the backend rejects image input, retry text-only.
+  let res = await post(images.length > 0);
+  let text = await res.text();
+  if (!res.ok && images.length) {
+    res = await post(false);
+    text = await res.text();
+  }
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try {
       const j = JSON.parse(text) as Record<string, unknown>;
       const e = j.error as Record<string, unknown> | string | undefined;
-      msg = typeof e === 'string' ? e : ((e?.message as string) || msg);
+      msg = typeof e === 'string' ? e : ((e?.message as string) || (j.detail as string) || msg);
     } catch {
       /* keep status */
     }

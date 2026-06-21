@@ -260,6 +260,24 @@ try {
   check('options: AI selected model healed to default',
     (await options2.$eval('#aiModel', (el) => el.value)) === 'gpt-5.5');
 
+  // Refresh must make a REAL network request to the codex/models endpoint (not a no-op).
+  let modelsHit = false;
+  await options2.route('**/backend-api/codex/models*', async (route) => {
+    const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': 'GET,OPTIONS' };
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    modelsHit = true;
+    return route.fulfill({
+      status: 200,
+      headers: { ...cors, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ models: [{ slug: 'gpt-6.0', priority: 0, visibility: 'list' }, { slug: 'gpt-5.5', priority: 1, visibility: 'list' }] }),
+    });
+  });
+  await options2.click('#aiRefresh');
+  await options2.waitForTimeout(900);
+  check('options: Refresh fires a real models request (button is not fake)', modelsHit === true);
+  const refreshedModels = await options2.$$eval('#aiModel option', (opts) => opts.map((o) => o.value));
+  check('options: Refresh updates the dropdown from the fetched list', refreshedModels.includes('gpt-6.0'));
+
   const editor2 = await context.newPage();
   editor2.on('pageerror', (e) => pageErrors.push(String(e)));
   await editor2.goto(`chrome-extension://${extId}/editor.html`);
