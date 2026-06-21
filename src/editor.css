@@ -147,6 +147,7 @@ button.ghost {
   padding: 9px 14px; border-radius: 6px;
   background: Field; color: FieldText; border: 1px solid var(--border);
 }
+button.ghost:disabled { opacity: .5; cursor: not-allowed; color: var(--muted); }
 
 #status { margin-top: 14px; font-size: 13px; white-space: pre-wrap; }
 #status.info { color: var(--muted); }

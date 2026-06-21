@@ -133,9 +133,13 @@ try {
   check('editor: body prefilled from template',
     (await editor.$eval('#body', (el) => el.value)) === 'URL: https://example.com/x');
 
-  // The AI-title button is disabled until the assistant is connected.
-  check('editor: AI title button disabled when not connected',
-    (await editor.$eval('#aiTitle', (el) => el.disabled)) === true);
+  // The AI-title button is disabled AND visually greyed until the assistant is connected.
+  const aiBtnState = await editor.$eval('#aiTitle', (el) => ({
+    disabled: el.disabled,
+    opacity: parseFloat(getComputedStyle(el).opacity),
+  }));
+  check('editor: AI title button disabled + greyed when not connected',
+    aiBtnState.disabled === true && aiBtnState.opacity < 1);
 
   // Geometry of the (scaled-to-fit) canvas; click using fractions so points land on it.
   const box = await editor.$eval('#canvas', (c) => {
