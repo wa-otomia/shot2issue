@@ -11,6 +11,7 @@ import {
   accountInfoFromIdToken,
   parseQuotaHeaders,
   buildTitlePrompt,
+  buildResponsesRequest,
   cleanTitle,
   extractOutputText,
   normalizeModel,
@@ -80,6 +81,16 @@ check('quota: none -> undefined', parseQuotaHeaders(new Headers({ 'content-type'
 const prompt = buildTitlePrompt({ type: 'Bug', pageTitle: 'Dash', pageUrl: 'https://x/y', body: 'Save button overlaps footer' });
 check('prompt: instructions mention title', /title/i.test(prompt.instructions));
 check('prompt: input carries body + type', prompt.input.includes('Save button overlaps footer') && prompt.input.includes('Bug'));
+
+// --- responses request shape (Codex backend requires input to be a typed message list) ---
+const reqBody = buildResponsesRequest({ model: 'gpt-5.5', instructions: 'sys', input: 'hello world' });
+check('responses: input is a list', Array.isArray(reqBody.input));
+check('responses: input item is a typed user message',
+  reqBody.input[0].type === 'message' &&
+    reqBody.input[0].role === 'user' &&
+    reqBody.input[0].content[0].type === 'input_text' &&
+    reqBody.input[0].content[0].text === 'hello world');
+check('responses: carries model + instructions', reqBody.model === 'gpt-5.5' && reqBody.instructions === 'sys');
 
 // --- cleanTitle ---
 check('clean: strips quotes', cleanTitle('"Hello world"') === 'Hello world');

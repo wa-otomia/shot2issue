@@ -189,6 +189,26 @@ export function buildTitlePrompt(content: {
   return { instructions, input: lines.join('\n') || 'No description provided.' };
 }
 
+/**
+ * Build the Codex responses request body. The Codex backend requires `input` to be a LIST
+ * of typed message items (a plain string is rejected with 400 "Input must be a list"),
+ * unlike the standard Responses API which also accepts a string.
+ */
+export function buildResponsesRequest(opts: {
+  model: string;
+  instructions: string;
+  input: string;
+  stream?: boolean;
+}): Record<string, unknown> {
+  return {
+    model: opts.model,
+    instructions: opts.instructions,
+    input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: opts.input }] }],
+    store: false,
+    stream: opts.stream !== false,
+  };
+}
+
 /** Tidy a raw model response into a single-line title. */
 export function cleanTitle(text: string): string {
   let s = (text || '').trim().split('\n')[0].trim();
@@ -438,7 +458,7 @@ export async function generateTitle(
   const res = await fetch(RESPONSES_URL, {
     method: 'POST',
     headers: { ...authHeaders(auth), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-    body: JSON.stringify({ model, instructions, input, store: false, stream: true }),
+    body: JSON.stringify(buildResponsesRequest({ model, instructions, input })),
   });
   const text = await res.text();
   if (!res.ok) {
