@@ -4,8 +4,9 @@
 // API for both, so this path uses a permanent token directly instead of a web session.
 //
 // Endpoints (https://www.jetbrains.com/help/youtrack/devportal/):
-//   POST {base}/api/issues?fields=id,idReadable        body { project:{id}, summary, description }
+//   POST {base}/api/issues?fields=id,idReadable              body { project:{id}, summary, description }
 //   POST {base}/api/issues/{id}/attachments?fields=id,name   multipart field name "upload"
+//   POST {base}/api/issues/{id}?fields=id                   body { description }  (embed images)
 // Authentication: Authorization: Bearer perm:...
 
 import type { IssueResult } from "./types.js";
@@ -119,24 +120,20 @@ export async function createYouTrackIssue({
 }): Promise<IssueResult> {
   const projectId = await resolveProjectId(baseUrl, token, project);
 
-  // Embed each image by attachment file name; YouTrack markdown resolves them once the
-  // attachments are uploaded to the same issue below.
-  let description = body || "";
-  if (images.length) {
-    const md = images.map((img) => `![${img.filename}](${img.filename})`).join("\n\n");
-    description = (description ? description.replace(/\s+$/, "") + "\n\n" : "") + md;
-  }
-
+  // 1) Create the issue with the text body only. YouTrack can't create-and-attach in one call,
+  //    and a `![](name)` reference only resolves once the attachment exists — so the image
+  //    markdown is added afterwards (step 3), keyed off each attachment's real file URL.
   const createResp = await fetch(api(baseUrl, "/api/issues?fields=id,idReadable"), {
     method: "POST",
     headers: { ...authHeaders(token), "Content-Type": "application/json" },
-    body: JSON.stringify({ project: { id: projectId }, summary: title, description }),
+    body: JSON.stringify({ project: { id: projectId }, summary: title, description: body || "" }),
   });
   if (!createResp.ok) throw await toError(createResp, "Failed to create the YouTrack issue");
   const issue = (await createResp.json()) as YouTrackIssue;
   const idReadable = issue.idReadable || issue.id;
 
-  // Upload each attachment sequentially to the created issue.
+  // 2) Upload each attachment, capturing the name YouTrack actually stored it under.
+  const names: string[] = [];
   for (const img of images) {
     const fd = new FormData();
     fd.append("upload", dataUrlToBlob(img.dataUrl), img.filename); // documented multipart field name
@@ -146,6 +143,25 @@ export async function createYouTrackIssue({
     );
     if (!upResp.ok) {
       throw await toError(upResp, `Issue ${idReadable} created, but uploading a screenshot failed`);
+    }
+    const att = (await upResp.json()) as { name?: string };
+    names.push(att.name || img.filename); // YouTrack's stored name (handles any de-dup rename)
+  }
+
+  // 3) Now that every attachment EXISTS on the issue, embed each one inline by file name and
+  //    update the description. YouTrack only resolves `![](name)` for files already attached to
+  //    the issue, so referencing them in the create call (before upload) left all but the first
+  //    un-inlined. Writing the references after upload makes every screenshot render inline.
+  if (names.length) {
+    const md = names.map((n) => `![${n}](${n})`).join("\n\n");
+    const description = (body ? body.replace(/\s+$/, "") + "\n\n" : "") + md;
+    const updResp = await fetch(api(baseUrl, `/api/issues/${encodeURIComponent(issue.id)}?fields=id`), {
+      method: "POST",
+      headers: { ...authHeaders(token), "Content-Type": "application/json" },
+      body: JSON.stringify({ description }),
+    });
+    if (!updResp.ok) {
+      throw await toError(updResp, `Issue ${idReadable} created, but embedding the screenshots failed`);
     }
   }
 
