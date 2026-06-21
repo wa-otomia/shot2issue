@@ -278,7 +278,10 @@ export function buildResponsesRequest(opts: {
 /** Tidy a raw model response into a single-line title. */
 export function cleanTitle(text: string): string {
   let s = (text || '').trim().split('\n')[0].trim();
-  s = s.replace(/^["'“”‘’]+|["'“”‘’]+$/g, '').trim();
+  // Strip only a MATCHING pair of wrapping quotes (model-added) — never a quote that is part of
+  // the title text, e.g. don't turn `Crash clicking "Save"` into `Crash clicking "Save`.
+  const q = /["'“”‘’]/;
+  while (s.length >= 2 && q.test(s[0]) && q.test(s[s.length - 1])) s = s.slice(1, -1).trim();
   s = s.replace(/[。.!！?？,，;；:：]+$/g, '').trim();
   return s.slice(0, 120);
 }
@@ -769,8 +772,15 @@ export function parseComplaintOutput(text: string): { title: string; body: strin
  * parseable; a chunk that still won't parse (e.g. mid-escape) yields {} and is retried next delta.
  */
 export function partialComplaintFields(acc: string): { title?: string; body?: string } {
-  const s = acc.trim();
+  let s = acc.trim();
   if (!s.startsWith('{')) return {};
+  // Trim a dangling, incomplete escape so appending a closing quote can't corrupt it:
+  // an odd run of trailing backslashes means we're mid-escape, and a partial \uXXXX is unfinished.
+  let bs = 0;
+  while (bs < s.length && s[s.length - 1 - bs] === '\\') bs++;
+  if (bs % 2 === 1) s = s.slice(0, -1);
+  const u = /\\u[0-9a-fA-F]{0,3}$/.exec(s);
+  if (u) s = s.slice(0, -u[0].length);
   for (const suffix of ['', '"}', '}', '"}}', '""}']) {
     try {
       const o = JSON.parse(s + suffix) as { title?: unknown; body?: unknown };

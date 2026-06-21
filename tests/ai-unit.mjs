@@ -105,6 +105,7 @@ check('responses: carries model + instructions', reqBody.model === 'gpt-5.5' && 
 check('clean: strips quotes', cleanTitle('"Hello world"') === 'Hello world');
 check('clean: first line only', cleanTitle('Title line\nextra') === 'Title line');
 check('clean: trailing punctuation removed', cleanTitle('Fix the bug.') === 'Fix the bug');
+check('clean: keeps a quote that is part of the title', cleanTitle('Crash clicking "Save"') === 'Crash clicking "Save"');
 check('clean: length capped', cleanTitle('x'.repeat(200)).length === 120);
 
 // --- extractOutputText ---
@@ -164,6 +165,9 @@ check('partial: only the title so far (body not started)', (() => {
 check('partial: escapes/newlines decoded by JSON.parse',
   partialComplaintFields('{"title":"a","body":"line1\\nline2"}').body === 'line1\nline2');
 check('partial: nothing extractable yet → {}', JSON.stringify(partialComplaintFields('{"ti')) === '{}');
+check('partial: escaped quotes inside the value', partialComplaintFields('{"title":"a \\"b\\"","body":"x"}').title === 'a "b"');
+check('partial: \\u escapes decoded by JSON.parse', partialComplaintFields('{"title":"\\u4fdd\\u5b58","body":"y"}').title === '保存');
+check('partial: mid-escape backslash adds no phantom char', partialComplaintFields('{"title":"ab\\').title === 'ab');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
