@@ -21,6 +21,14 @@ export interface SubmitImage {
   filename: string;
 }
 
+/** Resolved account credentials passed to an account-based provider's submit(). */
+export interface ProviderAccount {
+  id: string;
+  kind: string;
+  baseUrl: string;
+  token: string;
+}
+
 /** Context passed to a provider's submit(). */
 export interface SubmitContext {
   title: string;
@@ -32,6 +40,12 @@ export interface SubmitContext {
   /** First image, kept for back-compat with single-image call sites. */
   dataUrl: string;
   filename: string;
+  /**
+   * Resolved Account for account-based providers (undefined for github). The caller also
+   * overlays the account's baseUrl/token onto the workspace before calling submit, so a
+   * provider can read either; this is the canonical source.
+   */
+  account?: ProviderAccount;
   t: TFunc;
   busy: (key: string) => void;
 }
@@ -40,7 +54,15 @@ export interface SubmitContext {
 export interface Provider {
   id: string;
   label: string;
+  /** Per-workspace fields rendered on the workspace card (e.g. GitHub owner/repo). */
   fields: ProviderField[];
+  /**
+   * Non-empty for account-based providers (youtrack, gitlab): credential fields rendered on
+   * the Account card (e.g. baseUrl/token). The workspace then only picks an account + project.
+   */
+  accountFields?: ProviderField[];
+  /** The per-workspace project field for account-based providers. */
+  projectField?: ProviderField;
   hintKey?: string;
   describe(ws: Workspace): string;
   validate(ws: Workspace): string | null;

@@ -6,13 +6,16 @@
 //   when the browser restarts) so large images are not kept on disk.
 // This module only reads and writes; it contains no network logic.
 
-import type { Config, Workspace, PendingShot, PendingShots, Attachment, AiAuth, AiPendingAuth } from './types.js';
+import type { Config, Workspace, Account, PendingShot, PendingShots, Attachment, AiAuth, AiPendingAuth } from './types.js';
 
 /** Default configuration, used on first install and to backfill missing fields. */
 const DEFAULT_CONFIG: Config = {
   // Each workspace is an issue target. kind 'github': { id, kind, name, owner, repo };
-  // kind 'youtrack': { id, kind, name, baseUrl, project, token }. Missing kind == 'github'.
+  // account-based kinds 'youtrack'/'gitlab': { id, kind, name, accountId, project } — the
+  // baseUrl/token live on the referenced Account. Missing kind == 'github'.
   workspaces: [],
+  // Reusable backend credentials (YouTrack/GitLab instances); shared by workspaces.
+  accounts: [],
   // Types shown in the editor's Type dropdown; used as the default title suffix.
   types: ['Change', 'Bug', 'Feature'],
   // UI language: 'en' | 'zh' | 'ja'. English is the default.
@@ -40,16 +43,63 @@ export function makeId(): string {
   return 'ws_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
 }
 
-/** Read the full configuration, backfilling any missing fields with defaults. */
+/** Generate a stable local account id. */
+export function makeAccountId(): string {
+  return 'acc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Idempotent, lossless migration of legacy inline-credential workspaces to shared Accounts.
+ * Pure (no I/O); runs inside getConfig on every read. Heuristic (provider-agnostic, no
+ * registry import to avoid a cycle): a workspace with non-empty baseUrl + token and NO
+ * accountId is legacy. For each, reuse or create an Account matching (kind, baseUrl, token),
+ * set the workspace's accountId, keep its project, and strip the inline baseUrl/token.
+ * GitHub workspaces (no baseUrl/token) are never touched.
+ */
+export function migrateAccounts(config: Config): Config {
+  const accounts: Account[] = Array.isArray(config.accounts) ? config.accounts.slice() : [];
+  const workspaces = (config.workspaces || []).map((w) => {
+    const baseUrl = (w.baseUrl || '').trim();
+    const token = (w.token || '').trim();
+    if (w.accountId || !baseUrl || !token) return w; // already migrated, or github
+    const kind = w.kind || 'youtrack';
+    let acct = accounts.find((a) => a.kind === kind && a.baseUrl === baseUrl && a.token === token);
+    if (!acct) {
+      acct = { id: makeAccountId(), kind, name: hostOf(baseUrl) || baseUrl || kind, baseUrl, token };
+      accounts.push(acct);
+    }
+    const { baseUrl: _b, token: _t, ...rest } = w; // drop the redundant inline creds
+    return { ...rest, accountId: acct.id } as Workspace;
+  });
+  return { ...config, accounts, workspaces };
+}
+
+/** Resolve a workspace's Account, or null (github / dangling accountId). */
+export function accountFor(config: Config, ws: Workspace): Account | null {
+  if (!ws.accountId) return null;
+  return config.accounts.find((a) => a.id === ws.accountId) || null;
+}
+
+/** Read the full configuration, backfilling any missing fields with defaults + migrating. */
 export async function getConfig(): Promise<Config> {
   const raw = await chrome.storage.local.get(CONFIG_KEY);
   const stored = (raw[CONFIG_KEY] ?? {}) as Partial<Config>;
-  return {
+  const merged: Config = {
     ...DEFAULT_CONFIG,
     ...stored,
     workspaces: Array.isArray(stored.workspaces) ? (stored.workspaces as Workspace[]) : [],
+    accounts: Array.isArray(stored.accounts) ? (stored.accounts as Account[]) : [],
     types: Array.isArray(stored.types) && stored.types.length ? stored.types : DEFAULT_CONFIG.types.slice(),
   };
+  return migrateAccounts(merged);
 }
 
 /** Persist the full configuration. */
@@ -63,6 +113,17 @@ export async function patchConfig(patch: Partial<Config>): Promise<Config> {
   const next = { ...config, ...patch };
   await setConfig(next);
   return next;
+}
+
+// The active Settings tab is UI-only and lives under its own key so it never appears in
+// configuration exports.
+const OPTIONS_TAB_KEY = 'optionsTab';
+export async function getOptionsTab(): Promise<string> {
+  const raw = await chrome.storage.local.get(OPTIONS_TAB_KEY);
+  return (raw[OPTIONS_TAB_KEY] as string) || 'workspaces';
+}
+export async function setOptionsTab(tab: string): Promise<void> {
+  await chrome.storage.local.set({ [OPTIONS_TAB_KEY]: tab });
 }
 
 /** Remember the current selection (called when the editor changes workspace/type). */

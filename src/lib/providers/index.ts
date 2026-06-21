@@ -8,11 +8,12 @@
 import type { Provider } from './types.js';
 import { githubProvider } from './github.js';
 import { youtrackProvider } from './youtrack.js';
+import { gitlabProvider } from './gitlab.js';
 
 export type { Provider } from './types.js';
 
 /** Registered providers, in the order shown in the target selector. */
-export const PROVIDER_LIST: Provider[] = [githubProvider, youtrackProvider];
+export const PROVIDER_LIST: Provider[] = [githubProvider, youtrackProvider, gitlabProvider];
 
 const BY_ID: Record<string, Provider> = Object.fromEntries(PROVIDER_LIST.map((p) => [p.id, p]));
 
@@ -20,3 +21,11 @@ const BY_ID: Record<string, Provider> = Object.fromEntries(PROVIDER_LIST.map((p)
 export function getProvider(kind: string): Provider {
   return BY_ID[kind] || PROVIDER_LIST[0];
 }
+
+/** True for providers whose credentials live on an Account (youtrack, gitlab). */
+export function isAccountBased(p: Provider): boolean {
+  return !!(p.accountFields && p.accountFields.length);
+}
+
+/** Provider ids that use accounts — used to filter the Account-kind dropdown. */
+export const accountKinds: string[] = PROVIDER_LIST.filter(isAccountBased).map((p) => p.id);

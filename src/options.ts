@@ -5,9 +5,21 @@
 // An in-memory draft is edited on the page and written to storage only on Save (the
 // language change applies immediately so the UI re-localizes as you pick it).
 
-import { getConfig, setConfig, makeId, getAiAuth, setAiAuth, patchAiAuth, clearAiAuth } from './lib/storage.js';
+import {
+  getConfig,
+  setConfig,
+  makeId,
+  makeAccountId,
+  migrateAccounts,
+  getOptionsTab,
+  setOptionsTab,
+  getAiAuth,
+  setAiAuth,
+  patchAiAuth,
+  clearAiAuth,
+} from './lib/storage.js';
 import { setLanguage, localizeDom, t, SUPPORTED_LANGS } from './lib/i18n.js';
-import { PROVIDER_LIST, getProvider } from './lib/providers/index.js';
+import { PROVIDER_LIST, getProvider, isAccountBased, accountKinds } from './lib/providers/index.js';
 import {
   connectAuto,
   beginManualAuth,
@@ -19,10 +31,13 @@ import {
   MODEL_DATES,
   DEFAULT_MODELS,
 } from './lib/ai.js';
-import type { Config, Workspace, AiAuth, AiQuota } from './lib/types.js';
+import type { Config, Workspace, Account, AiAuth, AiQuota } from './lib/types.js';
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement;
 const els = {
+  tabBar: $('tabBar'),
+  accounts: $('accounts'),
+  addAccount: $('addAccount'),
   workspaces: $('workspaces'),
   addWorkspace: $('addWorkspace'),
   typeChips: $('typeChips'),
@@ -74,6 +89,93 @@ function escapeAttr(s: string): string {
   return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
+// ---- Tabs ----
+function showTab(name: string): void {
+  els.tabBar.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', (b as HTMLElement).dataset.tab === name));
+  document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('active', (p as HTMLElement).dataset.panel === name));
+  void setOptionsTab(name);
+}
+els.tabBar.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest('.tab') as HTMLElement | null;
+  if (btn && btn.dataset.tab) showTab(btn.dataset.tab);
+});
+
+/** Overlay the bound Account's baseUrl/token for account-based workspaces (for validation). */
+function mergeWs(w: Workspace): Workspace {
+  const acct = w.accountId ? draft.accounts.find((a) => a.id === w.accountId) : null;
+  return acct ? { ...w, baseUrl: acct.baseUrl, token: acct.token } : w;
+}
+
+// ---- Accounts ----
+function fieldInputsHtml(fields: { key: string; labelKey: string; type?: string; placeholder?: string; placeholderKey?: string; full?: boolean }[]): string {
+  return fields
+    .map((f) => {
+      const ph = f.placeholderKey ? t(f.placeholderKey) : f.placeholder || '';
+      const type = f.type === 'password' ? 'password' : 'text';
+      return `<div class="${f.full ? 'full' : ''}"><label>${t(f.labelKey)}</label><input type="${type}" data-k="${escapeAttr(f.key)}" placeholder="${escapeAttr(ph)}" /></div>`;
+    })
+    .join('');
+}
+
+function renderAccounts(): void {
+  els.accounts.innerHTML = '';
+  if (!draft.accounts.length) {
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = t('noAccounts');
+    els.accounts.appendChild(p);
+  }
+  draft.accounts.forEach((acct, idx) => {
+    const provider = getProvider(acct.kind);
+    const card = document.createElement('div');
+    card.className = 'acct-card';
+    const kindOptions = accountKinds
+      .map((k) => `<option value="${escapeAttr(k)}">${escapeAttr(getProvider(k).label)}</option>`)
+      .join('');
+    card.innerHTML = `
+      <div class="acct-grid">
+        <div class="full"><label>${t('accountName')}</label><input type="text" data-k="name" placeholder="${escapeAttr(t('accountNamePlaceholder'))}" /></div>
+        <div class="full"><label>${t('accountKind')}</label><select data-k="kind" style="max-width:200px;">${kindOptions}</select></div>
+        ${fieldInputsHtml(provider.accountFields || [])}
+      </div>
+      <div class="row" style="margin-top:10px;"><button class="danger" data-act="remove">${t('accountRemove')}</button></div>`;
+
+    const rec = acct as unknown as Record<string, string>;
+    (card.querySelector('[data-k="name"]') as HTMLInputElement).value = acct.name || '';
+    (card.querySelector('[data-k="kind"]') as HTMLSelectElement).value = acct.kind;
+    for (const f of provider.accountFields || []) {
+      const input = card.querySelector(`[data-k="${f.key}"]`) as HTMLInputElement | null;
+      if (input) input.value = rec[f.key] || '';
+    }
+    card.querySelectorAll('[data-k]').forEach((node) => {
+      const input = node as HTMLInputElement | HTMLSelectElement;
+      const k = input.dataset.k as string;
+      if (k === 'kind') {
+        input.addEventListener('change', () => {
+          draft.accounts[idx].kind = input.value;
+          renderAccounts();
+          renderWorkspaces(); // account-kind change affects which accounts a workspace can pick
+        });
+      } else {
+        input.addEventListener('input', () => {
+          (draft.accounts[idx] as unknown as Record<string, string>)[k] = input.value;
+        });
+      }
+    });
+    (card.querySelector('[data-act="remove"]') as HTMLButtonElement).addEventListener('click', () => {
+      draft.accounts.splice(idx, 1);
+      renderAccounts();
+      renderWorkspaces();
+    });
+    els.accounts.appendChild(card);
+  });
+}
+
+els.addAccount.addEventListener('click', () => {
+  draft.accounts.push({ id: makeAccountId(), kind: accountKinds[0] || 'youtrack', name: '', baseUrl: '', token: '' });
+  renderAccounts();
+});
+
 // ---- Workspaces ----
 function renderWorkspaces(): void {
   els.workspaces.innerHTML = '';
@@ -93,17 +195,21 @@ function renderWorkspaces(): void {
       (p) => `<option value="${escapeAttr(p.id)}">${escapeAttr(p.label)}</option>`
     ).join('');
 
-    const fieldHtml = provider.fields
-      .map((f) => {
-        const ph = f.placeholderKey ? t(f.placeholderKey) : f.placeholder || '';
-        const type = f.type === 'password' ? 'password' : 'text';
-        return `
-        <div class="${f.full ? 'full' : ''}">
-          <label>${t(f.labelKey)}</label>
-          <input type="${type}" data-k="${escapeAttr(f.key)}" placeholder="${escapeAttr(ph)}" />
-        </div>`;
-      })
-      .join('');
+    let fieldHtml: string;
+    if (isAccountBased(provider)) {
+      // Account picker (filtered to this kind) + the project field.
+      const accts = draft.accounts.filter((a) => a.kind === provider.id);
+      const acctOptions =
+        `<option value="">${escapeAttr(t('accountNone'))}</option>` +
+        accts.map((a) => `<option value="${escapeAttr(a.id)}">${escapeAttr(a.name || a.baseUrl || a.id)}</option>`).join('');
+      const pf = provider.projectField as { key: string; labelKey: string; placeholder?: string; placeholderKey?: string };
+      const pph = pf.placeholderKey ? t(pf.placeholderKey) : pf.placeholder || '';
+      fieldHtml = `
+        <div class="full"><label>${t('wsAccount')}</label><select data-k="accountId">${acctOptions}</select></div>
+        <div class="full"><label>${t(pf.labelKey)}</label><input type="text" data-k="${escapeAttr(pf.key)}" placeholder="${escapeAttr(pph)}" /></div>`;
+    } else {
+      fieldHtml = fieldInputsHtml(provider.fields);
+    }
 
     const hintHtml = provider.hintKey
       ? `<div class="full"><p class="hint" style="margin:4px 0 0;">${t(provider.hintKey)}</p></div>`
@@ -129,24 +235,27 @@ function renderWorkspaces(): void {
 
     (card.querySelector('[data-k="name"]') as HTMLInputElement).value = ws.name || '';
     (card.querySelector('[data-k="kind"]') as HTMLSelectElement).value = kind;
-    for (const f of provider.fields) {
-      const input = card.querySelector(`[data-k="${f.key}"]`) as HTMLInputElement | null;
-      if (input) input.value = ws[f.key] || '';
-    }
-
     card.querySelectorAll('[data-k]').forEach((node) => {
       const input = node as HTMLInputElement | HTMLSelectElement;
       const k = input.dataset.k as string;
-      if (k === 'kind') {
-        input.addEventListener('change', () => {
-          draft.workspaces[idx].kind = input.value;
-          renderWorkspaces(); // swap to the fields for the chosen target
-        });
-      } else {
-        input.addEventListener('input', () => {
-          draft.workspaces[idx][k] = input.value.trim();
-        });
+      if (k === 'name' || k === 'kind') {
+        if (k === 'kind') {
+          input.addEventListener('change', () => {
+            draft.workspaces[idx].kind = input.value;
+            renderWorkspaces(); // swap to the fields for the chosen target
+          });
+        } else {
+          input.addEventListener('input', () => {
+            draft.workspaces[idx].name = input.value;
+          });
+        }
+        return;
       }
+      input.value = ws[k] || ''; // accountId, project, owner, repo
+      const evt = input.tagName === 'SELECT' ? 'change' : 'input';
+      input.addEventListener(evt, () => {
+        draft.workspaces[idx][k] = input.value.trim();
+      });
     });
     (card.querySelector('[data-act="remove"]') as HTMLButtonElement).addEventListener('click', () => {
       draft.workspaces.splice(idx, 1);
@@ -202,6 +311,7 @@ els.lang.addEventListener('change', () => {
   draft.lang = SUPPORTED_LANGS.includes(els.lang.value) ? els.lang.value : 'en';
   setLanguage(draft.lang);
   localizeDom(document);
+  renderAccounts();
   renderWorkspaces(); // re-render dynamically built content in the new language
   renderTypes();
   void renderAi();
@@ -386,21 +496,41 @@ els.configureShortcut.addEventListener('click', () => {
 
 // ---- Save ----
 els.save.addEventListener('click', async () => {
-  // Normalize each workspace to only the fields relevant to its provider.
-  draft.workspaces = draft.workspaces.map((w) => {
-    const provider = getProvider(wsKind(w));
-    return { id: w.id || makeId(), kind: provider.id, name: (w.name || '').trim(), ...provider.normalize(w) };
-  });
+  // 1) Normalize + validate accounts first.
+  draft.accounts = draft.accounts.map((a) => ({
+    id: a.id || makeAccountId(),
+    kind: a.kind,
+    name: (a.name || '').trim(),
+    baseUrl: (a.baseUrl || '').trim().replace(/\/+$/, ''),
+    token: (a.token || '').trim(),
+  }));
+  for (const a of draft.accounts) {
+    if (!a.name || !a.baseUrl || !a.token) {
+      showTab('accounts');
+      status(t('errAccountIncomplete'), 'error');
+      return;
+    }
+  }
 
-  // Validate per provider.
+  // 2) Normalize workspaces to the fields relevant to their provider (explicit loop).
+  const normalized: Workspace[] = [];
   for (const w of draft.workspaces) {
-    const errKey = getProvider(w.kind).validate(w);
+    const provider = getProvider(wsKind(w));
+    normalized.push({ id: w.id || makeId(), kind: provider.id, name: (w.name || '').trim(), ...provider.normalize(w) });
+  }
+  draft.workspaces = normalized;
+
+  // 3) Validate each workspace against the merged (account creds overlaid) shape.
+  for (const w of draft.workspaces) {
+    const errKey = getProvider(w.kind).validate(mergeWs(w));
     if (errKey) {
+      showTab('workspaces');
       status(t(errKey), 'error');
       return;
     }
   }
   if (!draft.types.length) {
+    showTab('workspaces');
     status(t('errKeepOneType'), 'error');
     return;
   }
@@ -412,7 +542,7 @@ els.save.addEventListener('click', async () => {
 
   // Request host permission for any provider that needs it (this click is the gesture).
   const origins: string[] = [];
-  for (const w of draft.workspaces) origins.push(...getProvider(w.kind).permissionOrigins(w));
+  for (const w of draft.workspaces) origins.push(...getProvider(w.kind).permissionOrigins(mergeWs(w)));
   if (origins.length) {
     try {
       await chrome.permissions.request({ origins: [...new Set(origins)] });
@@ -422,6 +552,7 @@ els.save.addEventListener('click', async () => {
   }
 
   await setConfig(draft);
+  renderAccounts();
   renderWorkspaces(); // reflect normalized data
   status(t('saved'), 'ok');
   setTimeout(() => status(''), 2000);
@@ -447,11 +578,16 @@ els.importFile.addEventListener('change', async () => {
   try {
     const obj = JSON.parse(await file.text()) as Partial<Config>;
     if (typeof obj !== 'object' || obj === null) throw new Error(t('importInvalid'));
-    draft = {
-      workspaces: (Array.isArray(obj.workspaces) ? obj.workspaces : []).map((w) => {
-        const kind = getProvider(w.kind || 'github').id;
-        return { id: w.id || makeId(), kind, name: w.name || '', ...getProvider(kind).normalize(w) };
-      }),
+    // Preserve all workspace fields (accountId/project/owner/repo, and any legacy inline
+    // baseUrl/token) so migrateAccounts can convert old backups losslessly.
+    const imported: Config = {
+      workspaces: (Array.isArray(obj.workspaces) ? obj.workspaces : []).map((w) => ({
+        ...w,
+        id: w.id || makeId(),
+        kind: getProvider(w.kind || 'github').id,
+        name: w.name || '',
+      })),
+      accounts: Array.isArray(obj.accounts) ? (obj.accounts as Account[]) : [],
       types: Array.isArray(obj.types) && obj.types.length ? obj.types : draft.types,
       lang: typeof obj.lang === 'string' && SUPPORTED_LANGS.includes(obj.lang) ? obj.lang : draft.lang,
       titleTemplate: typeof obj.titleTemplate === 'string' ? obj.titleTemplate : draft.titleTemplate,
@@ -463,9 +599,11 @@ els.importFile.addEventListener('change', async () => {
       lastWorkspaceId: typeof obj.lastWorkspaceId === 'string' ? obj.lastWorkspaceId : '',
       lastType: typeof obj.lastType === 'string' ? obj.lastType : '',
     };
+    draft = migrateAccounts(imported); // convert any legacy inline-cred workspaces to accounts
     applyDraftToControls();
     setLanguage(draft.lang);
     localizeDom(document);
+    renderAccounts();
     renderWorkspaces();
     renderTypes();
     await setConfig(draft);
@@ -493,9 +631,11 @@ async function init(): Promise<void> {
   setLanguage(draft.lang);
   localizeDom(document);
   applyDraftToControls();
+  renderAccounts();
   renderWorkspaces();
   renderTypes();
   void renderAi();
+  showTab(await getOptionsTab());
 }
 
 void init();

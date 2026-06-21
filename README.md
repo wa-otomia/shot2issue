@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md) | [日本語](README.ja.md)
 
-A Chrome extension (Manifest V3) for filing GitHub or YouTrack issues from a screenshot.
+A Chrome extension (Manifest V3) for filing GitHub, GitLab, or YouTrack issues from a screenshot.
 Click the toolbar icon to capture the current tab, annotate the image, write a title and
 description, and submit. The screenshot is attached to the issue and rendered inline.
 
@@ -25,7 +25,7 @@ Editor — annotate the screenshot and submit:
 
 ![Editor](docs/screenshots/editor.png)
 
-Settings — configure GitHub and YouTrack workspaces:
+Settings — accounts and workspaces, organized into tabs:
 
 ![Settings](docs/screenshots/options.png)
 
@@ -50,7 +50,8 @@ AI assistant — sign in with a ChatGPT subscription to generate titles:
   generate an issue title from the description, and view the available models and usage.
 - Smart dictation: type a description or dictate it (dictation is transcribed with your
   subscription); the AI writes the issue title and body from it and the screenshots.
-- Multiple workspaces, each targeting a GitHub repository or a YouTrack project.
+- Multiple workspaces, each targeting a GitHub repository, a GitLab project, or a YouTrack
+  project. YouTrack/GitLab credentials live on reusable **Accounts** that workspaces share.
 - GitHub submission runs in a background tab without stealing focus; the editor can
   optionally close and return you to the page you captured.
 - Optional keyboard shortcut to capture the current tab (off by default).
@@ -101,12 +102,19 @@ manually, or **Submit without screenshot** to file the issue without the image.
 ## Configuration
 
 Open the options page from `chrome://extensions` (Details → Extension options) or from
-the **Settings** link in the editor.
+the **Settings** link in the editor. Settings are organized into tabs: **Workspaces**,
+**Accounts**, **AI**, and **General**.
 
+- **Accounts** — reusable credentials for a YouTrack or GitLab instance: a display name,
+  base URL, and a token (YouTrack permanent token, or a GitLab personal access token with
+  the `api` scope). Multiple workspaces on the same instance share one account. GitHub
+  needs no account (it uses your github.com web session). Accounts are stored locally and
+  included in settings backups.
 - **Workspaces** — each workspace is one issue target. For GitHub: a display name, owner
-  (user or organization), and repository name. For YouTrack: a display name, base URL,
-  project (short name or id), and a permanent token (created in YouTrack → Profile →
-  Account Security → Tokens). Tokens are stored locally in this browser.
+  (user or organization), and repository name. For YouTrack/GitLab: a display name, an
+  account (picked from the Accounts tab), and the project (YouTrack short name/id, or
+  GitLab numeric id or `group/project` path). Legacy YouTrack workspaces that stored their
+  credentials inline are migrated to an account automatically.
 - **Types** — shown in the editor's Type dropdown and used in the default title.
   Defaults: Change, Bug, Feature.
 - **Language** — English, Simplified Chinese, or Japanese.
@@ -163,6 +171,16 @@ path uses the API directly with your permanent token: the extension creates the 
 (`POST /api/issues`), then uploads the screenshot (`POST /api/issues/{id}/attachments`)
 and embeds it inline by file name. The first submission to a given instance prompts for
 permission to access that origin, since instance URLs are not known in advance.
+
+### GitLab
+
+GitLab also has a documented REST API. Using the account's personal access token
+(`PRIVATE-TOKEN` header, `api` scope), the extension uploads each screenshot to the project
+(`POST /api/v4/projects/:id/uploads`), then creates the issue
+(`POST /api/v4/projects/:id/issues`) with the returned markdown embedded in the description.
+The project is the numeric id or the URL-encoded `group/project` path; self-hosted instances
+work via the account's base URL. The first submission to an instance prompts for permission
+to access that origin.
 
 ## AI assistant
 

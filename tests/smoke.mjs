@@ -81,11 +81,25 @@ try {
     ]);
   }, dataUrl);
 
-  // --- Options page: provider field switching + i18n ---
+  // --- Options page: tabs, accounts (incl. migration), provider switching, i18n ---
   const options = await context.newPage();
   options.on('pageerror', (e) => pageErrors.push(String(e)));
   await options.goto(`chrome-extension://${extId}/options.html`);
-  // One workspace is seeded, so operate on the LAST card (the one we add here).
+  await options.waitForSelector('#tabBar');
+
+  // Accounts tab: the seeded inline-YouTrack workspace was migrated to an Account.
+  await options.click('[data-tab="accounts"]');
+  await options.waitForSelector('.acct-card [data-k="baseUrl"]');
+  check('options: legacy YouTrack workspace migrated to an account',
+    (await options.$eval('.acct-card [data-k="baseUrl"]', (el) => el.value)) === 'https://example.youtrack.cloud' &&
+      (await options.$eval('.acct-card [data-k="token"]', (el) => el.value)) === 'perm:xxx');
+  await options.click('#addAccount');
+  check('options: accounts hold the credential fields (baseUrl + token)',
+    (await options.$$eval('.acct-card [data-k="baseUrl"]', (els) => els.length)) >= 2 &&
+      (await options.$$eval('.acct-card [data-k="token"]', (els) => els.length)) >= 2);
+
+  // Workspaces tab: GitHub card (owner/repo); account-based card shows account + project.
+  await options.click('[data-tab="workspaces"]');
   await options.click('#addWorkspace');
   const card = '.ws-card:last-of-type';
   await options.waitForSelector(`${card} [data-k="owner"]`);
@@ -93,25 +107,28 @@ try {
     (await options.$(`${card} [data-k="owner"]`)) && (await options.$(`${card} [data-k="repo"]`)));
 
   await options.selectOption(`${card} [data-k="kind"]`, 'youtrack');
-  await options.waitForSelector(`${card} [data-k="baseUrl"]`);
-  check('options: switching to YouTrack shows baseUrl/project/token',
-    (await options.$(`${card} [data-k="baseUrl"]`)) &&
+  await options.waitForSelector(`${card} [data-k="accountId"]`);
+  check('options: account-based workspace shows account + project, no inline token',
+    (await options.$(`${card} [data-k="accountId"]`)) &&
       (await options.$(`${card} [data-k="project"]`)) &&
-      (await options.$(`${card} [data-k="token"]`)));
+      !(await options.$(`${card} [data-k="token"]`)) &&
+      !(await options.$(`${card} [data-k="baseUrl"]`)));
   check('options: GitHub fields removed after switch', !(await options.$(`${card} [data-k="owner"]`)));
+  const targets = await options.$$eval(`${card} [data-k="kind"] option`, (opts) => opts.map((o) => o.value));
+  check('options: GitLab is available as a workspace target', targets.includes('gitlab'));
 
-  // i18n: switch to Chinese, a known heading should localize.
+  // General tab: i18n + templates.
+  await options.click('[data-tab="general"]');
   await options.selectOption('#lang', 'zh');
   await options.waitForFunction(() =>
     (document.querySelector('[data-i18n="workspacesHeading"]')?.textContent || '').includes('工作空间'));
   check('options: language switch localizes headings to Chinese', true);
-
-  // The default-title/body templates are configurable and reflect the saved config.
   check('options: title/body template fields reflect config',
     (await options.$eval('#titleTemplate', (el) => el.value)) === '[{type}] {pageTitle}' &&
       (await options.$eval('#bodyTemplate', (el) => el.value)) === 'URL: {pageUrl}');
 
-  // AI assistant: with no credentials, the disconnected view (Sign in) is shown.
+  // AI tab.
+  await options.click('[data-tab="ai"]');
   check('options: AI shows disconnected view by default',
     (await options.$eval('#aiConnectedBox', (el) => el.classList.contains('hidden'))) === true &&
       (await options.$eval('#aiConnect', (el) => el.offsetParent !== null)) === true);
@@ -281,6 +298,8 @@ try {
   const options2 = await context.newPage();
   options2.on('pageerror', (e) => pageErrors.push(String(e)));
   await options2.goto(`chrome-extension://${extId}/options.html`);
+  await options2.waitForSelector('#tabBar');
+  await options2.click('[data-tab="ai"]'); // AI controls live in the AI panel
   await options2.waitForFunction(() => {
     const box = document.getElementById('aiConnectedBox');
     return box && !box.classList.contains('hidden');

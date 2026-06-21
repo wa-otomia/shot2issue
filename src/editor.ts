@@ -13,6 +13,7 @@ import {
   rememberSelection,
   getAiAuth,
   patchAiAuth,
+  accountFor,
 } from './lib/storage.js';
 import { setLanguage, localizeDom, t } from './lib/i18n.js';
 import { getProvider } from './lib/providers/index.js';
@@ -481,12 +482,19 @@ els.workspace.addEventListener('change', () => {
   void refreshLoginHint();
 });
 
+/** Overlay the bound Account's baseUrl/token for account-based workspaces. */
+function mergedWorkspace(ws: Workspace): Workspace {
+  const acct = accountFor(config, ws);
+  return acct ? { ...ws, baseUrl: acct.baseUrl, token: acct.token } : ws;
+}
+
 async function refreshLoginHint(): Promise<void> {
-  const ws = selectedWorkspace();
-  if (!ws) {
+  const raw = selectedWorkspace();
+  if (!raw) {
     els.loginState.textContent = '';
     return;
   }
+  const ws = mergedWorkspace(raw);
   try {
     const { text, ok } = await getProvider(wsKind(ws)).hint(ws, t);
     els.loginState.textContent = text;
@@ -1005,10 +1013,11 @@ function selectedWorkspace(): Workspace | null {
   return config.workspaces.find((w) => w.id === els.workspace.value) || null;
 }
 
-/** Validate preconditions. Returns { ws } or throws. */
+/** Validate preconditions. Returns the merged { ws } (account creds overlaid) or throws. */
 function preflight(): { ws: Workspace } {
-  const ws = selectedWorkspace();
-  if (!ws) throw new Error(t('errSelectWorkspace'));
+  const raw = selectedWorkspace();
+  if (!raw) throw new Error(t('errSelectWorkspace'));
+  const ws = mergedWorkspace(raw);
   const errKey = getProvider(wsKind(ws)).validate(ws);
   if (errKey) throw new Error(t(errKey));
   if (!els.title.value.trim()) throw new Error(t('errTitleEmpty'));
@@ -1043,6 +1052,7 @@ async function submit({ withImage }: { withImage: boolean }): Promise<void> {
   disableSubmit(true);
   try {
     const images = withImage ? await buildSubmitImages() : [];
+    const acct = accountFor(config, ws);
     const issue: IssueResult = await getProvider(wsKind(ws)).submit(ws, {
       title: els.title.value.trim(),
       body: els.body.value,
@@ -1050,6 +1060,7 @@ async function submit({ withImage }: { withImage: boolean }): Promise<void> {
       withImage: withImage && images.length > 0,
       dataUrl: images[0]?.dataUrl || '',
       filename: images[0]?.filename || `shot-${Date.now()}.png`,
+      account: acct ? { id: acct.id, kind: acct.kind, baseUrl: acct.baseUrl, token: acct.token } : undefined,
       t,
       busy: (key: string) => setStatusBusy(t(key)),
     });

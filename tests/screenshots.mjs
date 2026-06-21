@@ -110,16 +110,19 @@ try {
   await editor.screenshot({ path: resolve(outDir, 'editor.png') });
   console.log('wrote docs/screenshots/editor.png');
 
-  // --- Options: show workspaces (GitHub + YouTrack) ---
+  // --- Options: show the Workspaces tab (GitHub + YouTrack) ---
   const options = await context.newPage();
   await options.setViewportSize({ width: 1280, height: 980 });
   await options.goto(`chrome-extension://${extId}/options.html`);
+  await options.waitForSelector('#tabBar');
+  await options.click('[data-tab="workspaces"]');
   await options.waitForSelector('.ws-card');
   await options.waitForTimeout(300);
   await options.screenshot({ path: resolve(outDir, 'options.png') });
   console.log('wrote docs/screenshots/options.png');
 
   // --- AI assistant settings section (connected view) ---
+  await options.click('[data-tab="ai"]'); // the AI panel must be visible to crop it
   const aiHead = options.locator('h2[data-i18n="aiHeading"]');
   await aiHead.scrollIntoViewIfNeeded();
   await options.waitForTimeout(200);

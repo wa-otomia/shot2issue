@@ -1,18 +1,41 @@
 // Shared data types.
 
+/** Provider id of an account-credentialed backend ('youtrack' | 'gitlab' | …). */
+export type AccountKind = string;
+
+/**
+ * A reusable set of credentials for one backend instance. Multiple workspaces (different
+ * projects on the same instance) share one Account. Stored at the top level of Config and
+ * included in settings exports; account-based workspaces reference it by `accountId`.
+ */
+export interface Account {
+  id: string;
+  /** Provider id this account authenticates ('youtrack' | 'gitlab'). */
+  kind: AccountKind;
+  /** User-facing label (defaults to the host of baseUrl). */
+  name: string;
+  baseUrl: string;
+  token: string;
+}
+
 /** A configured issue target. All fields are strings; backend-specific fields vary by kind. */
 export interface Workspace {
   id: string;
-  /** Provider id ('github', 'youtrack', …); a missing value is treated as 'github'. */
+  /** Provider id ('github', 'youtrack', 'gitlab'); a missing value is treated as 'github'. */
   kind: string;
   name: string;
-  /** Backend-specific fields (owner/repo, or baseUrl/project/token). */
+  /**
+   * Account-based providers (youtrack, gitlab) store `accountId` + `project` here; the
+   * baseUrl/token live on the Account, not inline. GitHub stores `owner` + `repo`.
+   */
   [key: string]: string;
 }
 
 /** Persisted configuration (chrome.storage.local). */
 export interface Config {
   workspaces: Workspace[];
+  /** Shared backend credentials referenced by account-based workspaces. */
+  accounts: Account[];
   types: string[];
   lang: string;
   /** Default issue title template; placeholders {pageTitle}, {pageUrl}, {type}. */

@@ -2,7 +2,7 @@
 
 [English](README.md) | **简体中文** | [日本語](README.ja.md)
 
-一个用于从截图创建 GitHub 或 YouTrack issue 的 Chrome 扩展（Manifest V3）。点击工具栏图标即可
+一个用于从截图创建 GitHub、GitLab 或 YouTrack issue 的 Chrome 扩展（Manifest V3）。点击工具栏图标即可
 截取当前标签页，对截图进行标注、填写标题和描述并提交。截图会附加到 issue 并内联显示。
 
 本扩展使用 TypeScript 编写，为纯客户端实现，不与任何第三方服务器通信。提交到 GitHub 无需任何
@@ -23,7 +23,7 @@ Personal Access Token——复用你当前的 github.com 浏览器会话；提�
 
 ![编辑页](docs/screenshots/editor.png)
 
-设置页 —— 配置 GitHub 与 YouTrack 工作空间：
+设置页 —— 账号与工作空间，分标签整理：
 
 ![设置页](docs/screenshots/options.png)
 
@@ -40,7 +40,7 @@ AI 助手 —— 使用 ChatGPT 订阅账号登录以生成标题：
 - 可预配置默认标题与正文模板（占位符 {pageTitle}、{pageUrl}、{type}）。
 - 可选的 AI 助手：使用 OpenAI Codex / ChatGPT 订阅账号登录，即可从描述生成 issue 标题，并查看可用模型及用量。
 - 智能口述：打字或口述描述（口述会用你的订阅转写），AI 再据此结合截图撰写 issue 的标题与正文。
-- 支持多个工作空间，每个工作空间对应一个 GitHub 仓库或一个 YouTrack 项目。
+- 支持多个工作空间，每个工作空间对应一个 GitHub 仓库、GitLab 项目或 YouTrack 项目。YouTrack / GitLab 的凭证放在可复用的**账号**里、由工作空间共享。
 - 提交到 GitHub 在后台标签页中进行，不抢占焦点；编辑页可选择在提交后自动关闭并切回截图时所在的页面。
 - 可选的快捷键截图（默认关闭）。
 - 界面支持英文、简体中文和日文（默认英文）。
@@ -82,11 +82,11 @@ Chrome Web Store。
 
 ## 配置
 
-可从 `chrome://extensions`（详情 → 扩展程序选项）或编辑页中的「设置」链接打开设置页。
+可从 `chrome://extensions`（详情 → 扩展程序选项）或编辑页中的「设置」链接打开设置页。设置分为四个标签：**工作空间**、**账号**、**AI**、**通用**。
 
+- **账号** —— YouTrack / GitLab 实例的可复用凭证：显示名称、Base URL，以及 token（YouTrack 永久 token，或带 `api` 范围的 GitLab 个人访问令牌）。同一实例上的多个工作空间共用一个账号。GitHub 不需要账号（用 github.com 网页会话）。账号保存在本地，并包含在设置备份中。
 - **工作空间** —— 每个工作空间对应一个提交目标。GitHub：显示名称、owner（用户或组织）和仓库名。
-  YouTrack：显示名称、Base URL、项目（短名称或 id），以及永久 token（在 YouTrack → 个人资料 →
-  Account Security → Tokens 创建）。token 仅保存在本浏览器。
+  YouTrack / GitLab：显示名称、账号（在「账号」标签里选）和项目（YouTrack 短名称/id，或 GitLab 数字 id 或 `group/project` 路径）。旧版内联保存凭证的 YouTrack 工作空间会自动迁移成账号。
 - **类型** —— 显示在编辑页的「类型」下拉框中，并用于默认标题。默认值：Change、Bug、Feature。
 - **语言** —— 英文、简体中文或日文。
 - **默认标题与正文** —— 用于预填新建 issue 的模板，占位符：`{pageTitle}`、`{pageUrl}`、`{type}`。
@@ -129,6 +129,10 @@ issue 页面上复刻「人工操作」：
 YouTrack 为 issue 创建和附件都提供了文档化的 REST API，因此这条路径直接使用你的永久 token
 调用 API：先创建 issue（`POST /api/issues`），再上传截图（`POST /api/issues/{id}/attachments`）
 并按文件名内联嵌入。由于实例 URL 无法预先确定，首次提交到某个实例时会请求访问该来源的权限。
+
+### GitLab
+
+GitLab 同样有文档化的 REST API。使用账号里的个人访问令牌（`PRIVATE-TOKEN` 头、`api` 范围），扩展会先把每张截图上传到项目（`POST /api/v4/projects/:id/uploads`），再创建 issue（`POST /api/v4/projects/:id/issues`）并把返回的 markdown 嵌入正文。项目可填数字 id 或 URL 编码后的 `group/project` 路径；自建实例通过账号的 Base URL 访问。首次提交到某实例时会请求访问该来源的权限。
 
 ## 新增 issue 后端
 

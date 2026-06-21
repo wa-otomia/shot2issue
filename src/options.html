@@ -19,9 +19,16 @@
     button { font: inherit; cursor: pointer; border-radius: 6px; padding: 7px 12px; border: 1px solid var(--border); background: Field; color: FieldText; }
     button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
     button.danger { color: var(--danger); }
-    .ws-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin: 10px 0; }
-    .ws-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
-    .ws-grid .full { grid-column: 1 / -1; }
+    /* Tabs */
+    .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 16px 0 0; flex-wrap: wrap; }
+    .tab { border: 1px solid transparent; border-bottom: none; background: none; padding: 8px 14px; border-radius: 8px 8px 0 0; color: var(--muted); cursor: pointer; font: inherit; }
+    .tab.active { color: FieldText; border-color: var(--border); background: Field; font-weight: 600; margin-bottom: -1px; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .tab-panel h2:first-of-type { margin-top: 12px; }
+    .ws-card, .acct-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin: 10px 0; }
+    .ws-grid, .acct-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+    .ws-grid .full, .acct-grid .full { grid-column: 1 / -1; }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
     .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; }
@@ -49,101 +56,125 @@
   <h1><span class="dot"></span> <span data-i18n="optionsHeading"></span></h1>
   <p class="hint" data-i18n="optionsIntro"></p>
 
-  <h2 data-i18n="workspacesHeading"></h2>
-  <p class="hint" data-i18n="workspacesHint"></p>
-  <div id="workspaces"></div>
-  <button id="addWorkspace" data-i18n="addWorkspace"></button>
-
-  <h2 data-i18n="typesHeading"></h2>
-  <p class="hint" data-i18n="typesHint"></p>
-  <div class="chips" id="typeChips"></div>
-  <div class="row">
-    <input type="text" id="newType" data-i18n-placeholder="newTypePlaceholder" style="max-width: 240px;" />
-    <button id="addType" data-i18n="addType"></button>
+  <div class="tabs" id="tabBar">
+    <button class="tab active" data-tab="workspaces" data-i18n="tabWorkspaces"></button>
+    <button class="tab" data-tab="accounts" data-i18n="tabAccounts"></button>
+    <button class="tab" data-tab="ai" data-i18n="tabAi"></button>
+    <button class="tab" data-tab="general" data-i18n="tabGeneral"></button>
   </div>
 
-  <h2 data-i18n="languageHeading"></h2>
-  <p class="hint" data-i18n="languageHint"></p>
-  <select id="lang">
-    <option value="en">English</option>
-    <option value="zh">中文（简体）</option>
-    <option value="ja">日本語</option>
-  </select>
+  <!-- Workspaces -->
+  <section class="tab-panel active" data-panel="workspaces">
+    <h2 data-i18n="workspacesHeading"></h2>
+    <p class="hint" data-i18n="workspacesHint"></p>
+    <div id="workspaces"></div>
+    <button id="addWorkspace" data-i18n="addWorkspace"></button>
 
-  <h2 data-i18n="templatesHeading"></h2>
-  <p class="hint" data-i18n="templatesHint"></p>
-  <label for="titleTemplate" data-i18n="titleTemplateLabel"></label>
-  <input type="text" id="titleTemplate" />
-  <label for="bodyTemplate" data-i18n="bodyTemplateLabel"></label>
-  <textarea id="bodyTemplate" rows="3"></textarea>
-
-  <h2 data-i18n="aiHeading"></h2>
-  <p class="hint" data-i18n="aiHint"></p>
-  <div id="aiDisconnected">
+    <h2 data-i18n="typesHeading"></h2>
+    <p class="hint" data-i18n="typesHint"></p>
+    <div class="chips" id="typeChips"></div>
     <div class="row">
-      <button id="aiConnect" data-i18n="aiConnect"></button>
-      <a id="aiManualToggle" class="hint" data-i18n="aiManualLink" style="cursor:pointer;"></a>
+      <input type="text" id="newType" data-i18n-placeholder="newTypePlaceholder" style="max-width: 240px;" />
+      <button id="addType" data-i18n="addType"></button>
     </div>
-    <div id="aiManual" class="ai-manual hidden">
-      <p class="hint" data-i18n="aiManualStep1"></p>
-      <button id="aiManualOpen" data-i18n="aiManualOpen"></button>
-      <p class="hint" data-i18n="aiManualStep2"></p>
-      <input type="text" id="aiPasted" data-i18n-placeholder="aiManualPlaceholder" />
-      <div class="row" style="margin-top:8px;">
-        <button id="aiManualComplete" class="primary" data-i18n="aiManualComplete"></button>
+  </section>
+
+  <!-- Accounts -->
+  <section class="tab-panel" data-panel="accounts">
+    <h2 data-i18n="accountsHeading"></h2>
+    <p class="hint" data-i18n="accountsHint"></p>
+    <div id="accounts"></div>
+    <button id="addAccount" data-i18n="addAccount"></button>
+  </section>
+
+  <!-- AI -->
+  <section class="tab-panel" data-panel="ai">
+    <h2 data-i18n="aiHeading"></h2>
+    <p class="hint" data-i18n="aiHint"></p>
+    <div id="aiDisconnected">
+      <div class="row">
+        <button id="aiConnect" data-i18n="aiConnect"></button>
+        <a id="aiManualToggle" class="hint" data-i18n="aiManualLink" style="cursor:pointer;"></a>
+      </div>
+      <div id="aiManual" class="ai-manual hidden">
+        <p class="hint" data-i18n="aiManualStep1"></p>
+        <button id="aiManualOpen" data-i18n="aiManualOpen"></button>
+        <p class="hint" data-i18n="aiManualStep2"></p>
+        <input type="text" id="aiPasted" data-i18n-placeholder="aiManualPlaceholder" />
+        <div class="row" style="margin-top:8px;">
+          <button id="aiManualComplete" class="primary" data-i18n="aiManualComplete"></button>
+        </div>
       </div>
     </div>
-  </div>
-  <div id="aiConnectedBox" class="ai-card hidden">
-    <div class="ai-row"><span class="ai-k" data-i18n="aiAccount"></span> <span id="aiAccount"></span></div>
-    <div class="ai-row"><span class="ai-k" data-i18n="aiPlan"></span> <span id="aiPlan" class="chip"></span></div>
-    <label for="aiModel" data-i18n="aiModel"></label>
-    <select id="aiModel"></select>
-    <div class="ai-row" style="margin-top:10px;"><span class="ai-k" data-i18n="aiUsage"></span> <span id="aiUsage"></span></div>
-    <div class="row" style="margin-top:10px;">
-      <button id="aiRefresh" data-i18n="aiRefresh"></button>
-      <button id="aiSignOut" class="danger" data-i18n="aiSignOut"></button>
+    <div id="aiConnectedBox" class="ai-card hidden">
+      <div class="ai-row"><span class="ai-k" data-i18n="aiAccount"></span> <span id="aiAccount"></span></div>
+      <div class="ai-row"><span class="ai-k" data-i18n="aiPlan"></span> <span id="aiPlan" class="chip"></span></div>
+      <label for="aiModel" data-i18n="aiModel"></label>
+      <select id="aiModel"></select>
+      <div class="ai-row" style="margin-top:10px;"><span class="ai-k" data-i18n="aiUsage"></span> <span id="aiUsage"></span></div>
+      <div class="row" style="margin-top:10px;">
+        <button id="aiRefresh" data-i18n="aiRefresh"></button>
+        <button id="aiSignOut" class="danger" data-i18n="aiSignOut"></button>
+      </div>
     </div>
-  </div>
-  <div id="aiStatus"></div>
-  <label for="aiTitlePrompt" data-i18n="aiPromptLabel"></label>
-  <p class="hint" data-i18n="aiPromptHint"></p>
-  <textarea id="aiTitlePrompt" rows="4"></textarea>
-  <div class="row" style="margin-top:8px;">
-    <button id="aiPromptRestore" data-i18n="aiPromptRestore"></button>
-  </div>
-  <label for="aiComplaintPrompt" data-i18n="aiComplaintPromptLabel"></label>
-  <textarea id="aiComplaintPrompt" rows="4"></textarea>
-  <div class="row" style="margin-top:8px;">
-    <button id="aiComplaintRestore" data-i18n="aiPromptRestore"></button>
-  </div>
+    <div id="aiStatus"></div>
+    <label for="aiTitlePrompt" data-i18n="aiPromptLabel"></label>
+    <p class="hint" data-i18n="aiPromptHint"></p>
+    <textarea id="aiTitlePrompt" rows="4"></textarea>
+    <div class="row" style="margin-top:8px;">
+      <button id="aiPromptRestore" data-i18n="aiPromptRestore"></button>
+    </div>
+    <label for="aiComplaintPrompt" data-i18n="aiComplaintPromptLabel"></label>
+    <textarea id="aiComplaintPrompt" rows="4"></textarea>
+    <div class="row" style="margin-top:8px;">
+      <button id="aiComplaintRestore" data-i18n="aiPromptRestore"></button>
+    </div>
+  </section>
 
-  <h2 data-i18n="behaviorHeading"></h2>
-  <div class="check-row">
-    <input type="checkbox" id="closeAfterSubmit" />
-    <label for="closeAfterSubmit" data-i18n="closeAfterSubmit"></label>
-  </div>
+  <!-- General -->
+  <section class="tab-panel" data-panel="general">
+    <h2 data-i18n="languageHeading"></h2>
+    <p class="hint" data-i18n="languageHint"></p>
+    <select id="lang">
+      <option value="en">English</option>
+      <option value="zh">中文（简体）</option>
+      <option value="ja">日本語</option>
+    </select>
 
-  <h2 data-i18n="shortcutHeading"></h2>
-  <div class="check-row">
-    <input type="checkbox" id="shortcutEnabled" />
-    <label for="shortcutEnabled" data-i18n="shortcutEnable"></label>
-  </div>
-  <p class="hint" data-i18n="shortcutHint"></p>
-  <div class="row">
-    <button id="configureShortcut" data-i18n="shortcutConfigure"></button>
-  </div>
+    <h2 data-i18n="templatesHeading"></h2>
+    <p class="hint" data-i18n="templatesHint"></p>
+    <label for="titleTemplate" data-i18n="titleTemplateLabel"></label>
+    <input type="text" id="titleTemplate" />
+    <label for="bodyTemplate" data-i18n="bodyTemplateLabel"></label>
+    <textarea id="bodyTemplate" rows="3"></textarea>
 
-  <h2 data-i18n="submissionHeading"></h2>
-  <p class="hint" data-i18n="submissionHint"></p>
+    <h2 data-i18n="behaviorHeading"></h2>
+    <div class="check-row">
+      <input type="checkbox" id="closeAfterSubmit" />
+      <label for="closeAfterSubmit" data-i18n="closeAfterSubmit"></label>
+    </div>
 
-  <h2 data-i18n="backupHeading"></h2>
-  <p class="hint" data-i18n="backupHint"></p>
-  <div class="row">
-    <button id="exportConfig" data-i18n="exportConfig"></button>
-    <button id="importConfig" data-i18n="importConfig"></button>
-    <input type="file" id="importFile" accept="application/json,.json" hidden />
-  </div>
+    <h2 data-i18n="shortcutHeading"></h2>
+    <div class="check-row">
+      <input type="checkbox" id="shortcutEnabled" />
+      <label for="shortcutEnabled" data-i18n="shortcutEnable"></label>
+    </div>
+    <p class="hint" data-i18n="shortcutHint"></p>
+    <div class="row">
+      <button id="configureShortcut" data-i18n="shortcutConfigure"></button>
+    </div>
+
+    <h2 data-i18n="submissionHeading"></h2>
+    <p class="hint" data-i18n="submissionHint"></p>
+
+    <h2 data-i18n="backupHeading"></h2>
+    <p class="hint" data-i18n="backupHint"></p>
+    <div class="row">
+      <button id="exportConfig" data-i18n="exportConfig"></button>
+      <button id="importConfig" data-i18n="importConfig"></button>
+      <input type="file" id="importFile" accept="application/json,.json" hidden />
+    </div>
+  </section>
 
   <div class="save-bar">
     <button class="primary" id="save" data-i18n="save"></button>
