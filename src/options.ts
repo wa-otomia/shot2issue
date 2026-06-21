@@ -43,6 +43,9 @@ const els = {
   typeChips: $('typeChips'),
   newType: $('newType') as HTMLInputElement,
   addType: $('addType'),
+  vocabChips: $('vocabChips'),
+  newVocab: $('newVocab') as HTMLInputElement,
+  addVocab: $('addVocab'),
   lang: $('lang') as HTMLSelectElement,
   titleTemplate: $('titleTemplate') as HTMLInputElement,
   bodyTemplate: $('bodyTemplate') as HTMLTextAreaElement,
@@ -404,6 +407,42 @@ els.newType.addEventListener('keydown', (e) => {
   }
 });
 
+// ---- Voice-input dictionary (sent as a transcription prompt) ----
+function renderVocab(): void {
+  els.vocabChips.innerHTML = '';
+  (draft.aiVocabulary || []).forEach((term, idx) => {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    const span = document.createElement('span');
+    span.textContent = term;
+    const btn = document.createElement('button');
+    btn.textContent = '✕';
+    btn.addEventListener('click', () => {
+      draft.aiVocabulary.splice(idx, 1);
+      renderVocab();
+    });
+    chip.appendChild(span);
+    chip.appendChild(btn);
+    els.vocabChips.appendChild(chip);
+  });
+}
+
+function addVocabTerm(): void {
+  const v = els.newVocab.value.trim();
+  if (!v) return;
+  if (!Array.isArray(draft.aiVocabulary)) draft.aiVocabulary = [];
+  if (!draft.aiVocabulary.includes(v)) draft.aiVocabulary.push(v);
+  els.newVocab.value = '';
+  renderVocab();
+}
+els.addVocab.addEventListener('click', addVocabTerm);
+els.newVocab.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    addVocabTerm();
+  }
+});
+
 // ---- Language (applies immediately) ----
 els.lang.addEventListener('change', () => {
   draft.lang = SUPPORTED_LANGS.includes(els.lang.value) ? els.lang.value : 'en';
@@ -703,6 +742,7 @@ els.importFile.addEventListener('change', async () => {
       bodyTemplate: typeof obj.bodyTemplate === 'string' ? obj.bodyTemplate : draft.bodyTemplate,
       aiTitlePrompt: typeof obj.aiTitlePrompt === 'string' ? obj.aiTitlePrompt : draft.aiTitlePrompt,
       aiComplaintPrompt: typeof obj.aiComplaintPrompt === 'string' ? obj.aiComplaintPrompt : draft.aiComplaintPrompt,
+      aiVocabulary: Array.isArray(obj.aiVocabulary) ? (obj.aiVocabulary as string[]) : draft.aiVocabulary,
       closeAfterSubmit: typeof obj.closeAfterSubmit === 'boolean' ? obj.closeAfterSubmit : draft.closeAfterSubmit,
       shortcutEnabled: typeof obj.shortcutEnabled === 'boolean' ? obj.shortcutEnabled : draft.shortcutEnabled,
       lastWorkspaceId: typeof obj.lastWorkspaceId === 'string' ? obj.lastWorkspaceId : '',
@@ -715,6 +755,7 @@ els.importFile.addEventListener('change', async () => {
     renderAccounts();
     renderWorkspaces();
     renderTypes();
+    renderVocab();
     await setConfig(draft);
     status(t('imported'), 'ok');
   } catch (e) {
@@ -743,6 +784,7 @@ async function init(): Promise<void> {
   renderAccounts();
   renderWorkspaces();
   renderTypes();
+  renderVocab();
   void renderAi();
   showTab(await getOptionsTab());
 }

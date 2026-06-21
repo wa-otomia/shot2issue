@@ -45,7 +45,7 @@ function showShortcut(id: string, shortcut?: string): void {
   }
 }
 
-function trigger(type: 'capture-web' | 'capture-desktop'): void {
+function trigger(type: 'capture-web'): void {
   void chrome.runtime.sendMessage({ type });
   window.close();
 }
@@ -59,13 +59,11 @@ async function init(): Promise<void> {
   try {
     const cmds = await chrome.commands.getAll();
     showShortcut('scWeb', cmds.find((c) => c.name === 'capture')?.shortcut);
-    showShortcut('scDesktop', cmds.find((c) => c.name === 'capture-desktop')?.shortcut);
   } catch {
     /* commands API unavailable; show no shortcuts */
   }
 
   $('optWeb').addEventListener('click', () => trigger('capture-web'));
-  $('optDesktop').addEventListener('click', () => trigger('capture-desktop'));
   $('optPaste').addEventListener('click', () => void pasteFromClipboard($('optPaste')));
   $('openSettings').addEventListener('click', () => {
     chrome.runtime.openOptionsPage();

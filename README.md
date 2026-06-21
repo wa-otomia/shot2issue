@@ -32,13 +32,13 @@ AI assistant — sign in with a ChatGPT subscription to write titles and bodies:
 
 - **No GitHub token, ever.** Files GitHub issues using your existing github.com session — no Personal Access Token to create, scope, rotate, or store.
 - **From bug to issue in seconds.** Click the icon, mark up the screenshot, type a line, submit. The image lands inline in the issue, not as a stray attachment link.
-- **Capture anything.** The current tab, your whole screen, a specific window, another app, or an image pasted straight from the clipboard.
+- **Capture fast.** Grab the current tab, or paste an image straight from the clipboard.
 - **Annotate without a separate tool.** Boxes, arrows, numbered callouts, freehand pen, text, and a mosaic to redact secrets — all on a canvas in the editor.
 - **Local-only by design.** No server, no analytics. Settings live in `chrome.storage.local` and never leave your browser unless you export them.
 
 ## Features
 
-- **Capture from anywhere.** Grab the current tab, or — via the toolbar popup — your whole screen, a specific window, or another application (`chrome.desktopCapture`). You can also paste an image straight in: use **Paste from clipboard** in the popup, or Ctrl/Cmd+V inside the editor. Each capture source can have its own keyboard shortcut, shown in the popup when set.
+- **Two ways to capture.** Grab the current tab from the toolbar, or paste an image straight from the clipboard — **Paste from clipboard** in the popup, or Ctrl/Cmd+V inside the editor. The tab capture can have its own keyboard shortcut, shown in the popup when set.
 - **Multiple screenshots per issue.** Every capture adds a thumbnail; annotate each one, switch between them, and delete any. All of them are attached on submit. Re-clicking the icon (or pasting again) while the editor is open adds to the same issue.
 - **Full annotation toolkit.** Rectangle, numbered box (auto-incrementing badge), arrow, freehand pen, resizable auto-wrapping text, and a mosaic to redact sensitive content. Undo with Ctrl/Cmd+Z; press Esc twice to close the editor.
 - **Keep the image.** Download the annotated PNG or copy it straight to the clipboard.
@@ -77,6 +77,20 @@ To iterate, run `npm run watch` to recompile on every change, then hit **Reload*
 
 If something goes wrong, **Download PNG** saves the annotated image to attach manually, and **Submit without screenshot** files the issue without the image.
 
+## Keyboard shortcuts
+
+In the editor:
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl/Cmd+Z` | Undo the last annotation |
+| `Ctrl/Cmd+C` | Copy the annotated screenshot to the clipboard |
+| `Ctrl/Cmd+V` | Paste an image from the clipboard as a new attachment |
+| `Ctrl/Cmd+Enter` | Commit the text you're typing (text tool) |
+| `Esc` `Esc` | Close the editor (press twice) |
+
+You can also bind a global shortcut to **capture the current tab**: enable it in **Settings → General**, then assign the keys at `chrome://extensions/shortcuts`.
+
 ## Issue targets
 
 Each tracker is configured as one or more **workspaces** in Settings. YouTrack and GitLab credentials live on reusable **Accounts** that workspaces share.
@@ -109,11 +123,10 @@ Both prompts are editable in Settings, each with a **Restore default prompt** bu
 | --- | --- |
 | `activeTab` | Granted when you click the icon; used to capture the visible tab and read its title and URL. |
 | `storage` | Stores settings and the pending screenshots in `chrome.storage.local`. |
-| `unlimitedStorage` | Lets full-screen / multi-image captures be staged without hitting the small session-storage quota. Staged images are cleared after submit and when the editor closes. |
-| `scripting` | Files the issue on github.com via your session, and runs the frame-grab script in the active tab for screen/window capture. |
-| `desktopCapture` | Shows the screen/window picker when you capture the screen, a window, or another app. Used only for that capture source. |
+| `unlimitedStorage` | Lets multi-image / pasted captures be staged without hitting the small session-storage quota. Staged images are cleared after submit and when the editor closes. |
+| `scripting` | Injects the submission script into the github.com tab to file the issue and upload the screenshot inline. |
 | `clipboardRead` | Reads an image from the clipboard for **Paste from clipboard** and the editor's paste. |
-| `notifications` | Shows a system notification when a capture fails (including screen capture). |
+| `notifications` | Shows a system notification when a capture fails. |
 
 Host permissions are limited to `https://github.com/*` by default — the only origin the extension contacts out of the box. YouTrack and GitLab instance URLs aren't known in advance, so they're requested at runtime: the first time you save or submit to an instance, Chrome asks permission for that specific origin. The AI assistant similarly requests `https://auth.openai.com/*`, `https://chatgpt.com/*`, and `http://localhost:1455/*` when you connect it.
 
@@ -161,7 +174,7 @@ Each tracker is a provider. To add one, implement the `Provider` interface from 
 ## Limitations
 
 - Captures the visible area only — no full-page or scrolling capture.
-- Restricted pages such as `chrome://` and the Chrome Web Store cannot be captured; the editor tells you when.
+- Restricted pages such as `chrome://` and the Chrome Web Store can't be captured (you'll see a notification). Paste a screenshot from the clipboard instead.
 - Labels are not set automatically.
 
 ## License

@@ -296,6 +296,32 @@ try {
   check('editor: Copy PNG copies to clipboard', copyToast === 'Copied to clipboard');
   check('editor: has a Paste button for clipboard images', !!(await editor.$('#paste')));
 
+  // New toolbar: outline color, font size, and the crop tool.
+  check('editor: toolbar has outline color, font size, and crop tool',
+    !!(await editor.$('#strokeColor')) && !!(await editor.$('#fontSize')) && !!(await editor.$('.tool[data-tool="crop"]')));
+  await editor.click('.tool[data-tool="text"]');
+  check('editor: text tool swaps thickness → font size',
+    (await editor.$eval('#fontSizeCtl', (el) => el.classList.contains('hidden'))) === false &&
+      (await editor.$eval('#widthCtl', (el) => el.classList.contains('hidden'))) === true);
+  await editor.click('.tool[data-tool="rect"]');
+  check('editor: non-text tool shows thickness',
+    (await editor.$eval('#widthCtl', (el) => el.classList.contains('hidden'))) === false);
+
+  // Crop: drag a region → confirm bar appears; Apply crops the image and hides the bar.
+  await editor.click('.tool[data-tool="crop"]');
+  const cr1 = at(0.2, 0.2), cr2 = at(0.7, 0.7);
+  await editor.mouse.move(cr1.x, cr1.y);
+  await editor.mouse.down();
+  await editor.mouse.move(cr2.x, cr2.y, { steps: 6 });
+  await editor.mouse.up();
+  check('editor: crop tool shows the confirm bar',
+    (await editor.$eval('#cropBar', (el) => el.classList.contains('hidden'))) === false);
+  await editor.click('#cropApply');
+  await editor.waitForTimeout(250);
+  check('editor: crop applied — bar hidden, canvas still visible',
+    (await editor.$eval('#cropBar', (el) => el.classList.contains('hidden'))) === true &&
+      (await editor.$eval('#canvas', (el) => el.classList.contains('hidden'))) === false);
+
   // Delete the 2nd attachment via its thumbnail's remove button → one remains.
   await editor.click('#thumbStrip .thumb:nth-of-type(2) .thumb-del');
   await editor.waitForTimeout(150);
@@ -400,8 +426,8 @@ try {
   popup.on('pageerror', (e) => pageErrors.push(String(e)));
   await popup.goto(`chrome-extension://${extId}/popup.html`);
   await popup.waitForSelector('#optWeb');
-  check('popup: shows web + desktop + clipboard capture options',
-    !!(await popup.$('#optWeb')) && !!(await popup.$('#optDesktop')) && !!(await popup.$('#optPaste')));
+  check('popup: shows tab + clipboard capture options (no desktop)',
+    !!(await popup.$('#optWeb')) && !!(await popup.$('#optPaste')) && !(await popup.$('#optDesktop')));
   check('popup: option labels are localized',
     (await popup.$eval('#optWeb', (el) => (el.textContent || '').trim())).length > 0);
   check('popup: shortcut chip hidden when none is bound',

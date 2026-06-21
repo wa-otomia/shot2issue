@@ -29,6 +29,8 @@ const DEFAULT_CONFIG: Config = {
   aiTitlePrompt: '',
   // AI complaint prompt; '' means use the current UI language's default (aiComplaintPromptDefault).
   aiComplaintPrompt: '',
+  // Voice-input dictionary: terms sent as a transcription prompt to improve recognition.
+  aiVocabulary: [],
   // Close the editor and switch back to the captured tab after a successful submit.
   closeAfterSubmit: true,
   // Allow a keyboard shortcut (configured at chrome://extensions/shortcuts) to capture. Off by default.
@@ -100,6 +102,7 @@ export async function getConfig(): Promise<Config> {
     workspaces: Array.isArray(stored.workspaces) ? (stored.workspaces as Workspace[]) : [],
     accounts: Array.isArray(stored.accounts) ? (stored.accounts as Account[]) : [],
     types: Array.isArray(stored.types) && stored.types.length ? stored.types : DEFAULT_CONFIG.types.slice(),
+    aiVocabulary: Array.isArray(stored.aiVocabulary) ? (stored.aiVocabulary as string[]) : [],
   };
   // First install (nothing stored yet, no explicit language): default to the system language.
   if (raw[CONFIG_KEY] == null && stored.lang == null) merged.lang = detectLang();

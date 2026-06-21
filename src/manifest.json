@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "shot2issue — Screenshot to GitHub Issue",
-  "version": "1.14.0",
-  "description": "Capture a tab or your screen/window, annotate it, and file it as a GitHub, GitLab, or YouTrack issue with the screenshot inline. Client-side only; optional AI assistant.",
+  "version": "1.15.0",
+  "description": "Capture a tab or paste an image from the clipboard, annotate it, and file it as a GitHub, GitLab, or YouTrack issue with the screenshot inline. Client-side only; optional AI assistant.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -25,9 +25,6 @@
   "commands": {
     "capture": {
       "description": "Capture the current tab and open the editor"
-    },
-    "capture-desktop": {
-      "description": "Capture the screen or a window and open the editor"
     }
   },
   "permissions": [
@@ -35,7 +32,6 @@
     "storage",
     "unlimitedStorage",
     "scripting",
-    "desktopCapture",
     "clipboardRead",
     "notifications"
   ],

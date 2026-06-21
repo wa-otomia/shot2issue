@@ -324,6 +324,64 @@ function textFromResponseObject(resp: Record<string, unknown>): string {
   return '';
 }
 
+/** Callbacks for streamed generation: fired as output / reasoning deltas arrive. */
+export type StreamCallbacks = {
+  onText?: (delta: string, full: string) => void;
+  onReasoning?: (delta: string, full: string) => void;
+};
+
+/**
+ * Read a streaming Responses reply incrementally, invoking callbacks as output and reasoning
+ * deltas arrive; returns the full output text. Falls back to a buffered read if the body is
+ * not a readable stream. Reasoning deltas are best-effort (only if the backend emits them).
+ */
+export async function streamResponse(res: Response, cb: StreamCallbacks): Promise<string> {
+  const reader = res.body && res.body.getReader ? res.body.getReader() : null;
+  if (!reader) return extractOutputText(await res.text(), res.headers.get('content-type') || '');
+  const dec = new TextDecoder();
+  let buf = '';
+  let acc = '';
+  let finalText = '';
+  let reasoning = '';
+  const handle = (line: string): void => {
+    const t = line.trim();
+    if (!t.startsWith('data:')) return;
+    const p = t.slice(5).trim();
+    if (!p || p === '[DONE]') return;
+    let evt: Record<string, unknown>;
+    try {
+      evt = JSON.parse(p) as Record<string, unknown>;
+    } catch {
+      return;
+    }
+    const type = String(evt.type || '');
+    if (type.endsWith('output_text.delta') && typeof evt.delta === 'string') {
+      acc += evt.delta;
+      cb.onText?.(evt.delta, acc);
+    } else if (type.endsWith('output_text.done') && typeof evt.text === 'string') {
+      finalText = evt.text;
+    } else if (type.includes('reasoning') && type.endsWith('.delta') && typeof evt.delta === 'string') {
+      reasoning += evt.delta;
+      cb.onReasoning?.(evt.delta, reasoning);
+    } else if (type === 'response.completed' && evt.response) {
+      const tx = textFromResponseObject(evt.response as Record<string, unknown>);
+      if (tx) finalText = tx;
+    }
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buf.indexOf('\n')) >= 0) {
+      handle(buf.slice(0, idx));
+      buf = buf.slice(idx + 1);
+    }
+  }
+  if (buf) handle(buf);
+  return finalText || acc;
+}
+
 // ---- Token exchange --------------------------------------------------------
 async function postToken(params: Record<string, string>): Promise<AiAuth> {
   const res = await fetch(TOKEN_URL, {
@@ -533,7 +591,7 @@ export async function fetchModels(auth: AiAuth): Promise<string[]> {
  */
 export async function generateTitle(
   content: { type?: string; pageTitle?: string; pageUrl?: string; body?: string; images?: string[] },
-  opts?: { model?: string; instructions?: string }
+  opts?: { model?: string; instructions?: string; signal?: AbortSignal } & StreamCallbacks
 ): Promise<{ title: string; quota?: AiQuota; auth: AiAuth }> {
   let auth = await getAiAuth();
   if (!auth) throw new Error('Not connected. Sign in to the AI assistant in Settings.');
@@ -555,28 +613,18 @@ export async function generateTitle(
       method: 'POST',
       headers: { ...authHeaders(auth), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
       body: JSON.stringify(buildResponsesRequest({ model, instructions, input, images: withImages ? images : undefined })),
+      signal: opts?.signal,
     });
 
   // Send the screenshot for visual context; if the backend rejects image input, retry text-only.
   let res = await post(images.length > 0);
-  let text = await res.text();
-  if (!res.ok && images.length) {
-    res = await post(false);
-    text = await res.text();
-  }
-  if (!res.ok) {
-    let msg = `HTTP ${res.status}`;
-    try {
-      const j = JSON.parse(text) as Record<string, unknown>;
-      const e = j.error as Record<string, unknown> | string | undefined;
-      msg = typeof e === 'string' ? e : ((e?.message as string) || (j.detail as string) || msg);
-    } catch {
-      /* keep status */
-    }
-    throw new Error(`Title generation failed: ${msg}`);
-  }
+  if (!res.ok && images.length) res = await post(false);
+  if (!res.ok) throw new Error(`Title generation failed: ${parseResponsesError(await res.text(), res.status)}`);
+
+  const cb = opts?.onText || opts?.onReasoning ? { onText: opts.onText, onReasoning: opts.onReasoning } : null;
+  const raw = cb ? await streamResponse(res, cb) : extractOutputText(await res.text(), res.headers.get('content-type') || '');
   const quota = parseQuotaHeaders(res.headers, nowMs());
-  const title = cleanTitle(extractOutputText(text, res.headers.get('content-type') || ''));
+  const title = cleanTitle(raw);
   if (!title) throw new Error('The model returned an empty title.');
   if (quota) await setAiAuth({ ...auth, quota });
   return { title, quota, auth };
@@ -609,13 +657,15 @@ async function healModelFor(auth: AiAuth, override?: string): Promise<{ auth: Ai
 }
 
 /** Transcribe recorded audio using the ChatGPT subscription (no API key). */
-export async function transcribeAudio(blob: Blob, filename = 'audio.webm'): Promise<string> {
+export async function transcribeAudio(blob: Blob, opts?: { filename?: string; prompt?: string }): Promise<string> {
   let auth = await getAiAuth();
   if (!auth) throw new Error('Not connected. Sign in to the AI assistant in Settings.');
   auth = await ensureFreshAuth(auth);
   const fd = new FormData();
-  fd.append('file', blob, filename);
+  fd.append('file', blob, opts?.filename || 'audio.webm');
   fd.append('model', TRANSCRIBE_MODEL);
+  // A dictionary of names/jargon biases the recognizer toward correct spellings.
+  if (opts?.prompt && opts.prompt.trim()) fd.append('prompt', opts.prompt.trim());
   const res = await fetch(TRANSCRIBE_URL, { method: 'POST', headers: authHeaders(auth), body: fd });
   const text = await res.text();
   if (!res.ok) {
@@ -708,7 +758,7 @@ export function parseComplaintOutput(text: string): { title: string; body: strin
  */
 export async function generateComplaint(
   content: { transcript: string; type?: string; pageTitle?: string; pageUrl?: string; images?: string[] },
-  opts?: { model?: string; instructions?: string }
+  opts?: { model?: string; instructions?: string; signal?: AbortSignal } & StreamCallbacks
 ): Promise<{ title: string; body: string; quota?: AiQuota; auth: AiAuth }> {
   const base = await getAiAuth();
   if (!base) throw new Error('Not connected. Sign in to the AI assistant in Settings.');
@@ -723,23 +773,25 @@ export async function generateComplaint(
       method: 'POST',
       headers: { ...authHeaders(auth), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
       body: JSON.stringify(buildComplaintRequest({ model, instructions, input, images: withImages ? images : undefined, schema })),
+      signal: opts?.signal,
     });
 
-  // Preference order: images+schema → images → text-only. First OK wins.
+  // Preference order: images+schema → images → text-only. First OK wins; only the winning
+  // attempt's body is streamed (failed attempts are read for their error message).
   const attempts: Array<[boolean, boolean]> = images.length ? [[true, true], [true, false], [false, false]] : [[false, true], [false, false]];
   let res: Response | null = null;
-  let text = '';
   let lastErr = '';
   for (const [withImages, schema] of attempts) {
-    res = await post(withImages, schema);
-    text = await res.text();
-    if (res.ok) break;
-    lastErr = parseResponsesError(text, res.status);
+    const r = await post(withImages, schema);
+    if (r.ok) { res = r; break; }
+    lastErr = parseResponsesError(await r.text(), r.status);
   }
-  if (!res || !res.ok) throw new Error(`Complaint generation failed: ${lastErr}`);
+  if (!res) throw new Error(`Complaint generation failed: ${lastErr}`);
 
+  const cb = opts?.onText || opts?.onReasoning ? { onText: opts.onText, onReasoning: opts.onReasoning } : null;
+  const raw = cb ? await streamResponse(res, cb) : extractOutputText(await res.text(), res.headers.get('content-type') || '');
   const quota = parseQuotaHeaders(res.headers, nowMs());
-  const out = parseComplaintOutput(extractOutputText(text, res.headers.get('content-type') || ''));
+  const out = parseComplaintOutput(raw);
   if (!out.title && !out.body) throw new Error('The model returned an empty result.');
   if (quota) await setAiAuth({ ...auth, quota });
   return { ...out, quota, auth };

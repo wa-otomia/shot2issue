@@ -1,13 +1,9 @@
 // MV3 service worker.
 //
 // The toolbar icon opens a small popup (popup.html) with two capture sources: the current
-// tab, or the screen/window (via chrome.desktopCapture). Each source can also be bound to
-// its own keyboard shortcut. A capture is staged in session storage and the editor is
-// opened; re-capturing while an editor is open APPENDS the new screenshot to it.
-//
-// Desktop capture needs getUserMedia, which the service worker lacks; the chosen desktop
-// stream is also bound to its target tab, so we grab a frame by injecting getUserMedia into
-// that tab (chrome.scripting) rather than using an offscreen document.
+// tab, or an image pasted from the clipboard. The tab capture can also be bound to a keyboard
+// shortcut. A capture is staged in chrome.storage.local and the editor is opened; re-capturing
+// (or pasting) while an editor is open APPENDS the new screenshot to it.
 
 import {
   getConfig,
@@ -113,102 +109,6 @@ async function captureWeb(tab: chrome.tabs.Tab): Promise<void> {
   }
 }
 
-// ---- capture: screen / window (desktopCapture, consumed in the target tab) --
-//
-// From a service worker, chooseDesktopMedia REQUIRES a targetTab, and the resulting stream
-// "can only be used by the specified tab" — it is NOT usable in an offscreen document. So we
-// pass the active tab and consume the stream by injecting getUserMedia into that same tab.
-function chooseDesktopMedia(tab: chrome.tabs.Tab): Promise<string> {
-  return new Promise((resolve, reject) => {
-    try {
-      chrome.desktopCapture.chooseDesktopMedia(['screen', 'window'], tab, (streamId) => {
-        const err = chrome.runtime.lastError;
-        if (err) {
-          reject(new Error(err.message || 'picker error'));
-          return;
-        }
-        resolve(streamId || ''); // '' means the user cancelled the picker
-      });
-    } catch (e) {
-      reject(e instanceof Error ? e : new Error(String(e)));
-    }
-  });
-}
-
-/**
- * Injected into the target tab: open the chosen desktop stream, grab one frame to a PNG
- * data URL, and stop the tracks. Self-contained (no imports); runs in the tab the stream is
- * bound to, which is the only context allowed to use it.
- */
-function grabDesktopFrame(streamId: string): Promise<{ ok: boolean; dataUrl?: string; error?: string }> {
-  return (async () => {
-    try {
-      const constraints = {
-        audio: false,
-        video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: streamId } },
-      } as unknown as MediaStreamConstraints;
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      try {
-        const video = document.createElement('video');
-        video.srcObject = stream;
-        await video.play();
-        for (let i = 0; i < 30 && (!video.videoWidth || !video.videoHeight); i++) {
-          await new Promise((r) => setTimeout(r, 50));
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth || 1280;
-        canvas.height = video.videoHeight || 720;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) throw new Error('no 2d context');
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        return { ok: true, dataUrl: canvas.toDataURL('image/png') };
-      } finally {
-        stream.getTracks().forEach((t) => t.stop());
-      }
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) };
-    }
-  })();
-}
-
-async function captureDesktop(tab: chrome.tabs.Tab): Promise<void> {
-  const config = await getConfig();
-  setLanguage(config.lang);
-  if (tab.id == null) {
-    notify(t('captureDesktopFailed', ['no active tab']));
-    return;
-  }
-  // The chosen stream is bound to its target tab, so we grab the frame by injecting into that
-  // tab — which Chrome forbids on privileged pages. Fail fast (before the picker) with a clear
-  // message instead of letting executeScript reject after the user has already picked a source.
-  const url = tab.url || '';
-  const injectable = /^https?:\/\//.test(url) && !/^https:\/\/(chrome\.google\.com\/webstore|chromewebstore\.google\.com)/.test(url);
-  if (!injectable) {
-    notify(t('captureNeedNormalPage'));
-    return;
-  }
-  let streamId: string;
-  try {
-    streamId = await chooseDesktopMedia(tab);
-  } catch (e) {
-    notify(t('captureDesktopFailed', [e instanceof Error && e.message ? e.message : String(e)]));
-    return;
-  }
-  if (!streamId) return; // the user cancelled the picker — no error
-  try {
-    const [inj] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: grabDesktopFrame,
-      args: [streamId],
-    });
-    const res = inj?.result as { ok: boolean; dataUrl?: string; error?: string } | undefined;
-    if (!res || !res.ok || !res.dataUrl) throw new Error(res?.error || 'capture failed');
-    await stageAndOpen(tab, makeAttachment(res.dataUrl, tab, 'desktop'));
-  } catch (e) {
-    notify(t('captureDesktopFailed', [e instanceof Error && e.message ? e.message : String(e)]));
-  }
-}
-
 async function activeTab(): Promise<chrome.tabs.Tab | undefined> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab;
@@ -241,24 +141,20 @@ chrome.runtime.onMessage.addListener((msg: { type?: string; dataUrl?: string }) 
     if (msg.dataUrl) void captureClipboard(msg.dataUrl);
     return;
   }
-  if (msg.type !== 'capture-web' && msg.type !== 'capture-desktop') return;
+  if (msg.type !== 'capture-web') return;
   void (async () => {
     const tab = await activeTab();
-    if (!tab) return;
-    if (msg.type === 'capture-web') await captureWeb(tab);
-    else await captureDesktop(tab);
+    if (tab) await captureWeb(tab);
   })();
 });
 
-// Keyboard shortcuts (bound at chrome://extensions/shortcuts), gated by the Settings toggle.
+// Keyboard shortcut (bound at chrome://extensions/shortcuts), gated by the Settings toggle.
 chrome.commands.onCommand.addListener(async (command: string, tab?: chrome.tabs.Tab) => {
-  if (command !== 'capture' && command !== 'capture-desktop') return;
+  if (command !== 'capture') return;
   const config = await getConfig();
   if (!config.shortcutEnabled) return;
   const target = tab || (await activeTab());
-  if (!target) return;
-  if (command === 'capture') await captureWeb(target);
-  else await captureDesktop(target);
+  if (target) await captureWeb(target);
 });
 
 // Closing the editor ends the staging session (frees the staged image data).

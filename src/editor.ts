@@ -16,11 +16,13 @@ import {
   patchAiAuth,
   accountFor,
   makeAttachmentId,
+  getEditorPrefs,
+  patchEditorPrefs,
 } from './lib/storage.js';
 import { setLanguage, localizeDom, t } from './lib/i18n.js';
 import { getProvider } from './lib/providers/index.js';
 import { generateTitle, transcribeAudio, generateComplaint } from './lib/ai.js';
-import type { Config, Workspace, Op, Attachment, PendingShots, IssueResult } from './lib/types.js';
+import type { Config, Workspace, Op, Attachment, PendingShots, IssueResult, EditorPrefs } from './lib/types.js';
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -42,7 +44,14 @@ const textInput = $('textInput') as HTMLTextAreaElement;
 const els = {
   canvasEmpty: $('canvasEmpty'),
   color: $('color') as HTMLInputElement,
+  strokeColor: $('strokeColor') as HTMLInputElement,
   width: $('width') as HTMLInputElement,
+  fontSize: $('fontSize') as HTMLInputElement,
+  widthCtl: $('widthCtl'),
+  fontSizeCtl: $('fontSizeCtl'),
+  cropBar: $('cropBar'),
+  cropApply: $('cropApply') as HTMLButtonElement,
+  cropCancel: $('cropCancel') as HTMLButtonElement,
   undo: $('undo'),
   clear: $('clear'),
   download: $('download'),
@@ -61,6 +70,10 @@ const els = {
   complaintClear: $('complaintClear') as HTMLButtonElement,
   complaintGenerate: $('complaintGenerate') as HTMLButtonElement,
   complaintStatus: $('complaintStatus'),
+  complaintThink: $('complaintThink'),
+  complaintThinkText: $('complaintThinkText'),
+  aiThink: $('aiThink'),
+  aiThinkText: $('aiThinkText'),
   body: $('body') as HTMLTextAreaElement,
   submit: $('submit') as HTMLButtonElement,
   submitNoImage: $('submitNoImage') as HTMLButtonElement,
@@ -84,6 +97,21 @@ let currentTool = 'rect';
 let drawing: Op | null = null; // in-progress drag op
 let pendingTextOp: Op | null = null; // op being entered via the floating text input
 let titleDirty = false; // true once the user edits the title (stop auto-filling the default)
+
+// Remembered tool settings (color, outline, thickness, font size); loaded on init.
+let prefs: EditorPrefs = { color: '#ff3b30', strokeColor: '#ffffff', width: 4, fontSize: 28 };
+
+// Select-and-manipulate: the last drawn op stays "selected" (movable + reshapeable) until the
+// user clicks elsewhere on the canvas. Pen commits immediately and is never selected.
+let selected: Op | null = null;
+type DragMode = 'move' | 'resize' | 'crop-move' | 'crop-resize' | null;
+let dragMode: DragMode = null;
+let dragHandle = ''; // which resize handle: n/s/e/w/ne/nw/se/sw, or 'p0'/'p1' for arrow ends
+let dragStart = { x: 0, y: 0 }; // pointer position at drag start (canvas px)
+let dragOrig: Op | null = null; // snapshot of the op's geometry at drag start
+// Crop tool: a pending crop rectangle (canvas px), applied on confirm.
+let cropRect: { x: number; y: number; w: number; h: number } | null = null;
+let cropOrig: { x: number; y: number; w: number; h: number } | null = null;
 
 /** The attachment currently on the canvas. */
 function active(): Attachment | undefined {
@@ -119,6 +147,14 @@ async function init(): Promise<void> {
       ` <span style="font-weight:400;color:var(--muted);font-size:12px;">v${chrome.runtime.getManifest().version}</span>`
     );
   }
+
+  // Load remembered tool settings (color, outline, thickness, font size) into the toolbar.
+  prefs = await getEditorPrefs();
+  els.color.value = prefs.color;
+  els.strokeColor.value = prefs.strokeColor;
+  els.width.value = String(prefs.width);
+  els.fontSize.value = String(prefs.fontSize);
+  applyToolControls();
 
   void refreshAiButton(); // enable the AI-title button only when the assistant is connected
 
@@ -161,6 +197,10 @@ function loadActive(): void {
   const a = active();
   if (!a) return;
   ops = a.ops;
+  selected = null; // selection/crop are per-image and transient
+  cropRect = null;
+  cropOrig = null;
+  els.cropBar.classList.add('hidden');
   els.canvasEmpty.classList.add('hidden');
   canvas.classList.remove('hidden');
   disableSubmit(false);
@@ -467,7 +507,8 @@ async function transcribeIntoBox(blob: Blob): Promise<void> {
   els.complaintRecord.disabled = true;
   try {
     setComplaintStatus(t('complaintTranscribing'));
-    const transcript = (await transcribeAudio(blob)).trim();
+    const prompt = (config.aiVocabulary || []).join(', '); // dictionary terms bias recognition
+    const transcript = (await transcribeAudio(blob, { prompt })).trim();
     if (transcript) insertAtCursor(els.complaintText, transcript); // at the caret, never clearing
     setComplaintStatus('');
   } catch (e) {
@@ -483,71 +524,126 @@ els.complaintClear.addEventListener('click', () => {
 });
 
 // Generate the issue title + body from the text box content + the screenshots. Repeatable.
+// ---- Streaming AI generation (live output + reasoning bubble, with a Stop button) ----
+let titleAbort: AbortController | null = null;
+let complaintAbort: AbortController | null = null;
+
+function startThink(bubble: HTMLElement, textEl: HTMLElement): void {
+  textEl.textContent = '';
+  textEl.classList.add('streaming');
+  bubble.classList.remove('hidden', 'done');
+}
+function pushThink(bubble: HTMLElement, textEl: HTMLElement, full: string): void {
+  textEl.textContent = full;
+  bubble.scrollTop = bubble.scrollHeight;
+}
+function endThink(bubble: HTMLElement, textEl: HTMLElement, keep: boolean): void {
+  textEl.classList.remove('streaming');
+  if (keep && textEl.textContent) bubble.classList.add('done');
+  else bubble.classList.add('hidden');
+}
+const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+const wasAborted = (c: AbortController | null, e: unknown): boolean =>
+  !!c?.signal.aborted || (e instanceof Error && e.name === 'AbortError');
+
 els.complaintGenerate.addEventListener('click', async () => {
+  if (complaintAbort) {
+    complaintAbort.abort(); // a second click stops generation
+    return;
+  }
   const text = els.complaintText.value.trim();
   if (!text) {
     setComplaintStatus(t('complaintNeedText'), 'error');
     return;
   }
-  els.complaintGenerate.disabled = true;
+  complaintAbort = new AbortController();
+  const label = els.complaintGenerate.textContent;
+  els.complaintGenerate.textContent = t('aiStop');
+  els.complaintGenerate.classList.add('ai-busy');
+  startThink(els.complaintThink, els.complaintThinkText);
+  setComplaintStatus(t('complaintGenerating'));
   try {
-    setComplaintStatus(t('complaintGenerating'));
     const images = await aiImages();
     const p = primary();
     const { title, body } = await generateComplaint(
+      { transcript: text, type: els.type.value, pageTitle: p?.pageTitle, pageUrl: p?.pageUrl, images: images.length ? images : undefined },
       {
-        transcript: text,
-        type: els.type.value,
-        pageTitle: p?.pageTitle,
-        pageUrl: p?.pageUrl,
-        images: images.length ? images : undefined,
-      },
-      { instructions: config.aiComplaintPrompt || t('aiComplaintPromptDefault') }
+        instructions: config.aiComplaintPrompt || t('aiComplaintPromptDefault'),
+        signal: complaintAbort.signal,
+        onReasoning: (_d, full) => pushThink(els.complaintThink, els.complaintThinkText, full),
+      }
     );
     if (title) {
       els.title.value = title;
       titleDirty = true;
     }
     if (body) els.body.value = body;
+    endThink(els.complaintThink, els.complaintThinkText, false);
+    setComplaintStatus('');
     closeComplaintModal(); // done — close (content is kept for next time)
     showToast(t('complaintDone'));
   } catch (e) {
-    setComplaintStatus(t('complaintFailed', [e instanceof Error ? e.message : String(e)]), 'error');
+    endThink(els.complaintThink, els.complaintThinkText, false);
+    if (wasAborted(complaintAbort, e)) setComplaintStatus(t('aiStopped'));
+    else setComplaintStatus(t('complaintFailed', [errMsg(e)]), 'error');
   } finally {
-    els.complaintGenerate.disabled = false;
+    els.complaintGenerate.textContent = label || t('complaintGenerate');
+    els.complaintGenerate.classList.remove('ai-busy');
+    complaintAbort = null;
   }
 });
 
 els.aiTitle.addEventListener('click', async () => {
+  if (titleAbort) {
+    titleAbort.abort();
+    return;
+  }
   if (!els.body.value.trim()) {
     setStatus(t('aiTitleNeedBody'), 'error');
     return;
   }
-  els.aiTitle.disabled = true;
+  titleAbort = new AbortController();
   const label = els.aiTitle.textContent;
-  els.aiTitle.textContent = t('aiTitleGenerating');
+  const titleBefore = els.title.value;
+  const dirtyBefore = titleDirty;
+  els.aiTitle.textContent = t('aiStop');
+  els.aiTitle.classList.add('ai-busy');
+  startThink(els.aiThink, els.aiThinkText);
+  els.title.classList.add('streaming');
   try {
     commitTextIfAny(); // flush any in-progress text so it appears in the screenshots
     const images = await aiImages(); // all attachments, annotated + downscaled
     const p = primary();
     const { title } = await generateTitle(
+      { type: els.type.value, pageTitle: p?.pageTitle, pageUrl: p?.pageUrl, body: els.body.value, images: images.length ? images : undefined },
       {
-        type: els.type.value,
-        pageTitle: p?.pageTitle,
-        pageUrl: p?.pageUrl,
-        body: els.body.value,
-        images: images.length ? images : undefined,
-      },
-      { instructions: config.aiTitlePrompt || t('aiTitlePromptDefault') }
+        instructions: config.aiTitlePrompt || t('aiTitlePromptDefault'),
+        signal: titleAbort.signal,
+        onText: (_d, full) => {
+          els.title.value = (full.split('\n')[0] || '').slice(0, 120); // stream the title in, live
+          titleDirty = true;
+        },
+        onReasoning: (_d, full) => pushThink(els.aiThink, els.aiThinkText, full),
+      }
     );
     els.title.value = title;
     titleDirty = true;
+    endThink(els.aiThink, els.aiThinkText, true);
     setStatus('', 'info');
   } catch (e) {
-    setStatus(t('aiTitleFailed', [e instanceof Error ? e.message : String(e)]), 'error');
+    endThink(els.aiThink, els.aiThinkText, false);
+    if (wasAborted(titleAbort, e)) {
+      els.title.value = titleBefore;
+      titleDirty = dirtyBefore;
+      setStatus(t('aiStopped'));
+    } else {
+      setStatus(t('aiTitleFailed', [errMsg(e)]), 'error');
+    }
   } finally {
     els.aiTitle.textContent = label || t('aiTitle');
-    els.aiTitle.disabled = false;
+    els.aiTitle.classList.remove('ai-busy');
+    els.title.classList.remove('streaming');
+    titleAbort = null;
   }
 });
 
@@ -589,26 +685,89 @@ async function refreshLoginHint(): Promise<void> {
 //    base image, replay ops, then draw the in-progress preview. Undo pops the last op.
 // ============================================================================
 
+/** Show the font-size control for the text tool, the thickness control otherwise. */
+function applyToolControls(): void {
+  const isText = currentTool === 'text';
+  els.widthCtl.classList.toggle('hidden', isText);
+  els.fontSizeCtl.classList.toggle('hidden', !isText);
+}
+
+function setTool(tool: string): void {
+  if (tool === currentTool) return;
+  commitTextIfAny();
+  if (currentTool === 'crop') cancelCrop(); // leaving the crop tool discards a pending region
+  deselect();
+  currentTool = tool;
+  document.querySelectorAll('.tool').forEach((b) => b.classList.toggle('active', (b as HTMLElement).dataset.tool === tool));
+  applyToolControls();
+}
+
 $('toolbar').addEventListener('click', (e) => {
   const btn = (e.target as HTMLElement).closest('.tool') as HTMLElement | null;
-  if (!btn) return;
-  currentTool = btn.dataset.tool || 'rect';
-  document.querySelectorAll('.tool').forEach((b) => b.classList.toggle('active', b === btn));
-  commitTextIfAny();
+  if (btn && btn.dataset.tool) setTool(btn.dataset.tool);
+});
+
+// Color / outline / thickness / font size: remembered across sessions, and applied live to
+// the currently selected annotation (so you can recolor / resize it after drawing).
+els.color.addEventListener('input', () => {
+  prefs.color = els.color.value;
+  void patchEditorPrefs({ color: prefs.color });
+  if (selected) {
+    selected.color = prefs.color;
+    redraw();
+    persist();
+  }
+});
+els.strokeColor.addEventListener('input', () => {
+  prefs.strokeColor = els.strokeColor.value;
+  void patchEditorPrefs({ strokeColor: prefs.strokeColor });
+  if (selected) {
+    selected.strokeColor = prefs.strokeColor;
+    redraw();
+    persist();
+  }
+});
+els.width.addEventListener('input', () => {
+  prefs.width = Number(els.width.value);
+  void patchEditorPrefs({ width: prefs.width });
+  if (selected && selected.tool !== 'text') {
+    selected.width = prefs.width;
+    redraw();
+    persist();
+  }
+});
+els.fontSize.addEventListener('input', () => {
+  prefs.fontSize = Number(els.fontSize.value);
+  void patchEditorPrefs({ fontSize: prefs.fontSize });
+  if (pendingTextOp) {
+    // Live-resize the text currently being typed.
+    pendingTextOp.size = prefs.fontSize;
+    const scale = canvas.width ? canvas.getBoundingClientRect().width / canvas.width : 1;
+    textInput.style.fontSize = prefs.fontSize * scale + 'px';
+  }
+  if (selected && selected.tool === 'text') {
+    selected.size = prefs.fontSize;
+    redraw();
+    persist();
+  }
 });
 
 els.undo.addEventListener('click', () => {
   commitTextIfAny();
+  deselect();
   ops.pop();
   redraw();
   persist();
 });
 els.clear.addEventListener('click', () => {
   commitTextIfAny();
+  deselect();
   ops.length = 0; // clear in place so attachments[activeIndex].ops stays the same array
   redraw();
   persist();
 });
+els.cropApply.addEventListener('click', () => applyCrop());
+els.cropCancel.addEventListener('click', () => cancelCrop());
 
 // Page-level shortcuts:
 //   Esc (twice) → close this editor tab (the first press shows a confirmation toast)
@@ -645,6 +804,14 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (e.key === 'Escape') {
+    if (cropRect) {
+      cancelCrop(); // first Esc cancels a pending crop
+      return;
+    }
+    if (selected) {
+      deselect(); // then it deselects the active annotation
+      return;
+    }
     if (escArmed) {
       window.clearTimeout(escTimer);
       escArmed = false;
@@ -658,11 +825,19 @@ window.addEventListener('keydown', (e) => {
     }
     return;
   }
+  if (currentTool === 'crop' && cropRect && e.key === 'Enter') {
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return; // don't crop while typing
+    e.preventDefault();
+    applyCrop();
+    return;
+  }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
     const ae = document.activeElement;
     if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return; // leave text undo alone
     e.preventDefault();
     commitTextIfAny();
+    deselect();
     ops.pop();
     redraw();
     persist();
@@ -686,83 +861,288 @@ function toCanvasXY(evt: MouseEvent): { x: number; y: number } {
   return { x: (evt.clientX - rect.left) * scaleX, y: (evt.clientY - rect.top) * scaleY };
 }
 
+// ---- Selection / manipulation geometry -------------------------------------
+type Pt = { x: number; y: number };
+type Rect = { x: number; y: number; w: number; h: number };
+const HANDLE = 9; // resize-handle hit/half-size, in screen px
+const clamp = (v: number, a: number, b: number): number => Math.max(a, Math.min(v, b));
+/** Canvas pixels per screen pixel (the canvas element is CSS-scaled to fit). */
+function scaleFactor(): number {
+  const r = canvas.getBoundingClientRect();
+  return r.width ? canvas.width / r.width : 1;
+}
+function cloneOp(op: Op): Op {
+  return JSON.parse(JSON.stringify(op)) as Op;
+}
+function deselect(): void {
+  if (!selected) return;
+  selected = null;
+  redraw();
+}
+/** Which ops can be selected and manipulated after drawing (pen commits immediately). */
+function isSelectable(tool: string): boolean {
+  return tool === 'rect' || tool === 'numrect' || tool === 'arrow' || tool === 'mosaic' || tool === 'text';
+}
+
+/** Measured bounding box (canvas px) of any selectable op. */
+function bboxOf(op: Op): Rect {
+  if (op.tool === 'text') {
+    const size = op.size || 20;
+    ctx.save();
+    ctx.font = `bold ${size}px system-ui, sans-serif`;
+    const lines = wrapText(ctx, op.text || '', op.w);
+    let maxw = 10;
+    for (const l of lines) maxw = Math.max(maxw, ctx.measureText(l).width);
+    ctx.restore();
+    return { x: op.x ?? 0, y: op.y ?? 0, w: op.w || maxw, h: Math.max(size * 1.2, lines.length * size * 1.2) };
+  }
+  const x = Math.min(op.x0 ?? 0, op.x1 ?? 0);
+  const y = Math.min(op.y0 ?? 0, op.y1 ?? 0);
+  return { x, y, w: Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), h: Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)) };
+}
+function boxHandles(b: Rect): Array<{ name: string; x: number; y: number }> {
+  const { x, y, w, h } = b;
+  return [
+    { name: 'nw', x, y }, { name: 'n', x: x + w / 2, y }, { name: 'ne', x: x + w, y },
+    { name: 'e', x: x + w, y: y + h / 2 }, { name: 'se', x: x + w, y: y + h }, { name: 's', x: x + w / 2, y: y + h },
+    { name: 'sw', x, y: y + h }, { name: 'w', x, y: y + h / 2 },
+  ];
+}
+function handlesOf(op: Op): Array<{ name: string; x: number; y: number }> {
+  if (op.tool === 'arrow') return [{ name: 'p0', x: op.x0 ?? 0, y: op.y0 ?? 0 }, { name: 'p1', x: op.x1 ?? 0, y: op.y1 ?? 0 }];
+  const b = bboxOf(op);
+  if (op.tool === 'text') return [{ name: 'w', x: b.x, y: b.y + b.h / 2 }, { name: 'e', x: b.x + b.w, y: b.y + b.h / 2 }];
+  return boxHandles(b);
+}
+function handleAt(op: Op, p: Pt): string {
+  const tol = HANDLE * scaleFactor();
+  for (const h of handlesOf(op)) if (Math.abs(p.x - h.x) <= tol && Math.abs(p.y - h.y) <= tol) return h.name;
+  return '';
+}
+function distToSeg(p: Pt, a: Pt, b: Pt): number {
+  const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+  if (!len2) return Math.hypot(p.x - a.x, p.y - a.y);
+  const t = clamp(((p.x - a.x) * dx + (p.y - a.y) * dy) / len2, 0, 1);
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+function pointInOp(op: Op, p: Pt): boolean {
+  if (op.tool === 'arrow') return distToSeg(p, { x: op.x0 ?? 0, y: op.y0 ?? 0 }, { x: op.x1 ?? 0, y: op.y1 ?? 0 }) <= 8 * scaleFactor();
+  const b = bboxOf(op), m = 3;
+  return p.x >= b.x - m && p.x <= b.x + b.w + m && p.y >= b.y - m && p.y <= b.y + b.h + m;
+}
+function pointInRect(p: Pt, r: Rect): boolean {
+  return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+}
+function moveOpBy(op: Op, orig: Op, dx: number, dy: number): void {
+  if (op.tool === 'text') {
+    op.x = (orig.x ?? 0) + dx;
+    op.y = (orig.y ?? 0) + dy;
+    return;
+  }
+  op.x0 = (orig.x0 ?? 0) + dx;
+  op.y0 = (orig.y0 ?? 0) + dy;
+  op.x1 = (orig.x1 ?? 0) + dx;
+  op.y1 = (orig.y1 ?? 0) + dy;
+}
+function resizeOp(op: Op, orig: Op, handle: string, p: Pt): void {
+  if (op.tool === 'arrow') {
+    if (handle === 'p0') { op.x0 = p.x; op.y0 = p.y; } else { op.x1 = p.x; op.y1 = p.y; }
+    return;
+  }
+  if (op.tool === 'text') {
+    const right = (orig.x ?? 0) + (orig.w ?? 0);
+    if (handle === 'e') op.w = Math.max(24, p.x - (op.x ?? 0));
+    else if (handle === 'w') { const nx = Math.min(p.x, right - 24); op.x = nx; op.w = right - nx; }
+    return;
+  }
+  let l = Math.min(orig.x0 ?? 0, orig.x1 ?? 0), t = Math.min(orig.y0 ?? 0, orig.y1 ?? 0);
+  let r = Math.max(orig.x0 ?? 0, orig.x1 ?? 0), b = Math.max(orig.y0 ?? 0, orig.y1 ?? 0);
+  if (handle.includes('w')) l = p.x;
+  if (handle.includes('e')) r = p.x;
+  if (handle.includes('n')) t = p.y;
+  if (handle.includes('s')) b = p.y;
+  op.x0 = l; op.y0 = t; op.x1 = r; op.y1 = b;
+}
+/** After a box resize the corners may have crossed; normalize so x0<x1, y0<y1. */
+function normalizeSelected(): void {
+  const op = selected;
+  if (!op || op.tool === 'arrow' || op.tool === 'text') return;
+  const l = Math.min(op.x0 ?? 0, op.x1 ?? 0), r = Math.max(op.x0 ?? 0, op.x1 ?? 0);
+  const t = Math.min(op.y0 ?? 0, op.y1 ?? 0), b = Math.max(op.y0 ?? 0, op.y1 ?? 0);
+  op.x0 = l; op.y0 = t; op.x1 = r; op.y1 = b;
+}
+
+// ---- Crop ------------------------------------------------------------------
+function cropHandles(): Array<{ name: string; x: number; y: number }> {
+  return cropRect ? boxHandles(cropRect) : [];
+}
+function cropHandleAt(p: Pt): string {
+  const tol = HANDLE * scaleFactor();
+  for (const h of cropHandles()) if (Math.abs(p.x - h.x) <= tol && Math.abs(p.y - h.y) <= tol) return h.name;
+  return '';
+}
+function resizeCrop(handle: string, p: Pt): void {
+  if (!cropOrig || !cropRect) return;
+  let l = cropOrig.x, t = cropOrig.y, r = cropOrig.x + cropOrig.w, b = cropOrig.y + cropOrig.h;
+  if (handle.includes('w')) l = clamp(p.x, 0, r - 10);
+  if (handle.includes('e')) r = clamp(p.x, l + 10, canvas.width);
+  if (handle.includes('n')) t = clamp(p.y, 0, b - 10);
+  if (handle.includes('s')) b = clamp(p.y, t + 10, canvas.height);
+  cropRect.x = l; cropRect.y = t; cropRect.w = r - l; cropRect.h = b - t;
+}
+function cancelCrop(): void {
+  cropRect = null;
+  cropOrig = null;
+  els.cropBar.classList.add('hidden');
+  redraw();
+}
+function offsetOp(op: Op, dx: number, dy: number): Op {
+  const o = cloneOp(op);
+  if (o.x0 != null) o.x0 += dx;
+  if (o.x1 != null) o.x1 += dx;
+  if (o.y0 != null) o.y0 += dy;
+  if (o.y1 != null) o.y1 += dy;
+  if (o.x != null) o.x += dx;
+  if (o.y != null) o.y += dy;
+  if (o.points) o.points = o.points.map((pt) => ({ x: pt.x + dx, y: pt.y + dy }));
+  return o;
+}
+function opIntersects(op: Op, w: number, h: number): boolean {
+  const b = bboxOf(op);
+  return b.x < w && b.y < h && b.x + b.w > 0 && b.y + b.h > 0;
+}
+/** Crop the active attachment to cropRect: new base image + ops offset (and clipped). */
+function applyCrop(): void {
+  if (!cropRect || !canvas.width) return;
+  const x = clamp(Math.round(cropRect.x), 0, canvas.width - 1);
+  const y = clamp(Math.round(cropRect.y), 0, canvas.height - 1);
+  const w = clamp(Math.round(cropRect.w), 1, canvas.width - x);
+  const h = clamp(Math.round(cropRect.h), 1, canvas.height - y);
+  const off = document.createElement('canvas');
+  off.width = w;
+  off.height = h;
+  const c = off.getContext('2d');
+  const a = active();
+  if (!c || !a) return;
+  c.drawImage(baseImage, x, y, w, h, 0, 0, w, h); // base image only; ops are kept editable
+  const dataUrl = off.toDataURL('image/png');
+  a.ops = a.ops.map((op) => offsetOp(op, -x, -y)).filter((op) => opIntersects(op, w, h));
+  a.dataUrl = dataUrl;
+  ops = a.ops;
+  cropRect = null;
+  cropOrig = null;
+  selected = null;
+  els.cropBar.classList.add('hidden');
+  setTool('rect');
+  baseImage.onload = () => {
+    canvas.width = baseImage.naturalWidth;
+    canvas.height = baseImage.naturalHeight;
+    redraw();
+  };
+  baseImage.src = dataUrl;
+  renderThumbs();
+  persist();
+}
+
+// ---- Pointer interaction ---------------------------------------------------
 canvas.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return; // right/middle click must not draw
   if (!baseImage.src) return;
   const p = toCanvasXY(e);
+
+  // Crop tool: manipulate the pending crop rectangle, or drag a new one.
+  if (currentTool === 'crop') {
+    if (cropRect) {
+      const h = cropHandleAt(p);
+      if (h) { dragMode = 'crop-resize'; dragHandle = h; cropOrig = { ...cropRect }; dragStart = p; return; }
+      if (pointInRect(p, cropRect)) { dragMode = 'crop-move'; cropOrig = { ...cropRect }; dragStart = p; return; }
+    }
+    cropRect = null;
+    els.cropBar.classList.add('hidden');
+    drawing = { tool: 'crop', color: '', x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+    return;
+  }
+
+  // A selected op: drag a handle to reshape, the body to move, or click off to fix it.
+  if (selected) {
+    const h = handleAt(selected, p);
+    if (h) { dragMode = 'resize'; dragHandle = h; dragOrig = cloneOp(selected); dragStart = p; return; }
+    if (pointInOp(selected, p)) { dragMode = 'move'; dragOrig = cloneOp(selected); dragStart = p; return; }
+    deselect();
+  }
+
   if (currentTool === 'text') {
-    // Commit any in-progress text first — otherwise starting a new box wipes it — then
-    // drag a rectangular region that becomes the (resizable) text box.
     commitTextIfAny();
-    drawing = { tool: 'textbox', color: els.color.value, width: Number(els.width.value), x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+    drawing = { tool: 'textbox', color: prefs.color, strokeColor: prefs.strokeColor, width: prefs.width, x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     return;
   }
   if (currentTool === 'pen') {
-    drawing = { tool: 'pen', color: els.color.value, width: Number(els.width.value), points: [{ x: p.x, y: p.y }] };
+    drawing = { tool: 'pen', color: prefs.color, strokeColor: prefs.strokeColor, width: prefs.width, points: [{ x: p.x, y: p.y }] };
     return;
   }
-  drawing = {
-    tool: currentTool,
-    color: els.color.value,
-    width: Number(els.width.value),
-    x0: p.x,
-    y0: p.y,
-    x1: p.x,
-    y1: p.y,
-  };
-  // Numbered box: assign the next number now so the drag preview shows it. The count is
-  // taken from the committed ops, so undo naturally frees the number for the next box.
-  if (currentTool === 'numrect') {
-    drawing.num = ops.filter((o) => o.tool === 'numrect').length + 1;
-  }
+  drawing = { tool: currentTool, color: prefs.color, strokeColor: prefs.strokeColor, width: prefs.width, x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+  // Next badge = max existing + 1 (not count + 1), so a crop that drops a middle box won't collide.
+  if (currentTool === 'numrect') drawing.num = Math.max(0, ...ops.filter((o) => o.tool === 'numrect').map((o) => o.num ?? 0)) + 1;
 });
 
 canvas.addEventListener('mousemove', (e) => {
-  if (!drawing) return;
   const p = toCanvasXY(e);
-  if (drawing.tool === 'pen') {
-    drawing.points?.push({ x: p.x, y: p.y });
-  } else {
-    drawing.x1 = p.x;
-    drawing.y1 = p.y;
+  if (dragMode === 'move' && dragOrig && selected) { moveOpBy(selected, dragOrig, p.x - dragStart.x, p.y - dragStart.y); redraw(); return; }
+  if (dragMode === 'resize' && dragOrig && selected) { resizeOp(selected, dragOrig, dragHandle, p); redraw(); return; }
+  if (dragMode === 'crop-move' && cropOrig && cropRect) {
+    cropRect.x = clamp(cropOrig.x + (p.x - dragStart.x), 0, canvas.width - cropRect.w);
+    cropRect.y = clamp(cropOrig.y + (p.y - dragStart.y), 0, canvas.height - cropRect.h);
+    redraw();
+    return;
   }
+  if (dragMode === 'crop-resize') { resizeCrop(dragHandle, p); redraw(); return; }
+  if (!drawing) return;
+  if (drawing.tool === 'pen') drawing.points?.push({ x: p.x, y: p.y });
+  else { drawing.x1 = p.x; drawing.y1 = p.y; }
   redraw();
 });
 
 window.addEventListener('mouseup', () => {
-  if (!drawing) return;
-  if (drawing.tool === 'textbox') {
-    // Open the text editor over the dragged region; a plain click → a default-size box.
-    const bx = Math.min(drawing.x0 ?? 0, drawing.x1 ?? 0);
-    const by = Math.min(drawing.y0 ?? 0, drawing.y1 ?? 0);
-    let bw = Math.abs((drawing.x1 ?? 0) - (drawing.x0 ?? 0));
-    let bh = Math.abs((drawing.y1 ?? 0) - (drawing.y0 ?? 0));
-    const size = Math.max(14, (drawing.width || 4) * 5);
-    if (bw < 8 || bh < 8) {
-      bw = 240;
-      bh = Math.round(size * 1.6);
-    }
-    const color = drawing.color;
-    drawing = null;
+  if (dragMode) {
+    if (dragMode === 'move' || dragMode === 'resize') { normalizeSelected(); persist(); }
+    dragMode = null;
+    dragOrig = null;
+    cropOrig = null;
     redraw();
-    openTextBox(bx, by, bw, bh, size, color);
+    return;
+  }
+  if (!drawing) return;
+  const d = drawing;
+  drawing = null;
+
+  if (d.tool === 'crop') {
+    const x = Math.min(d.x0 ?? 0, d.x1 ?? 0), y = Math.min(d.y0 ?? 0, d.y1 ?? 0);
+    const w = Math.abs((d.x1 ?? 0) - (d.x0 ?? 0)), h = Math.abs((d.y1 ?? 0) - (d.y0 ?? 0));
+    if (w > 8 && h > 8) { cropRect = { x, y, w, h }; els.cropBar.classList.remove('hidden'); }
+    redraw();
+    return;
+  }
+  if (d.tool === 'textbox') {
+    const bx = Math.min(d.x0 ?? 0, d.x1 ?? 0), by = Math.min(d.y0 ?? 0, d.y1 ?? 0);
+    let bw = Math.abs((d.x1 ?? 0) - (d.x0 ?? 0)), bh = Math.abs((d.y1 ?? 0) - (d.y0 ?? 0));
+    const size = prefs.fontSize;
+    if (bw < 8 || bh < 8) { bw = 240; bh = Math.round(size * 1.6); }
+    redraw();
+    openTextBox(bx, by, bw, bh, size, d.color, d.strokeColor || prefs.strokeColor);
     return;
   }
   let added = false;
-  if (drawing.tool === 'pen') {
-    if ((drawing.points?.length ?? 0) > 1) {
-      ops.push(drawing);
-      added = true;
-    }
+  if (d.tool === 'pen') {
+    if ((d.points?.length ?? 0) > 1) { ops.push(d); added = true; }
   } else {
-    const moved = Math.hypot((drawing.x1 ?? 0) - (drawing.x0 ?? 0), (drawing.y1 ?? 0) - (drawing.y0 ?? 0)) > 3;
-    if (moved) {
-      ops.push(drawing);
-      added = true;
-    }
+    const moved = Math.hypot((d.x1 ?? 0) - (d.x0 ?? 0), (d.y1 ?? 0) - (d.y0 ?? 0)) > 3;
+    if (moved) { ops.push(d); added = true; }
   }
-  drawing = null;
+  if (added) {
+    selected = isSelectable(d.tool) ? d : null; // a freshly drawn op stays selected (pen excepted)
+    persist();
+  }
   redraw();
-  if (added) persist();
 });
 
 // Text tool: drag a rectangular region, then type into a transparent textarea that fills
@@ -770,7 +1150,7 @@ window.addEventListener('mouseup', () => {
 // handle. Font size tracks the current width; the on-screen size accounts for the canvas
 // being scaled to fit. Enter inserts a newline; Ctrl/Cmd+Enter or clicking away commits;
 // Esc cancels.
-function openTextBox(bx: number, by: number, bw: number, bh: number, size: number, color: string): void {
+function openTextBox(bx: number, by: number, bw: number, bh: number, size: number, color: string, strokeColor: string): void {
   const cRect = canvas.getBoundingClientRect();
   const wRect = canvasWrap.getBoundingClientRect();
   const scale = canvas.width ? cRect.width / canvas.width : 1;
@@ -782,24 +1162,25 @@ function openTextBox(bx: number, by: number, bw: number, bh: number, size: numbe
   textInput.style.color = color;
   textInput.style.display = 'block';
   textInput.value = '';
-  pendingTextOp = { tool: 'text', color, size, x: bx, y: by, w: bw };
+  pendingTextOp = { tool: 'text', color, strokeColor, size, x: bx, y: by, w: bw };
   setTimeout(() => textInput.focus(), 0);
 }
 
 function commitTextIfAny(): void {
-  let added = false;
+  let committed: Op | null = null;
   if (textInput.style.display !== 'none' && textInput.value.trim() && pendingTextOp) {
     // Honor any manual resize: derive the wrap width from the textarea's current width.
     const scale = canvas.width ? canvas.getBoundingClientRect().width / canvas.width : 1;
     const w = scale ? textInput.offsetWidth / scale : pendingTextOp.w;
-    ops.push({ ...pendingTextOp, w, text: textInput.value.replace(/\n+$/, '') });
-    added = true;
+    committed = { ...pendingTextOp, w, text: textInput.value.replace(/\n+$/, '') };
+    ops.push(committed);
   }
   textInput.style.display = 'none';
   textInput.blur(); // drop focus so a later Esc closes the editor instead of being swallowed
   pendingTextOp = null;
+  if (committed) selected = committed; // the just-typed text becomes selectable/movable
   redraw();
-  if (added) persist();
+  if (committed) persist();
 }
 
 textInput.addEventListener('keydown', (e) => {
@@ -825,7 +1206,72 @@ function redraw(): void {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
   for (const op of ops) drawOne(ctx, baseImage, op);
-  if (drawing) drawOne(ctx, baseImage, drawing);
+  if (drawing && drawing.tool !== 'crop') drawOne(ctx, baseImage, drawing);
+  if (selected) drawSelectionChrome(selected);
+  const liveCrop = cropRect || (drawing && drawing.tool === 'crop' ? cropRectFromDrawing(drawing) : null);
+  if (liveCrop) drawCropOverlay(liveCrop);
+}
+
+function cropRectFromDrawing(d: Op): Rect {
+  const x = Math.min(d.x0 ?? 0, d.x1 ?? 0), y = Math.min(d.y0 ?? 0, d.y1 ?? 0);
+  return { x, y, w: Math.abs((d.x1 ?? 0) - (d.x0 ?? 0)), h: Math.abs((d.y1 ?? 0) - (d.y0 ?? 0)) };
+}
+
+/** Dashed bounding box + square handles around the selected op (sizes constant on screen). */
+function drawSelectionChrome(op: Op): void {
+  const s = scaleFactor();
+  ctx.save();
+  ctx.strokeStyle = '#1f6feb';
+  ctx.lineWidth = 1.5 * s;
+  ctx.setLineDash([5 * s, 4 * s]);
+  if (op.tool === 'arrow') {
+    ctx.beginPath();
+    ctx.moveTo(op.x0 ?? 0, op.y0 ?? 0);
+    ctx.lineTo(op.x1 ?? 0, op.y1 ?? 0);
+    ctx.stroke();
+  } else {
+    const b = bboxOf(op);
+    ctx.strokeRect(b.x, b.y, b.w, b.h);
+  }
+  ctx.setLineDash([]);
+  const r = HANDLE * s * 0.7;
+  for (const h of handlesOf(op)) {
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = '#1f6feb';
+    ctx.lineWidth = 1.5 * s;
+    ctx.beginPath();
+    ctx.rect(h.x - r, h.y - r, r * 2, r * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Darken everything outside the crop rect and draw its frame + handles. */
+function drawCropOverlay(r: Rect): void {
+  const s = scaleFactor();
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0, 0, canvas.width, r.y);
+  ctx.fillRect(0, r.y + r.h, canvas.width, canvas.height - (r.y + r.h));
+  ctx.fillRect(0, r.y, r.x, r.h);
+  ctx.fillRect(r.x + r.w, r.y, canvas.width - (r.x + r.w), r.h);
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5 * s;
+  ctx.setLineDash([6 * s, 4 * s]);
+  ctx.strokeRect(r.x, r.y, r.w, r.h);
+  ctx.setLineDash([]);
+  const hr = HANDLE * s * 0.7;
+  for (const h of boxHandles(r)) {
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = '#1f6feb';
+    ctx.lineWidth = 1.5 * s;
+    ctx.beginPath();
+    ctx.rect(h.x - hr, h.y - hr, hr * 2, hr * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 /** Render a base image plus a list of ops onto an arbitrary context (used for export). */
@@ -835,30 +1281,45 @@ function renderOps(c: CanvasRenderingContext2D, base: Img, w: number, h: number,
   for (const op of opsList) drawOne(c, base, op);
 }
 
+/** Halo line width: the contrasting outline drawn under a colored stroke. */
+function haloWidth(width: number): number {
+  return width + Math.max(6, width);
+}
+/** Stroke a rectangle as a contrasting outline (halo) under the main color. */
+function strokeRectHalo(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string, stroke: string, width: number): void {
+  c.lineJoin = 'round';
+  c.strokeStyle = stroke;
+  c.lineWidth = haloWidth(width);
+  c.strokeRect(x, y, w, h);
+  c.strokeStyle = color;
+  c.lineWidth = width;
+  c.strokeRect(x, y, w, h);
+}
+
 function drawOne(c: CanvasRenderingContext2D, base: Img, op: Op): void {
   c.save();
-  c.strokeStyle = op.color;
-  c.fillStyle = op.color;
-  c.lineWidth = op.width || 4;
   c.lineJoin = 'round';
   c.lineCap = 'round';
+  const stroke = op.strokeColor || '#ffffff'; // contrasting halo (default white; older ops have none)
+  const width = op.width || 4;
 
   if (op.tool === 'rect') {
     const x = Math.min(op.x0 ?? 0, op.x1 ?? 0);
     const y = Math.min(op.y0 ?? 0, op.y1 ?? 0);
-    c.strokeRect(x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)));
+    strokeRectHalo(c, x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)), op.color, stroke, width);
   } else if (op.tool === 'numrect') {
-    drawNumRect(c, op);
+    drawNumRect(c, op, stroke);
   } else if (op.tool === 'arrow') {
-    drawArrow(c, op);
+    drawArrow(c, op, stroke);
   } else if (op.tool === 'pen') {
-    drawPen(c, op);
+    drawPen(c, op, stroke);
   } else if (op.tool === 'mosaic') {
     drawMosaic(c, base, op);
-  } else if (op.tool === 'textbox') {
+  } else if (op.tool === 'textbox' || op.tool === 'crop') {
     // In-progress region preview (never committed).
     const x = Math.min(op.x0 ?? 0, op.x1 ?? 0);
     const y = Math.min(op.y0 ?? 0, op.y1 ?? 0);
+    c.strokeStyle = op.color || '#1f6feb';
     c.setLineDash([6, 4]);
     c.lineWidth = 1.5;
     c.strokeRect(x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)));
@@ -866,11 +1327,12 @@ function drawOne(c: CanvasRenderingContext2D, base: Img, op: Op): void {
     const size = op.size || 20;
     c.font = `bold ${size}px system-ui, sans-serif`;
     c.textBaseline = 'top';
-    c.lineWidth = Math.max(2, size / 8);
+    c.lineWidth = Math.max(2, size / 6);
+    c.lineJoin = 'round';
     const lineHeight = size * 1.2;
     wrapText(c, op.text || '', op.w).forEach((line, i) => {
       const ly = (op.y ?? 0) + i * lineHeight;
-      c.strokeStyle = 'rgba(255,255,255,0.9)';
+      c.strokeStyle = stroke;
       c.strokeText(line, op.x ?? 0, ly);
       c.fillStyle = op.color;
       c.fillText(line, op.x ?? 0, ly);
@@ -912,32 +1374,43 @@ function wrapText(c: CanvasRenderingContext2D, text: string, maxW?: number): str
   return out;
 }
 
-/** Stroke a freehand pen path. */
-function drawPen(c: CanvasRenderingContext2D, op: Op): void {
+/** Stroke a freehand pen path with a contrasting halo under the main color. */
+function drawPen(c: CanvasRenderingContext2D, op: Op, stroke: string): void {
   const pts = op.points || [];
   if (pts.length < 2) return;
-  c.beginPath();
-  c.moveTo(pts[0].x, pts[0].y);
-  for (let i = 1; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y);
+  const width = op.width || 4;
+  const trace = (): void => {
+    c.beginPath();
+    c.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y);
+  };
+  c.strokeStyle = stroke;
+  c.lineWidth = haloWidth(width);
+  trace();
+  c.stroke();
+  c.strokeStyle = op.color;
+  c.lineWidth = width;
+  trace();
   c.stroke();
 }
 
-/** Draw a rectangle with a numbered, white-outlined circular badge at its top-left corner. */
-function drawNumRect(c: CanvasRenderingContext2D, op: Op): void {
+/** Draw a rectangle with a numbered circular badge (outlined in the contrasting color). */
+function drawNumRect(c: CanvasRenderingContext2D, op: Op, stroke: string): void {
   const x = Math.min(op.x0 ?? 0, op.x1 ?? 0);
   const y = Math.min(op.y0 ?? 0, op.y1 ?? 0);
-  c.strokeRect(x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)));
+  const width = op.width || 4;
+  strokeRectHalo(c, x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)), op.color, stroke, width);
 
-  const r = Math.max(11, (op.width || 4) * 2.4);
+  const r = Math.max(11, width * 2.4);
   c.beginPath();
   c.arc(x, y, r, 0, Math.PI * 2);
   c.fillStyle = op.color;
   c.fill();
   c.lineWidth = Math.max(2, r / 6);
-  c.strokeStyle = '#ffffff';
+  c.strokeStyle = stroke;
   c.stroke();
 
-  c.fillStyle = '#ffffff';
+  c.fillStyle = stroke;
   c.font = `bold ${Math.round(r * 1.2)}px system-ui, sans-serif`;
   c.textAlign = 'center';
   c.textBaseline = 'middle';
@@ -945,22 +1418,43 @@ function drawNumRect(c: CanvasRenderingContext2D, op: Op): void {
   c.textAlign = 'start'; // reset for subsequent text ops
 }
 
-function drawArrow(c: CanvasRenderingContext2D, op: Op): void {
+function drawArrow(c: CanvasRenderingContext2D, op: Op, stroke: string): void {
   const x0 = op.x0 ?? 0;
   const y0 = op.y0 ?? 0;
   const x1 = op.x1 ?? 0;
   const y1 = op.y1 ?? 0;
-  const head = Math.max(10, (op.width || 4) * 3);
+  const width = op.width || 4;
+  const head = Math.max(10, width * 3);
   const angle = Math.atan2(y1 - y0, x1 - x0);
-  c.beginPath();
-  c.moveTo(x0, y0);
-  c.lineTo(x1, y1);
+  const shaft = (): void => {
+    c.beginPath();
+    c.moveTo(x0, y0);
+    c.lineTo(x1, y1);
+  };
+  const headPath = (): void => {
+    c.beginPath();
+    c.moveTo(x1, y1);
+    c.lineTo(x1 - head * Math.cos(angle - Math.PI / 6), y1 - head * Math.sin(angle - Math.PI / 6));
+    c.lineTo(x1 - head * Math.cos(angle + Math.PI / 6), y1 - head * Math.sin(angle + Math.PI / 6));
+    c.closePath();
+  };
+  // Halo first (shaft + head outline), then the colored arrow on top.
+  c.strokeStyle = stroke;
+  c.lineWidth = haloWidth(width);
+  shaft();
   c.stroke();
-  c.beginPath();
-  c.moveTo(x1, y1);
-  c.lineTo(x1 - head * Math.cos(angle - Math.PI / 6), y1 - head * Math.sin(angle - Math.PI / 6));
-  c.lineTo(x1 - head * Math.cos(angle + Math.PI / 6), y1 - head * Math.sin(angle + Math.PI / 6));
-  c.closePath();
+  headPath();
+  c.lineJoin = 'round';
+  c.lineWidth = Math.max(4, width);
+  c.stroke();
+  c.fillStyle = stroke;
+  c.fill();
+  c.strokeStyle = op.color;
+  c.lineWidth = width;
+  shaft();
+  c.stroke();
+  c.fillStyle = op.color;
+  headPath();
   c.fill();
 }
 
@@ -1049,16 +1543,25 @@ async function aiImages(): Promise<string[]> {
 
 els.download.addEventListener('click', () => {
   commitTextIfAny();
+  clearChrome(); // never bake the selection box / crop overlay into the exported PNG
   const a = document.createElement('a');
   a.href = canvasToDataUrl();
   a.download = `shot-${Date.now()}.png`;
   a.click();
 });
 
+/** Remove transient on-canvas UI (selection handles, crop overlay) and repaint a clean frame. */
+function clearChrome(): void {
+  if (cropRect) cancelCrop(); // also repaints
+  deselect(); // repaints if something was selected
+  redraw(); // ensure a clean frame even if nothing was selected/cropping
+}
+
 /** Copy the current canvas (with annotations) to the clipboard. */
 async function copyCanvas(): Promise<void> {
   if (!attachments.length) return;
   commitTextIfAny();
+  clearChrome();
   try {
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
     if (!blob) throw new Error('no image');

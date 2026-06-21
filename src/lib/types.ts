@@ -46,6 +46,8 @@ export interface Config {
   aiTitlePrompt: string;
   /** AI voice-complaint system prompt. Empty means "use the current language's default". */
   aiComplaintPrompt: string;
+  /** Voice-input dictionary: terms sent as a transcription prompt to bias speech recognition. */
+  aiVocabulary: string[];
   closeAfterSubmit: boolean;
   shortcutEnabled: boolean;
   lastWorkspaceId: string;
@@ -87,7 +89,7 @@ export interface Attachment {
   pageTitle?: string;
   sourceTabId?: number;
   sourceWindowId?: number;
-  /** Capture source id (e.g. 'tab', 'desktop'); set by Stage 2, optional for now. */
+  /** Capture source id (e.g. 'tab' or 'clipboard'); optional. */
   sourceId?: string;
   ops: Op[];
   createdAt: number;

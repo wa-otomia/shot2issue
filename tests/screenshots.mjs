@@ -152,7 +152,6 @@ try {
       el.hidden = false;
     };
     set('scWeb', 'Ctrl+Shift+S');
-    set('scDesktop', 'Ctrl+Shift+D');
   });
   await pop.waitForTimeout(150);
   const body = await pop.$('body');

@@ -35,41 +35,40 @@ header .spacer { flex: 1; }
 .canvas-col { flex: 1 1 520px; min-width: 320px; }
 .form-col { flex: 0 1 360px; min-width: 300px; }
 
-/* Toolbar */
+/* Toolbar — grouped icon buttons + color/size controls */
 .toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 10px;
   align-items: center;
   margin-bottom: 10px;
 }
-.toolbar button, .toolbar .tool {
-  font: inherit;
-  cursor: pointer;
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: Field;
-  color: FieldText;
+.tool-group { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 9px; background: Field; }
+.toolbar .tool, .toolbar .act {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 30px; padding: 0;
+  border: 1px solid transparent; border-radius: 6px;
+  background: none; color: FieldText; cursor: pointer;
+  transition: background 0.12s, color 0.12s, transform 0.06s;
 }
-.toolbar .tool.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-.toolbar .sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
-.toolbar label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
-.toolbar input[type="color"] { width: 28px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: none; cursor: pointer; }
-.toolbar input[type="range"] { width: 90px; }
-.toolbar .kbd {
-  font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  border: 1px solid var(--border);
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  padding: 0 4px;
-  color: var(--muted);
-  margin-left: 2px;
-}
+.toolbar .tool svg, .toolbar .act svg { width: 18px; height: 18px; display: block; }
+.toolbar .tool:hover, .toolbar .act:hover { background: color-mix(in srgb, CanvasText 12%, transparent); }
+.toolbar .tool:active, .toolbar .act:active { transform: translateY(1px); }
+.toolbar .tool.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.toolbar .sep { width: 1px; height: 26px; background: var(--border); }
+.ctl-group { display: inline-flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.swatch { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.swatch input[type="color"] { width: 26px; height: 26px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: none; cursor: pointer; }
+.slider { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.slider input[type="range"] { width: 96px; }
+
+/* Crop confirm bar */
+.crop-bar { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 8px 12px; border: 1px solid var(--accent); border-radius: 8px; background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.crop-bar .spacer { flex: 1; }
+.crop-bar .hint { color: var(--muted); font-size: 12px; }
+.crop-bar button { font: inherit; cursor: pointer; padding: 6px 14px; border-radius: 6px; }
+.crop-bar button.primary { background: var(--accent); border: 1px solid var(--accent); color: #fff; font-weight: 600; }
+.crop-bar button.ghost { background: Field; border: 1px solid var(--border); color: FieldText; }
 
 /* Canvas: show the whole image; scale it down to fit the viewport (no scrolling). */
 .canvas-wrap {
@@ -187,6 +186,40 @@ button.ghost.recording { color: #fff; background: var(--danger); border-color: v
 .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -1px; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .hidden { display: none; }
+
+/* AI thinking bubble (streamed reasoning) + generation animations */
+.think-bubble {
+  margin-top: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px 10px 10px 2px;
+  background: color-mix(in srgb, var(--accent) 7%, Canvas);
+  font-size: 12.5px;
+  color: var(--muted);
+  max-height: 170px;
+  overflow: auto;
+  animation: bubble-in 0.18s ease-out;
+}
+.think-head { display: flex; align-items: center; gap: 7px; font-weight: 600; color: var(--accent); margin-bottom: 4px; }
+.think-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: think-pulse 1.1s ease-in-out infinite; flex: 0 0 auto; }
+.think-text { white-space: pre-wrap; line-height: 1.5; }
+.think-text.streaming::after { content: "▌"; color: var(--accent); animation: caret-blink 1s steps(1) infinite; }
+.think-bubble.done { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 7%, Canvas); }
+.think-bubble.done .think-head { color: var(--ok); }
+.think-bubble.done .think-dot { animation: none; background: var(--ok); }
+@keyframes bubble-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes think-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.55); opacity: 0.5; } }
+@keyframes caret-blink { 50% { opacity: 0; } }
+
+/* A field receiving streamed text gets a soft accent glow. */
+#title.streaming, #body.streaming, #complaintText.streaming {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent);
+  transition: box-shadow 0.2s;
+}
+
+/* Generate buttons flip to a "Stop" state while generating. */
+button.ai-busy { background: var(--danger); border-color: var(--danger); color: #fff; }
+button.ai-busy::before { content: "■"; font-size: 9px; margin-right: 6px; vertical-align: 1px; }
 
 /* Transient toast (e.g. the "press Esc again" hint). */
 .toast {
