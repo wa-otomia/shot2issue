@@ -178,6 +178,15 @@ async function captureDesktop(tab: chrome.tabs.Tab): Promise<void> {
     notify(t('captureDesktopFailed', ['no active tab']));
     return;
   }
+  // The chosen stream is bound to its target tab, so we grab the frame by injecting into that
+  // tab — which Chrome forbids on privileged pages. Fail fast (before the picker) with a clear
+  // message instead of letting executeScript reject after the user has already picked a source.
+  const url = tab.url || '';
+  const injectable = /^https?:\/\//.test(url) && !/^https:\/\/(chrome\.google\.com\/webstore|chromewebstore\.google\.com)/.test(url);
+  if (!injectable) {
+    notify(t('captureNeedNormalPage'));
+    return;
+  }
   let streamId: string;
   try {
     streamId = await chooseDesktopMedia(tab);

@@ -165,7 +165,7 @@ Codex 的 OAuth client 只注册了 `http://localhost:1455` 回调（扩展自�
 | --- | --- |
 | `activeTab` | 点击图标时授予；用于截取可见标签页并读取其标题和 URL。 |
 | `storage` | 在 `chrome.storage.local` 中保存设置，在 `chrome.storage.session` 中暂存待编辑的截图。 |
-| `scripting` | 向后台的 github.com 标签页注入提交脚本。 |
+| `scripting` | 向 github.com 标签页注入提交脚本，并在屏幕/窗口截图时向当前标签页注入抓帧脚本。 |
 | `desktopCapture` | 选择「屏幕或窗口」时弹出选择器。仅用于该截图来源。 |
 
 默认主机权限仅限 `https://github.com/*`，即 GitHub 提交时唯一访问的来源。截图的字节由 GitHub

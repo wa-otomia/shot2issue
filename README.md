@@ -229,7 +229,7 @@ each with its own **Restore default prompt** button.
 | --- | --- |
 | `activeTab` | Granted when the icon is clicked; used to capture the visible tab and read its title and URL. |
 | `storage` | Stores settings in `chrome.storage.local` and the pending screenshot in `chrome.storage.session`. |
-| `scripting` | Injects the submission script into the background github.com tab. |
+| `scripting` | Injects the submission script into the github.com tab, and the frame-grab script into the active tab for screen/window capture. |
 | `desktopCapture` | Shows the screen/window picker when you choose “Screen or window”. Only used for that capture source. |
 
 Host permissions are limited to `https://github.com/*` by default, the only origin the

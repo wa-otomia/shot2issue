@@ -412,6 +412,9 @@ export async function connectViaCallbackCapture(): Promise<AiAuth> {
   const { url } = await beginManualAuth(); // redirect = LOCALHOST_REDIRECT, PKCE stashed
   const tab = await chrome.tabs.create({ url });
   const tabId = tab.id;
+  // No tab id → onUpdated can never match this tab; fail now so the caller drops straight to
+  // the manual paste fallback instead of hanging until the timeout.
+  if (tabId == null) throw new Error('Could not open the sign-in tab.');
   return new Promise<AiAuth>((resolve, reject) => {
     let settled = false;
     const finish = (run: () => void): void => {

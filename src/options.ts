@@ -80,6 +80,25 @@ let draft: Config;
 
 const wsKind = (ws: Workspace): string => ws.kind || 'github';
 
+// Workspace cards are collapsed by default and expanded only while editing. This holds the
+// ids of the currently expanded cards (survives re-renders, e.g. on a target-kind change).
+const expandedWs = new Set<string>();
+
+/** One-line summary shown on a collapsed workspace card. */
+function wsSummary(ws: Workspace): string {
+  const provider = getProvider(wsKind(ws));
+  const name = (ws.name || '').trim() || t('wsUntitled');
+  let detail = '';
+  if (isAccountBased(provider)) {
+    detail = (ws.project || '').trim();
+  } else {
+    const owner = (ws.owner || '').trim();
+    const repo = (ws.repo || '').trim();
+    if (owner || repo) detail = `${owner}/${repo}`;
+  }
+  return detail ? `${name} · ${provider.label} · ${detail}` : `${name} · ${provider.label}`;
+}
+
 function status(text: string, cls = ''): void {
   els.status.className = cls;
   els.status.textContent = text;
@@ -188,8 +207,9 @@ function renderWorkspaces(): void {
   draft.workspaces.forEach((ws, idx) => {
     const kind = wsKind(ws);
     const provider = getProvider(kind);
+    const collapsed = !expandedWs.has(ws.id);
     const card = document.createElement('div');
-    card.className = 'ws-card';
+    card.className = collapsed ? 'ws-card collapsed' : 'ws-card';
 
     const targetOptions = PROVIDER_LIST.map(
       (p) => `<option value="${escapeAttr(p.id)}">${escapeAttr(p.label)}</option>`
@@ -216,25 +236,33 @@ function renderWorkspaces(): void {
       : '';
 
     card.innerHTML = `
-      <div class="ws-grid">
-        <div class="full">
-          <label>${t('wsName')}</label>
-          <input type="text" data-k="name" placeholder="${escapeAttr(t('wsNamePlaceholder'))}" />
-        </div>
-        <div class="full">
-          <label>${t('wsTarget')}</label>
-          <select data-k="kind" style="max-width:200px;">${targetOptions}</select>
-        </div>
-        ${fieldHtml}
-        ${hintHtml}
-      </div>
-      <div class="row" style="margin-top:10px;">
+      <div class="ws-head">
+        <button type="button" class="ws-toggle" data-act="toggle">
+          <span class="ws-chev">${collapsed ? '▸' : '▾'}</span>
+          <span class="ws-summary">${escapeAttr(wsSummary(ws))}</span>
+        </button>
         <button class="danger" data-act="remove">${t('wsRemove')}</button>
+      </div>
+      <div class="ws-body">
+        <div class="ws-grid">
+          <div class="full">
+            <label>${t('wsName')}</label>
+            <input type="text" data-k="name" placeholder="${escapeAttr(t('wsNamePlaceholder'))}" />
+          </div>
+          <div class="full">
+            <label>${t('wsTarget')}</label>
+            <select data-k="kind" style="max-width:200px;">${targetOptions}</select>
+          </div>
+          ${fieldHtml}
+          ${hintHtml}
+        </div>
       </div>
     `;
 
     (card.querySelector('[data-k="name"]') as HTMLInputElement).value = ws.name || '';
     (card.querySelector('[data-k="kind"]') as HTMLSelectElement).value = kind;
+    const summaryEl = card.querySelector('.ws-summary') as HTMLElement;
+    const chevEl = card.querySelector('.ws-chev') as HTMLElement;
     card.querySelectorAll('[data-k]').forEach((node) => {
       const input = node as HTMLInputElement | HTMLSelectElement;
       const k = input.dataset.k as string;
@@ -247,6 +275,7 @@ function renderWorkspaces(): void {
         } else {
           input.addEventListener('input', () => {
             draft.workspaces[idx].name = input.value;
+            summaryEl.textContent = wsSummary(draft.workspaces[idx]);
           });
         }
         return;
@@ -255,9 +284,17 @@ function renderWorkspaces(): void {
       const evt = input.tagName === 'SELECT' ? 'change' : 'input';
       input.addEventListener(evt, () => {
         draft.workspaces[idx][k] = input.value.trim();
+        summaryEl.textContent = wsSummary(draft.workspaces[idx]);
       });
     });
+    (card.querySelector('[data-act="toggle"]') as HTMLButtonElement).addEventListener('click', () => {
+      const nowCollapsed = card.classList.toggle('collapsed');
+      if (nowCollapsed) expandedWs.delete(ws.id);
+      else expandedWs.add(ws.id);
+      chevEl.textContent = nowCollapsed ? '▸' : '▾';
+    });
     (card.querySelector('[data-act="remove"]') as HTMLButtonElement).addEventListener('click', () => {
+      expandedWs.delete(ws.id);
       draft.workspaces.splice(idx, 1);
       renderWorkspaces();
     });
@@ -267,7 +304,9 @@ function renderWorkspaces(): void {
 }
 
 els.addWorkspace.addEventListener('click', () => {
-  draft.workspaces.push({ id: makeId(), kind: 'github', name: '', owner: '', repo: '' });
+  const id = makeId();
+  draft.workspaces.push({ id, kind: 'github', name: '', owner: '', repo: '' });
+  expandedWs.add(id); // a freshly added workspace opens expanded for editing
   renderWorkspaces();
 });
 
@@ -406,6 +445,13 @@ els.aiManualToggle.addEventListener('click', () => {
 });
 
 els.aiManualOpen.addEventListener('click', async () => {
+  // An auto-capture is already in flight (aiConnect disabled): it has its own tab + pending
+  // PKCE. Don't call beginManualAuth again — that would overwrite the pending state and break
+  // the auto-capture. The tab it opened is already there for the user to paste from.
+  if (els.aiConnect.disabled) {
+    aiStatus(t('aiConnecting'));
+    return;
+  }
   if (!(await ensureAiPermissions())) {
     aiStatus(t('aiPermDenied'), 'error');
     return;
@@ -526,6 +572,8 @@ els.save.addEventListener('click', async () => {
   for (const w of draft.workspaces) {
     const errKey = getProvider(w.kind).validate(mergeWs(w));
     if (errKey) {
+      expandedWs.add(w.id); // reveal the card with the problem
+      renderWorkspaces();
       showTab('workspaces');
       status(t(errKey), 'error');
       return;

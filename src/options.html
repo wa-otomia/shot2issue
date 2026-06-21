@@ -27,6 +27,13 @@
     .tab-panel.active { display: block; }
     .tab-panel h2:first-of-type { margin-top: 12px; }
     .ws-card, .acct-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin: 10px 0; }
+    /* Collapsible workspace cards: collapsed by default, expanded while editing. */
+    .ws-head { display: flex; align-items: center; gap: 8px; }
+    .ws-toggle { flex: 1; display: flex; align-items: center; gap: 8px; text-align: left; border: none; background: none; padding: 2px 0; font: inherit; color: FieldText; cursor: pointer; }
+    .ws-chev { color: var(--muted); width: 1em; flex: 0 0 auto; }
+    .ws-summary { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ws-body { margin-top: 10px; }
+    .ws-card.collapsed .ws-body { display: none; }
     .ws-grid, .acct-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
     .ws-grid .full, .acct-grid .full { grid-column: 1 / -1; }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -61,6 +68,9 @@
     <button class="tab" data-tab="accounts" data-i18n="tabAccounts"></button>
     <button class="tab" data-tab="ai" data-i18n="tabAi"></button>
     <button class="tab" data-tab="general" data-i18n="tabGeneral"></button>
+    <!-- Language tab label is intentionally written in all three languages so it is findable
+         regardless of the current UI language. -->
+    <button class="tab" data-tab="language">Language · 语言 · 言語</button>
   </div>
 
   <!-- Workspaces -->
@@ -132,14 +142,6 @@
 
   <!-- General -->
   <section class="tab-panel" data-panel="general">
-    <h2 data-i18n="languageHeading"></h2>
-    <p class="hint" data-i18n="languageHint"></p>
-    <select id="lang">
-      <option value="en">English</option>
-      <option value="zh">中文（简体）</option>
-      <option value="ja">日本語</option>
-    </select>
-
     <h2 data-i18n="templatesHeading"></h2>
     <p class="hint" data-i18n="templatesHint"></p>
     <label for="titleTemplate" data-i18n="titleTemplateLabel"></label>
@@ -173,6 +175,17 @@
       <button id="importConfig" data-i18n="importConfig"></button>
       <input type="file" id="importFile" accept="application/json,.json" hidden />
     </div>
+  </section>
+
+  <!-- Language (its own tab; auto-detected from the system on first run) -->
+  <section class="tab-panel" data-panel="language">
+    <h2 data-i18n="languageHeading"></h2>
+    <p class="hint" data-i18n="languageHint"></p>
+    <select id="lang">
+      <option value="en">English</option>
+      <option value="zh">中文（简体）</option>
+      <option value="ja">日本語</option>
+    </select>
   </section>
 
   <div class="save-bar">

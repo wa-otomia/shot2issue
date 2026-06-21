@@ -218,7 +218,7 @@ ChatGPT セッショントークンのみを受け付けます（API key 不可�
 | --- | --- |
 | `activeTab` | アイコンのクリック時に付与。表示中のタブを撮影し、タイトルと URL を読み取るために使用。 |
 | `storage` | 設定を `chrome.storage.local` に、保留中のスクリーンショットを `chrome.storage.session` に保存。 |
-| `scripting` | バックグラウンドの github.com タブに送信用スクリプトを注入。 |
+| `scripting` | github.com タブに送信用スクリプトを、画面/ウィンドウのキャプチャ時にはアクティブタブにフレーム取得スクリプトを注入。 |
 | `desktopCapture` | 「画面またはウィンドウ」を選んだときに選択ダイアログを表示。このキャプチャ元でのみ使用。 |
 
 既定のホスト権限は `https://github.com/*` のみで、GitHub 送信時の唯一の通信先です。スクリーン

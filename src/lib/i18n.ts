@@ -127,6 +127,7 @@ const MESSAGES: Record<string, Record<string, string>> = {
     errAccountIncomplete: 'Every account must have a name, base URL, and token.',
     wsAccount: 'Account',
     wsRemove: 'Remove this workspace',
+    wsUntitled: 'Untitled workspace',
     typesHeading: 'Types',
     typesHint: 'Shown in the Type dropdown in the editor and used as the default title suffix. Defaults: Change / Bug / Feature.',
     newTypePlaceholder: 'New type, press Enter to add',
@@ -219,6 +220,7 @@ const MESSAGES: Record<string, Record<string, string>> = {
     // Background
     captureFailed: 'Screenshot failed: {0} (restricted pages such as chrome:// cannot be captured)',
     captureDesktopFailed: 'Screen capture failed: {0}',
+    captureNeedNormalPage: 'Screen/window capture must be started from a normal web page (the current tab can’t be used for capture). Switch to an ordinary web page, then capture.',
     // Popup
     popupWeb: 'Web page screenshot',
     popupDesktop: 'Screen or window',
@@ -345,6 +347,7 @@ const MESSAGES: Record<string, Record<string, string>> = {
     errAccountIncomplete: '每个账号都需要填名称、Base URL 和 token。',
     wsAccount: '账号',
     wsRemove: '删除该工作空间',
+    wsUntitled: '未命名工作空间',
     typesHeading: '类型',
     typesHint: '出现在编辑页的「类型」下拉里，并作为默认标题后缀。默认：Change / Bug / Feature。',
     newTypePlaceholder: '新增类型，回车添加',
@@ -436,6 +439,7 @@ const MESSAGES: Record<string, Record<string, string>> = {
 
     captureFailed: '截图失败：{0}（chrome:// 等受限页面无法截图）',
     captureDesktopFailed: '屏幕截图失败：{0}',
+    captureNeedNormalPage: '屏幕/窗口截图需要在普通网页上发起（当前标签页无法用于截图）。请切换到普通网页后再截图。',
     // 弹出菜单
     popupWeb: '网页截图',
     popupDesktop: '屏幕或窗口',
@@ -562,6 +566,7 @@ const MESSAGES: Record<string, Record<string, string>> = {
     errAccountIncomplete: '各アカウントには名前・Base URL・トークンが必要です。',
     wsAccount: 'アカウント',
     wsRemove: 'このワークスペースを削除',
+    wsUntitled: '名称未設定のワークスペース',
     typesHeading: '種類',
     typesHint: 'エディタの「種類」ドロップダウンに表示され、既定タイトルの接尾辞に使われます。既定：Change / Bug / Feature。',
     newTypePlaceholder: '新しい種類、Enter で追加',
@@ -653,6 +658,7 @@ const MESSAGES: Record<string, Record<string, string>> = {
 
     captureFailed: 'スクリーンショットに失敗しました：{0}（chrome:// などの制限付きページは撮影できません）',
     captureDesktopFailed: '画面キャプチャに失敗しました：{0}',
+    captureNeedNormalPage: '画面/ウィンドウのキャプチャは通常のウェブページから開始してください（現在のタブはキャプチャに使用できません）。通常のページに切り替えてからお試しください。',
     // ポップアップ
     popupWeb: 'ウェブページのスクリーンショット',
     popupDesktop: '画面またはウィンドウ',
@@ -663,6 +669,28 @@ const MESSAGES: Record<string, Record<string, string>> = {
 
 export const SUPPORTED_LANGS: string[] = ['en', 'zh', 'ja'];
 export const DEFAULT_LANG: string = 'en';
+
+/**
+ * Best-effort detection of a supported UI language from the system/browser, used only to
+ * pick the initial default on first install. Maps any zh-* to 'zh', ja-* to 'ja', else 'en'.
+ */
+export function detectLang(): string {
+  let raw = '';
+  try {
+    if (typeof chrome !== 'undefined' && chrome.i18n && typeof chrome.i18n.getUILanguage === 'function') {
+      raw = chrome.i18n.getUILanguage();
+    }
+  } catch {
+    /* chrome.i18n unavailable in this context */
+  }
+  if (!raw && typeof navigator !== 'undefined') {
+    raw = navigator.language || (Array.isArray(navigator.languages) ? navigator.languages[0] : '') || '';
+  }
+  const lc = raw.toLowerCase();
+  if (lc.startsWith('zh')) return 'zh';
+  if (lc.startsWith('ja')) return 'ja';
+  return DEFAULT_LANG;
+}
 
 let current = DEFAULT_LANG;
 

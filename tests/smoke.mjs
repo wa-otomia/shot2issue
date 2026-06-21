@@ -117,12 +117,24 @@ try {
   const targets = await options.$$eval(`${card} [data-k="kind"] option`, (opts) => opts.map((o) => o.value));
   check('options: GitLab is available as a workspace target', targets.includes('gitlab'));
 
-  // General tab: i18n + templates.
-  await options.click('[data-tab="general"]');
+  // Collapsible cards: a freshly added workspace is expanded; toggling collapses it.
+  check('options: new workspace card starts expanded',
+    !(await options.$eval(card, (el) => el.classList.contains('collapsed'))));
+  await options.click(`${card} [data-act="toggle"]`);
+  check('options: workspace card collapses on toggle',
+    await options.$eval(card, (el) => el.classList.contains('collapsed')));
+  await options.click(`${card} [data-act="toggle"]`); // re-expand
+
+  // Language tab: its own tab, switching the language localizes the UI.
+  check('options: Language has its own tab', (await options.$('[data-tab="language"]')) !== null);
+  await options.click('[data-tab="language"]');
   await options.selectOption('#lang', 'zh');
   await options.waitForFunction(() =>
     (document.querySelector('[data-i18n="workspacesHeading"]')?.textContent || '').includes('工作空间'));
   check('options: language switch localizes headings to Chinese', true);
+
+  // General tab: templates.
+  await options.click('[data-tab="general"]');
   check('options: title/body template fields reflect config',
     (await options.$eval('#titleTemplate', (el) => el.value)) === '[{type}] {pageTitle}' &&
       (await options.$eval('#bodyTemplate', (el) => el.value)) === 'URL: {pageUrl}');

@@ -7,6 +7,7 @@
 // This module only reads and writes; it contains no network logic.
 
 import type { Config, Workspace, Account, PendingShot, PendingShots, Attachment, AiAuth, AiPendingAuth } from './types.js';
+import { detectLang } from './i18n.js';
 
 /** Default configuration, used on first install and to backfill missing fields. */
 const DEFAULT_CONFIG: Config = {
@@ -99,6 +100,8 @@ export async function getConfig(): Promise<Config> {
     accounts: Array.isArray(stored.accounts) ? (stored.accounts as Account[]) : [],
     types: Array.isArray(stored.types) && stored.types.length ? stored.types : DEFAULT_CONFIG.types.slice(),
   };
+  // First install (nothing stored yet, no explicit language): default to the system language.
+  if (raw[CONFIG_KEY] == null && stored.lang == null) merged.lang = detectLang();
   return migrateAccounts(merged);
 }
 

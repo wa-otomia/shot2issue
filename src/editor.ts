@@ -332,8 +332,18 @@ function complaintModalOpen(): boolean {
 }
 function openComplaintModal(): void {
   els.complaintModal.classList.remove('hidden');
+  clampPanelIntoView(els.complaintModal); // a prior drag may have left it off the (now smaller) viewport
   setComplaintStatus('');
   setTimeout(() => els.complaintText.focus(), 0);
+}
+
+/** Keep a fixed-position panel inside the viewport (only if it was dragged to absolute left/top). */
+function clampPanelIntoView(panel: HTMLElement): void {
+  if (!panel.style.left && !panel.style.top) return; // still using the default bottom-right anchor
+  const maxX = Math.max(0, window.innerWidth - panel.offsetWidth);
+  const maxY = Math.max(0, window.innerHeight - panel.offsetHeight);
+  panel.style.left = `${Math.max(0, Math.min(parseFloat(panel.style.left) || 0, maxX))}px`;
+  panel.style.top = `${Math.max(0, Math.min(parseFloat(panel.style.top) || 0, maxY))}px`;
 }
 function closeComplaintModal(): void {
   if (recording) stopRecording();
@@ -349,6 +359,51 @@ els.complaintClose.addEventListener('click', () => closeComplaintModal());
 els.complaintModal.addEventListener('click', (e) => {
   if (e.target === els.complaintModal) closeComplaintModal(); // click on the backdrop
 });
+
+// Let the floating dictation panel be dragged by its header (resizing is CSS `resize: both`).
+function makeDraggable(panel: HTMLElement, handle: HTMLElement): void {
+  let startX = 0;
+  let startY = 0;
+  let originX = 0;
+  let originY = 0;
+  let dragging = false;
+  const onMove = (e: MouseEvent): void => {
+    if (!dragging) return;
+    const nx = Math.max(0, Math.min(originX + (e.clientX - startX), window.innerWidth - panel.offsetWidth));
+    const ny = Math.max(0, Math.min(originY + (e.clientY - startY), window.innerHeight - panel.offsetHeight));
+    panel.style.left = `${nx}px`;
+    panel.style.top = `${ny}px`;
+  };
+  const onUp = (): void => {
+    dragging = false;
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  };
+  handle.addEventListener('mousedown', (e) => {
+    if ((e.target as HTMLElement).closest('.modal-close')) return; // don't drag from the ✕
+    const r = panel.getBoundingClientRect();
+    panel.style.left = `${r.left}px`; // switch from bottom-right anchoring to absolute left/top
+    panel.style.top = `${r.top}px`;
+    panel.style.right = 'auto';
+    panel.style.bottom = 'auto';
+    originX = r.left;
+    originY = r.top;
+    startX = e.clientX;
+    startY = e.clientY;
+    dragging = true;
+    e.preventDefault();
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+const complaintHead = els.complaintModal.querySelector('.modal-head') as HTMLElement | null;
+if (complaintHead) makeDraggable(els.complaintModal, complaintHead);
+// Re-clamp when the user resizes the panel (CSS resize), so a grown box can't push its
+// buttons past the viewport edge after it was dragged toward a corner.
+const complaintInner = els.complaintModal.querySelector('.modal') as HTMLElement | null;
+if (complaintInner && typeof ResizeObserver !== 'undefined') {
+  new ResizeObserver(() => clampPanelIntoView(els.complaintModal)).observe(complaintInner);
+}
 
 // Record → transcribe → append into the text box (you can dictate several times + edit).
 els.complaintRecord.addEventListener('click', async () => {

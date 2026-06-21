@@ -117,6 +117,8 @@ try {
   await options.waitForSelector('#tabBar');
   await options.click('[data-tab="workspaces"]');
   await options.waitForSelector('.ws-card');
+  // Workspace cards are collapsed by default; expand them so the screenshot shows the fields.
+  for (const tog of await options.$$('.ws-card.collapsed [data-act="toggle"]')) await tog.click();
   await options.waitForTimeout(300);
   await options.screenshot({ path: resolve(outDir, 'options.png') });
   console.log('wrote docs/screenshots/options.png');
