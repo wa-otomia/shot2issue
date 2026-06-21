@@ -200,6 +200,8 @@ button.ghost.recording { color: #fff; background: var(--danger); border-color: v
 
 /* Generate buttons flip to a "Stop" state while generating. */
 button.ai-busy { background: var(--danger); border-color: var(--danger); color: #fff; }
+/* Keep the Stop button red on hover too (a .primary base would otherwise win and turn it blue). */
+button.ai-busy:hover { background: var(--danger); border-color: var(--danger); }
 button.ai-busy::before { content: "■"; font-size: 9px; margin-right: 6px; vertical-align: 1px; }
 
 /* Toolbar icon-button tooltips (shown on hover; title is moved to data-tip in editor.ts) */

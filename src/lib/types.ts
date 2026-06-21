@@ -87,6 +87,7 @@ export interface EditorPrefs {
   strokeWidth: number; // outline/halo thickness (0 = no outline)
   width: number; // line thickness (non-text tools)
   fontSize: number; // text size (independent of width)
+  tool: string; // last-used drawing tool (never 'crop' — that mode is transient)
 }
 
 /** One captured image plus its own annotation ops, as an entry in the editor's strip. */

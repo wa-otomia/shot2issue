@@ -108,12 +108,15 @@ let activeIndex = 0; // which attachment is on the canvas
 const baseImage = new Image(); // the active screenshot (used for redraw and mosaic sampling)
 let ops: Op[] = []; // alias of attachments[activeIndex].ops (a reference, reassigned on switch)
 let currentTool = 'rect';
+// Tools whose selection is remembered/restorable. 'crop' is intentionally excluded — it's a
+// transient mode, not a drawing tool. Also used to reject stale/garbage persisted values.
+const DRAWING_TOOLS = ['rect', 'numrect', 'arrow', 'pen', 'text', 'mosaic'];
 let drawing: Op | null = null; // in-progress drag op
 let pendingTextOp: Op | null = null; // op being entered via the floating text input
 let titleDirty = false; // true once the user edits the title (stop auto-filling the default)
 
 // Remembered tool settings (color, outline, thickness, font size); loaded on init.
-let prefs: EditorPrefs = { color: '#ff3b30', strokeColor: '#ffffff', strokeWidth: 3, width: 4, fontSize: 28 };
+let prefs: EditorPrefs = { color: '#ff3b30', strokeColor: '#ffffff', strokeWidth: 3, width: 4, fontSize: 28, tool: 'rect' };
 
 // Select-and-manipulate: the last drawn op stays "selected" (movable + reshapeable) until the
 // user clicks elsewhere on the canvas. Pen commits immediately and is never selected.
@@ -171,6 +174,9 @@ async function init(): Promise<void> {
   els.fontSize.value = String(prefs.fontSize);
   els.autoDictate.checked = !!config.autoDictate;
   applyToolControls();
+  // Restore the last-used drawing tool (the whitelist rejects 'crop' and any stale value).
+  const startTool = DRAWING_TOOLS.includes(prefs.tool) ? prefs.tool : 'rect';
+  if (startTool !== currentTool) setTool(startTool, false); // value already came from storage — don't rewrite it
   // Move toolbar button titles to data-tip so they render as styled hover tooltips.
   document.querySelectorAll('#toolbar .tool[title], #toolbar .act[title]').forEach((el) => {
     const tip = el.getAttribute('title');
@@ -828,7 +834,7 @@ function applyToolControls(): void {
   els.fontSizeCtl.classList.toggle('hidden', !isText);
 }
 
-function setTool(tool: string): void {
+function setTool(tool: string, persist = true): void {
   if (tool === currentTool) return;
   commitTextIfAny();
   if (currentTool === 'crop') cancelCrop(); // leaving the crop tool discards a pending region
@@ -836,6 +842,12 @@ function setTool(tool: string): void {
   currentTool = tool;
   document.querySelectorAll('.tool').forEach((b) => b.classList.toggle('active', (b as HTMLElement).dataset.tool === tool));
   applyToolControls();
+  // Remember the user's chosen drawing tool across sessions. Skip 'crop' (transient) and
+  // internal resets (persist=false, e.g. crop-apply returning to 'rect') so neither clobbers it.
+  if (persist && tool !== 'crop') {
+    prefs.tool = tool;
+    void patchEditorPrefs({ tool });
+  }
 }
 
 $('toolbar').addEventListener('click', (e) => {
@@ -1185,7 +1197,7 @@ function applyCrop(): void {
   cropOrig = null;
   selected = null;
   els.cropBar.classList.add('hidden');
-  setTool('rect');
+  setTool('rect', false); // internal reset out of crop mode — must NOT overwrite the remembered tool
   baseImage.onload = () => {
     canvas.width = baseImage.naturalWidth;
     canvas.height = baseImage.naturalHeight;

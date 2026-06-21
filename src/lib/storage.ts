@@ -137,6 +137,7 @@ export const DEFAULT_EDITOR_PREFS: EditorPrefs = {
   strokeWidth: 3,
   width: 4,
   fontSize: 28,
+  tool: 'rect',
 };
 export async function getEditorPrefs(): Promise<EditorPrefs> {
   const raw = await chrome.storage.local.get(EDITOR_PREFS_KEY);

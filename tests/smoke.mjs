@@ -311,8 +311,14 @@ try {
   check('editor: non-text tool shows thickness',
     (await editor.$eval('#widthCtl', (el) => el.classList.contains('hidden'))) === false);
 
-  // Crop: drag a region → confirm bar appears; Apply crops the image and hides the bar.
+  // Tool choice is remembered across sessions; crop is transient and must never overwrite it.
+  const readTool = () => editor.evaluate(() => new Promise((r) => chrome.storage.local.get('editorPrefs', (d) => r(d.editorPrefs && d.editorPrefs.tool))));
+  await editor.click('.tool[data-tool="arrow"]');
+  check('editor: tool choice is persisted', (await readTool()) === 'arrow');
+
+  // Crop: entering, dragging, AND applying must all keep the remembered drawing tool (= 'arrow').
   await editor.click('.tool[data-tool="crop"]');
+  check('editor: entering crop does not overwrite the remembered tool', (await readTool()) === 'arrow');
   const cr1 = at(0.2, 0.2), cr2 = at(0.7, 0.7);
   await editor.mouse.move(cr1.x, cr1.y);
   await editor.mouse.down();
@@ -325,6 +331,8 @@ try {
   check('editor: crop applied — bar hidden, canvas still visible',
     (await editor.$eval('#cropBar', (el) => el.classList.contains('hidden'))) === true &&
       (await editor.$eval('#canvas', (el) => el.classList.contains('hidden'))) === false);
+  check('editor: applying crop does not overwrite the remembered tool', (await readTool()) === 'arrow');
+  await editor.click('.tool[data-tool="rect"]'); // restore for the Esc-close test below
 
   // Delete the 2nd attachment via its thumbnail's remove button → one remains.
   await editor.click('#thumbStrip .thumb:nth-of-type(2) .thumb-del');
