@@ -759,6 +759,32 @@ export function parseComplaintOutput(text: string): { title: string; body: strin
 }
 
 /**
+ * Extract a string field's current value from a possibly-incomplete JSON object (the streaming
+ * accumulator), so structured {title, body} output can be shown live as the JSON streams in.
+ * Handles escapes; an unterminated value returns what's decoded so far, or null if not started.
+ */
+export function partialJsonField(acc: string, field: string): string | null {
+  const m = new RegExp(`"${field}"\\s*:\\s*"`).exec(acc);
+  if (!m) return null;
+  const map: Record<string, string> = { n: '\n', t: '\t', r: '\r', b: '\b', f: '\f', '"': '"', '\\': '\\', '/': '/' };
+  let out = '';
+  for (let i = m.index + m[0].length; i < acc.length; i++) {
+    const ch = acc[i];
+    if (ch === '\\') {
+      const nx = acc[i + 1];
+      if (nx === undefined) break; // incomplete escape at the end of the chunk
+      out += map[nx] ?? nx;
+      i++;
+    } else if (ch === '"') {
+      break; // closing quote → value complete
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
+/**
  * From a transcript (+ screenshots + metadata) write an issue title and body. Tries
  * structured JSON output with images, degrading to plain output and/or text-only if the
  * backend rejects either.

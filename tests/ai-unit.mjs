@@ -20,6 +20,7 @@ import {
   buildComplaintInput,
   buildComplaintRequest,
   parseComplaintOutput,
+  partialJsonField,
   DEFAULT_MODELS,
   DEFAULT_TITLE_PROMPT,
   CLIENT_ID,
@@ -148,6 +149,13 @@ check('complaint: parse strict JSON', JSON.stringify(parseComplaintOutput('{"tit
 check('complaint: parse JSON embedded in text', parseComplaintOutput('here you go: {"title":"T2","body":"B2"} done').title === 'T2');
 const fb = parseComplaintOutput('Save button broken\nWhen I click save nothing happens.');
 check('complaint: parse falls back to first line = title', fb.title === 'Save button broken' && fb.body === 'When I click save nothing happens.');
+
+// --- streaming field extraction (live title/body as JSON streams in) ---
+check('partial: title from complete JSON', partialJsonField('{"title":"Hi","body":"x"}', 'title') === 'Hi');
+check('partial: body from complete JSON', partialJsonField('{"title":"T","body":"the body"}', 'body') === 'the body');
+check('partial: current value for an unterminated string', partialJsonField('{"title":"Save butt', 'title') === 'Save butt');
+check('partial: decodes escapes', partialJsonField('{"body":"line1\\nline2"}', 'body') === 'line1\nline2');
+check('partial: null before the field appears', partialJsonField('{"title":"T"', 'body') === null);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -215,9 +215,10 @@ button.ai-busy::before { content: "■"; font-size: 9px; margin-right: 6px; vert
   border: 5px solid transparent; border-bottom-color: rgba(0,0,0,0.85); z-index: 60; pointer-events: none;
 }
 
-/* AI assistant section heading */
+/* AI assistant section heading + two-row layout (selects on top, buttons below) */
 .ai-actions-head { font-weight: 600; font-size: 13px; color: var(--muted); margin: 16px 0 6px; }
-.ai-actions { margin-top: 0; }
+.ai-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; margin-top: 0; }
+.ai-actions .ai-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .ai-actions select#aiReasoning { width: auto; max-width: 130px; }
 
 /* Floating crop confirm buttons (positioned next to the crop box in editor.ts) */
@@ -246,8 +247,6 @@ button.ai-busy::before { content: "■"; font-size: 9px; margin-right: 6px; vert
 .ai-bubble.error .ai-bubble-dot { display: none; }
 .ai-bubble-think { white-space: pre-wrap; line-height: 1.45; color: var(--muted); font-size: 12px; max-height: 120px; overflow: auto; margin-top: 5px; }
 .ai-bubble-think:empty { display: none; }
-.ai-bubble-out { white-space: pre-wrap; line-height: 1.5; font-size: 13px; max-height: 150px; overflow: auto; margin-top: 6px; }
-.ai-bubble-out:empty { display: none; }
 .ai-bubble::after {
   content: ''; position: absolute; left: var(--arrow-x, 50%); transform: translateX(-50%);
   border: 7px solid transparent;

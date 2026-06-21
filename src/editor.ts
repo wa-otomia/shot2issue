@@ -22,7 +22,7 @@ import {
 } from './lib/storage.js';
 import { setLanguage, localizeDom, t } from './lib/i18n.js';
 import { getProvider } from './lib/providers/index.js';
-import { generateTitle, transcribeAudio, generateComplaint } from './lib/ai.js';
+import { generateTitle, transcribeAudio, generateComplaint, partialJsonField } from './lib/ai.js';
 import type { Config, Workspace, Op, Attachment, PendingShots, IssueResult, EditorPrefs } from './lib/types.js';
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -76,7 +76,6 @@ const els = {
   aiBubble: $('aiBubble'),
   aiBubbleStatus: $('aiBubbleStatus'),
   aiBubbleThink: $('aiBubbleThink'),
-  aiBubbleOut: $('aiBubbleOut'),
   body: $('body') as HTMLTextAreaElement,
   submit: $('submit') as HTMLButtonElement,
   submitNoImage: $('submitNoImage') as HTMLButtonElement,
@@ -419,7 +418,13 @@ function setComplaintStatus(text: string, cls: 'info' | 'error' | 'ok' = 'info')
   els.complaintStatus.textContent = text;
 }
 
-els.complaint.addEventListener('click', () => openComplaintModal()); // content persists
+els.complaint.addEventListener('click', () => {
+  if (complaintAbort) {
+    complaintAbort.abort(); // generating → this button is the Stop control
+    return;
+  }
+  openComplaintModal(); // content persists between opens
+});
 els.complaintClose.addEventListener('click', () => closeComplaintModal());
 els.complaintModal.addEventListener('click', (e) => {
   if (e.target === els.complaintModal) closeComplaintModal(); // click on the backdrop
@@ -585,7 +590,6 @@ function openBubble(anchor: HTMLElement, statusKey: string): void {
   els.aiBubble.classList.remove('hidden', 'done', 'error', 'closing');
   els.aiBubbleStatus.textContent = t(statusKey);
   els.aiBubbleThink.textContent = '';
-  els.aiBubbleOut.textContent = '';
   positionBubble();
 }
 function bubbleStatus(statusKey: string): void {
@@ -595,12 +599,6 @@ function bubbleThink(full: string): void {
   if (els.aiBubbleStatus.textContent === t('aiStateRequesting')) bubbleStatus('aiThinking');
   els.aiBubbleThink.textContent = full;
   els.aiBubbleThink.scrollTop = els.aiBubbleThink.scrollHeight;
-  positionBubble();
-}
-function bubbleOut(full: string): void {
-  bubbleStatus('aiStateWriting');
-  els.aiBubbleOut.textContent = full;
-  els.aiBubbleOut.scrollTop = els.aiBubbleOut.scrollHeight;
   positionBubble();
 }
 function bubbleDone(): void {
@@ -635,26 +633,26 @@ function setAiBusy(busy: boolean, except: HTMLElement | null): void {
   $('toolbar').classList.toggle('disabled', busy);
 }
 
-els.complaintGenerate.addEventListener('click', async () => {
-  if (complaintAbort) {
-    complaintAbort.abort(); // a second click stops generation
-    return;
-  }
+els.complaintGenerate.addEventListener('click', () => {
   const text = els.complaintText.value.trim();
   if (!text) {
     setComplaintStatus(t('complaintNeedText'), 'error');
     return;
   }
+  closeComplaintModal(); // reveal the form so the output streams visibly into the textarea
+  void runComplaint(text);
+});
+
+/** Stream a dictation generation into the title + description, bubble pointing at the textarea. */
+async function runComplaint(text: string): Promise<void> {
   complaintAbort = new AbortController();
-  const label = els.complaintGenerate.textContent;
-  els.complaintGenerate.textContent = t('aiStop');
-  els.complaintGenerate.classList.add('ai-busy');
-  setAiBusy(true, els.complaintGenerate);
-  openBubble(els.complaintRecord, 'aiStateRequesting'); // anchor in the modal; reanchor below
-  bubbleAnchor = els.complaintGenerate;
-  positionBubble();
-  setComplaintStatus('');
+  const label = els.complaint.textContent; // the main "Smart dictation" button becomes Stop
+  els.complaint.textContent = t('aiStop');
+  els.complaint.classList.add('ai-busy');
+  setAiBusy(true, els.complaint);
+  openBubble(els.body, 'aiStateRequesting'); // points at the description textarea (the output target)
   try {
+    commitTextIfAny();
     const images = await aiImages();
     const p = primary();
     const { title, body } = await generateComplaint(
@@ -664,7 +662,17 @@ els.complaintGenerate.addEventListener('click', async () => {
         signal: complaintAbort.signal,
         reasoningEffort: config.aiReasoning,
         onReasoning: (_d, full) => bubbleThink(full),
-        onText: () => bubbleStatus('aiStateWriting'),
+        onText: (_d, full) => {
+          // The structured JSON streams in; show each field live in its own control.
+          const tt = partialJsonField(full, 'title');
+          if (tt != null) {
+            els.title.value = tt.slice(0, 200);
+            titleDirty = true;
+          }
+          const bb = partialJsonField(full, 'body');
+          if (bb != null) els.body.value = bb;
+          bubbleStatus('aiStateWriting');
+        },
       }
     );
     if (title) {
@@ -672,10 +680,7 @@ els.complaintGenerate.addEventListener('click', async () => {
       titleDirty = true;
     }
     if (body) els.body.value = body;
-    bubbleAnchor = els.complaint; // the modal button is about to hide → point at the toolbar button
-    positionBubble();
     bubbleDone();
-    closeComplaintModal(); // done — close (content is kept for next time)
     showToast(t('complaintDone'));
   } catch (e) {
     if (wasAborted(complaintAbort, e)) {
@@ -685,12 +690,12 @@ els.complaintGenerate.addEventListener('click', async () => {
       bubbleFail(t('complaintFailed', [errMsg(e)]));
     }
   } finally {
-    els.complaintGenerate.textContent = label || t('complaintGenerate');
-    els.complaintGenerate.classList.remove('ai-busy');
+    els.complaint.textContent = label || t('complaint');
+    els.complaint.classList.remove('ai-busy');
     complaintAbort = null;
     setAiBusy(false, null);
   }
-});
+}
 
 els.aiTitle.addEventListener('click', async () => {
   if (titleAbort) {
@@ -708,7 +713,7 @@ els.aiTitle.addEventListener('click', async () => {
   els.aiTitle.textContent = t('aiStop');
   els.aiTitle.classList.add('ai-busy');
   setAiBusy(true, els.aiTitle);
-  openBubble(els.aiTitle, 'aiStateRequesting');
+  openBubble(els.title, 'aiStateRequesting'); // bubble points at the title field (the output target)
   els.title.classList.add('streaming');
   try {
     commitTextIfAny(); // flush any in-progress text so it appears in the screenshots
@@ -721,10 +726,9 @@ els.aiTitle.addEventListener('click', async () => {
         signal: titleAbort.signal,
         reasoningEffort: config.aiReasoning,
         onText: (_d, full) => {
-          const line = (full.split('\n')[0] || '').slice(0, 120);
-          els.title.value = line; // stream the title in, live
+          els.title.value = (full.split('\n')[0] || '').slice(0, 120); // stream the title in, live
           titleDirty = true;
-          bubbleOut(line);
+          bubbleStatus('aiStateWriting');
         },
         onReasoning: (_d, full) => bubbleThink(full),
       }
