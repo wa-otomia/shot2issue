@@ -5,7 +5,7 @@
 // pick a language explicitly in Settings. English is the source language and the
 // default; Simplified Chinese and Japanese are provided as translations.
 
-const MESSAGES = {
+const MESSAGES: Record<string, Record<string, string>> = {
   en: {
     appName: 'shot2issue',
 
@@ -29,7 +29,7 @@ const MESSAGES = {
     downloadPng: 'Download PNG',
     downloadPngTitle: 'Download the annotated PNG',
     canvasEmpty: 'No screenshot to edit. Open any web page and click the extension icon to capture.',
-    fieldWorkspace: 'Workspace (target repository)',
+    fieldWorkspace: 'Workspace (issue target)',
     fieldType: 'Type',
     fieldTitle: 'Title',
     titlePlaceholder: 'Title',
@@ -62,20 +62,32 @@ const MESSAGES = {
     errNoShot: 'No screenshot to submit.',
     errSelectWorkspace: 'Add a workspace in Settings, then select it above.',
     errWorkspaceIncomplete: 'The selected workspace is missing owner/repo. Fix it in Settings.',
+    errWorkspaceIncompleteYouTrack: 'The selected YouTrack workspace is missing base URL, project, or token. Fix it in Settings.',
     errTitleEmpty: 'Title cannot be empty.',
     errNotSignedIn: 'Not signed in to github.com. Sign in to github.com in this browser and try again, or use “Download PNG”.',
+    errPermissionDenied: 'Permission to access {0} was denied; cannot submit to this YouTrack instance.',
+    statusSubmittingYouTrack: 'Creating the YouTrack issue…',
+    ytTarget: 'YouTrack: {0}',
 
     // Options
     optionsHeading: 'shot2issue settings',
     optionsIntro: 'Settings are stored only in this browser (chrome.storage.local) and are never sent to any server.',
-    workspacesHeading: 'Workspaces (target repositories)',
-    workspacesHint: 'Each workspace is one repository. Public or private; attachment visibility follows repository visibility.',
+    workspacesHeading: 'Workspaces (issue targets)',
+    workspacesHint: 'Each workspace is one issue target: a GitHub repository or a YouTrack project.',
     addWorkspace: 'Add workspace',
     noWorkspaces: 'No workspaces yet. Use “Add workspace” below.',
     wsName: 'Name (for display)',
     wsNamePlaceholder: 'e.g. Frontend bug tracker',
+    wsTarget: 'Target',
     wsOwner: 'Owner (user or organization)',
     wsRepo: 'Repository name',
+    ytBaseUrl: 'Base URL',
+    ytBaseUrlPlaceholder: 'https://example.youtrack.cloud',
+    ytProject: 'Project (short name or id)',
+    ytProjectPlaceholder: 'PROJ',
+    ytToken: 'Permanent token',
+    ytTokenPlaceholder: 'perm:...',
+    ytHint: 'YouTrack uses its REST API. Create a permanent token in YouTrack → Profile → Account Security → Tokens. The token is stored locally in this browser.',
     wsRemove: 'Remove this workspace',
     typesHeading: 'Types',
     typesHint: 'Shown in the Type dropdown in the editor and used as the default title suffix. Defaults: Change / Bug / Feature.',
@@ -90,14 +102,15 @@ const MESSAGES = {
     shortcutHint: 'Off by default. After enabling, click “Set shortcut” to choose a key combination on Chrome’s shortcuts page; clear the binding there to remove it.',
     shortcutConfigure: 'Set shortcut',
     submissionHeading: 'How submission works',
-    submissionHint: 'No token is required. As long as you are signed in to github.com in this browser, the extension opens the target repository’s new-issue page in the background, uploads the screenshot, fills in the form and clicks Create — all in one session, so the attachment renders correctly. The signed-in account must have access to the target repository (especially for private repositories).',
+    submissionHint: 'GitHub: no token required — while you are signed in to github.com in this browser, the extension opens the target repository’s new-issue page in the background, uploads the screenshot, fills in the form, and submits, all in one session. YouTrack: the issue and attachment are created through its REST API using the permanent token you provide.',
     backupHeading: 'Backup / restore',
     backupHint: 'Settings live only in this browser and are cleared if the extension is removed. To update the code, use the “Reload” button on the extension card (settings are kept). Export a backup to be safe.',
     exportConfig: 'Export settings',
     importConfig: 'Import settings',
     save: 'Save settings',
     saved: 'Saved',
-    errWorkspaceNeedsOwnerRepo: 'Every workspace must have an owner and a repository.',
+    errWorkspaceNeedsOwnerRepo: 'Every GitHub workspace must have an owner and a repository.',
+    errWorkspaceNeedsYouTrack: 'Every YouTrack workspace must have a base URL, project, and token.',
     errKeepOneType: 'Keep at least one type.',
     exported: 'Settings exported',
     importFailed: 'Import failed: {0}',
@@ -130,7 +143,7 @@ const MESSAGES = {
     downloadPng: '下载 PNG',
     downloadPngTitle: '下载标注后的 PNG',
     canvasEmpty: '没有待编辑的截图。打开任意网页后点扩展图标即可截图。',
-    fieldWorkspace: '工作空间（目标仓库）',
+    fieldWorkspace: '工作空间（提交目标）',
     fieldType: '类型',
     fieldTitle: '标题',
     titlePlaceholder: '标题',
@@ -163,19 +176,31 @@ const MESSAGES = {
     errNoShot: '没有截图可提交。',
     errSelectWorkspace: '请先在设置里添加工作空间，并在上方选中。',
     errWorkspaceIncomplete: '当前工作空间缺少 owner/repo，请到设置里修正。',
+    errWorkspaceIncompleteYouTrack: '当前 YouTrack 工作空间缺少 Base URL、项目或 token，请到设置里修正。',
     errTitleEmpty: '标题不能为空。',
     errNotSignedIn: '未登录 github.com。请在本浏览器登录 github.com 后重试，或使用「下载 PNG」。',
+    errPermissionDenied: '访问 {0} 的权限被拒绝，无法提交到该 YouTrack 实例。',
+    statusSubmittingYouTrack: '正在创建 YouTrack issue…',
+    ytTarget: 'YouTrack：{0}',
 
     optionsHeading: 'shot2issue 设置',
     optionsIntro: '设置仅保存在本浏览器（chrome.storage.local），不会发送到任何服务器。',
-    workspacesHeading: '工作空间（目标仓库）',
-    workspacesHint: '每个工作空间对应一个仓库。public / private 均可；附件可见性跟随仓库可见性。',
+    workspacesHeading: '工作空间（提交目标）',
+    workspacesHint: '每个工作空间对应一个提交目标：GitHub 仓库或 YouTrack 项目。',
     addWorkspace: '添加工作空间',
     noWorkspaces: '还没有工作空间。点下方「添加工作空间」。',
     wsName: '名称（显示用）',
     wsNamePlaceholder: '例如：前端 Bug 看板',
+    wsTarget: '目标',
     wsOwner: 'Owner（用户或组织）',
     wsRepo: '仓库名',
+    ytBaseUrl: 'Base URL',
+    ytBaseUrlPlaceholder: 'https://example.youtrack.cloud',
+    ytProject: '项目（短名称或 id）',
+    ytProjectPlaceholder: 'PROJ',
+    ytToken: '永久 token',
+    ytTokenPlaceholder: 'perm:...',
+    ytHint: 'YouTrack 走其 REST API。在 YouTrack → 个人资料 → Account Security → Tokens 创建永久 token。token 仅保存在本浏览器。',
     wsRemove: '删除该工作空间',
     typesHeading: '类型',
     typesHint: '出现在编辑页的「类型」下拉里，并作为默认标题后缀。默认：Change / Bug / Feature。',
@@ -190,14 +215,15 @@ const MESSAGES = {
     shortcutHint: '默认关闭。启用后，点「设置快捷键」在 Chrome 的快捷键页面选择按键组合；在该页面清除绑定即可移除。',
     shortcutConfigure: '设置快捷键',
     submissionHeading: '提交方式说明',
-    submissionHint: '无需任何 token。只要本浏览器登录着 github.com，扩展就会在后台打开目标仓库的新建 issue 页，上传截图、填好表单并点 Create——整个过程在同一会话内完成，附件才会正常渲染。所用账号需对目标仓库有访问权（私有库尤其）。',
+    submissionHint: 'GitHub：无需 token——只要本浏览器登录着 github.com，扩展就会在后台打开目标仓库的新建 issue 页，上传截图、填好表单并提交，整个过程在同一会话内完成。YouTrack：通过其 REST API、使用你提供的永久 token 创建 issue 和上传附件。',
     backupHeading: '备份 / 恢复',
     backupHint: '设置仅存在本机；移除扩展会一并清空。更新代码只需在扩展卡片上点「刷新」（设置会保留）。建议导出一份备份。',
     exportConfig: '导出设置',
     importConfig: '导入设置',
     save: '保存设置',
     saved: '已保存',
-    errWorkspaceNeedsOwnerRepo: '每个工作空间都需要填 owner 和仓库名。',
+    errWorkspaceNeedsOwnerRepo: '每个 GitHub 工作空间都需要填 owner 和仓库名。',
+    errWorkspaceNeedsYouTrack: '每个 YouTrack 工作空间都需要填 Base URL、项目和 token。',
     errKeepOneType: '至少保留一个类型。',
     exported: '已导出设置',
     importFailed: '导入失败：{0}',
@@ -229,7 +255,7 @@ const MESSAGES = {
     downloadPng: 'PNG をダウンロード',
     downloadPngTitle: '注釈付き PNG をダウンロード',
     canvasEmpty: '編集対象のスクリーンショットがありません。任意のページで拡張機能アイコンをクリックして撮影してください。',
-    fieldWorkspace: 'ワークスペース（対象リポジトリ）',
+    fieldWorkspace: 'ワークスペース（送信先）',
     fieldType: '種類',
     fieldTitle: 'タイトル',
     titlePlaceholder: 'タイトル',
@@ -262,19 +288,31 @@ const MESSAGES = {
     errNoShot: '送信できるスクリーンショットがありません。',
     errSelectWorkspace: '先に設定でワークスペースを追加し、上で選択してください。',
     errWorkspaceIncomplete: '選択中のワークスペースに owner/repo がありません。設定で修正してください。',
+    errWorkspaceIncompleteYouTrack: '選択中の YouTrack ワークスペースに Base URL・プロジェクト・トークンがありません。設定で修正してください。',
     errTitleEmpty: 'タイトルは必須です。',
     errNotSignedIn: 'github.com に未サインインです。このブラウザで github.com にサインインして再試行するか、「PNG をダウンロード」を使用してください。',
+    errPermissionDenied: '{0} へのアクセス許可が拒否されました。この YouTrack インスタンスには送信できません。',
+    statusSubmittingYouTrack: 'YouTrack の issue を作成中…',
+    ytTarget: 'YouTrack：{0}',
 
     optionsHeading: 'shot2issue 設定',
     optionsIntro: '設定はこのブラウザ内（chrome.storage.local）にのみ保存され、サーバーには一切送信されません。',
-    workspacesHeading: 'ワークスペース（対象リポジトリ）',
-    workspacesHint: '各ワークスペースは 1 つのリポジトリに対応します。public / private いずれも可。添付の公開範囲はリポジトリの公開範囲に従います。',
+    workspacesHeading: 'ワークスペース（送信先）',
+    workspacesHint: '各ワークスペースは 1 つの送信先（GitHub リポジトリまたは YouTrack プロジェクト）に対応します。',
     addWorkspace: 'ワークスペースを追加',
     noWorkspaces: 'ワークスペースがありません。下の「ワークスペースを追加」をクリックしてください。',
     wsName: '名称（表示用）',
     wsNamePlaceholder: '例：フロントエンド不具合ボード',
+    wsTarget: '送信先',
     wsOwner: 'Owner（ユーザーまたは組織）',
     wsRepo: 'リポジトリ名',
+    ytBaseUrl: 'Base URL',
+    ytBaseUrlPlaceholder: 'https://example.youtrack.cloud',
+    ytProject: 'プロジェクト（短縮名または id）',
+    ytProjectPlaceholder: 'PROJ',
+    ytToken: '永続トークン',
+    ytTokenPlaceholder: 'perm:...',
+    ytHint: 'YouTrack は REST API を使用します。YouTrack → プロフィール → Account Security → Tokens で永続トークンを作成してください。トークンはこのブラウザ内にのみ保存されます。',
     wsRemove: 'このワークスペースを削除',
     typesHeading: '種類',
     typesHint: 'エディタの「種類」ドロップダウンに表示され、既定タイトルの接尾辞に使われます。既定：Change / Bug / Feature。',
@@ -289,14 +327,15 @@ const MESSAGES = {
     shortcutHint: '既定では無効です。有効化後、「ショートカットを設定」をクリックして Chrome のショートカットページでキーの組み合わせを選びます。そのページで割り当てを解除すると無効になります。',
     shortcutConfigure: 'ショートカットを設定',
     submissionHeading: '送信の仕組み',
-    submissionHint: 'トークンは不要です。このブラウザで github.com にサインインしていれば、拡張機能が対象リポジトリの新規 issue ページをバックグラウンドで開き、スクリーンショットをアップロードし、フォームを入力して Create をクリックします。すべて同一セッション内で行うため添付が正しく表示されます。サインイン中のアカウントが対象リポジトリ（特に非公開）にアクセスできる必要があります。',
+    submissionHint: 'GitHub：トークン不要——このブラウザで github.com にサインインしていれば、拡張機能が対象リポジトリの新規 issue ページをバックグラウンドで開き、スクリーンショットをアップロードし、フォームを入力して送信します（すべて同一セッション内）。YouTrack：指定した永続トークンを使い、REST API 経由で issue 作成と添付アップロードを行います。',
     backupHeading: 'バックアップ / 復元',
     backupHint: '設定はこのブラウザ内にのみ存在し、拡張機能を削除すると消えます。コードを更新するには拡張機能カードの「再読み込み」を使用してください（設定は保持されます）。念のためバックアップの書き出しを推奨します。',
     exportConfig: '設定を書き出し',
     importConfig: '設定を読み込み',
     save: '設定を保存',
     saved: '保存しました',
-    errWorkspaceNeedsOwnerRepo: '各ワークスペースには owner とリポジトリ名が必要です。',
+    errWorkspaceNeedsOwnerRepo: '各 GitHub ワークスペースには owner とリポジトリ名が必要です。',
+    errWorkspaceNeedsYouTrack: '各 YouTrack ワークスペースには Base URL・プロジェクト・トークンが必要です。',
     errKeepOneType: '種類は少なくとも 1 つ残してください。',
     exported: '設定を書き出しました',
     importFailed: '読み込みに失敗しました：{0}',
@@ -307,13 +346,13 @@ const MESSAGES = {
   },
 };
 
-export const SUPPORTED_LANGS = ['en', 'zh', 'ja'];
-export const DEFAULT_LANG = 'en';
+export const SUPPORTED_LANGS: string[] = ['en', 'zh', 'ja'];
+export const DEFAULT_LANG: string = 'en';
 
 let current = DEFAULT_LANG;
 
 /** Set the active language. Falls back to English for unknown values. */
-export function setLanguage(lang) {
+export function setLanguage(lang: string): void {
   current = MESSAGES[lang] ? lang : DEFAULT_LANG;
 }
 
@@ -321,14 +360,14 @@ export function setLanguage(lang) {
  * Translate a key with optional positional substitutions ({0}, {1}, …).
  * Falls back to English, then to the key itself.
  */
-export function t(key, subs) {
+export function t(key: string, subs?: string | number | Array<string | number>): string {
   const table = MESSAGES[current] || MESSAGES.en;
   let s = table[key];
   if (s == null) s = MESSAGES.en[key];
   if (s == null) return key;
   if (subs != null) {
     const arr = Array.isArray(subs) ? subs : [subs];
-    s = s.replace(/\{(\d+)\}/g, (m, i) => (arr[i] != null ? String(arr[i]) : m));
+    s = s.replace(/\{(\d+)\}/g, (m, i) => (arr[Number(i)] != null ? String(arr[Number(i)]) : m));
   }
   return s;
 }
@@ -339,14 +378,14 @@ export function t(key, subs) {
  *   data-i18n-placeholder → placeholder
  *   data-i18n-title       → title
  */
-export function localizeDom(root = document) {
+export function localizeDom(root: ParentNode = document): void {
   root.querySelectorAll('[data-i18n]').forEach((el) => {
-    el.textContent = t(el.getAttribute('data-i18n'));
+    el.textContent = t(el.getAttribute('data-i18n') ?? '');
   });
   root.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
-    el.setAttribute('placeholder', t(el.getAttribute('data-i18n-placeholder')));
+    el.setAttribute('placeholder', t(el.getAttribute('data-i18n-placeholder') ?? ''));
   });
   root.querySelectorAll('[data-i18n-title]').forEach((el) => {
-    el.setAttribute('title', t(el.getAttribute('data-i18n-title')));
+    el.setAttribute('title', t(el.getAttribute('data-i18n-title') ?? ''));
   });
 }

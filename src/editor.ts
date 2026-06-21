@@ -1,41 +1,58 @@
 // Editor page (also the main selection surface): renders the staged screenshot on a
-// canvas, lets the user pick a workspace/type, annotate, fill in a title/description,
-// and submit. Submission runs in a background github.com tab; no token is required.
+// canvas, lets the user pick a workspace/type, annotate, fill in a title/description, and
+// submit through the workspace's provider.
 //
 // The screenshot comes from chrome.storage.session, written by the service worker when
-// the toolbar icon was clicked.
+// the toolbar icon was clicked (or the keyboard shortcut was used).
 
-import {
-  getConfig,
-  getPendingShot,
-  clearPendingShot,
-  rememberSelection,
-} from './lib/storage.js';
-import { checkGithubLogin } from './lib/github-attach.js';
-import { submitIssueViaPage } from './lib/page-upload.js';
+import { getConfig, getPendingShot, clearPendingShot, rememberSelection } from './lib/storage.js';
 import { setLanguage, localizeDom, t } from './lib/i18n.js';
+import { getProvider } from './lib/providers/index.js';
+import type { Config, Workspace, PendingShot, IssueResult } from './lib/types.js';
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** Workspace backend kind; workspaces created before this field default to GitHub. */
+const wsKind = (ws: Workspace): string => ws.kind || 'github';
+/** Human-readable label for a workspace option. */
+function wsLabel(ws: Workspace): string {
+  return ws.name || getProvider(wsKind(ws)).describe(ws) || wsKind(ws);
+}
+
+/** One annotation operation. Rectangle/arrow/mosaic use x0..y1; text uses x/y/size/text. */
+interface Op {
+  tool: string;
+  color: string;
+  width?: number;
+  x0?: number;
+  y0?: number;
+  x1?: number;
+  y1?: number;
+  size?: number;
+  x?: number;
+  y?: number;
+  text?: string;
+}
 
 // ---- DOM ----
-const $ = (id) => document.getElementById(id);
-const canvas = $('canvas');
-const ctx = canvas.getContext('2d');
+const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement;
+const canvas = $('canvas') as HTMLCanvasElement;
+const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
 const canvasWrap = $('canvasWrap');
-const textInput = $('textInput');
+const textInput = $('textInput') as HTMLInputElement;
 const els = {
   canvasEmpty: $('canvasEmpty'),
-  color: $('color'),
-  width: $('width'),
+  color: $('color') as HTMLInputElement,
+  width: $('width') as HTMLInputElement,
   undo: $('undo'),
   clear: $('clear'),
   download: $('download'),
-  workspace: $('workspace'),
-  type: $('type'),
-  title: $('title'),
-  body: $('body'),
-  submit: $('submit'),
-  submitNoImage: $('submitNoImage'),
+  workspace: $('workspace') as HTMLSelectElement,
+  type: $('type') as HTMLSelectElement,
+  title: $('title') as HTMLInputElement,
+  body: $('body') as HTMLTextAreaElement,
+  submit: $('submit') as HTMLButtonElement,
+  submitNoImage: $('submitNoImage') as HTMLButtonElement,
   status: $('status'),
   result: $('result'),
   loginState: $('loginState'),
@@ -45,18 +62,19 @@ const els = {
 els.openOptions.addEventListener('click', () => chrome.runtime.openOptionsPage());
 
 // ---- State ----
-let config = null;
-let pending = null; // { dataUrl, pageUrl, pageTitle, type, workspaceId, sourceTabId } or { error }
+let config!: Config;
+let pending: PendingShot | null = null;
 const baseImage = new Image(); // source screenshot (used for redraw and mosaic sampling)
-let ops = []; // annotation ops: { tool, color, width, ... }
+let ops: Op[] = []; // annotation ops
 let currentTool = 'rect';
-let drawing = null; // in-progress drag op
+let drawing: Op | null = null; // in-progress drag op
+let pendingTextOp: Op | null = null; // op being entered via the floating text input
 let titleDirty = false; // true once the user edits the title (stop auto-filling the default)
 
 // ============================================================================
 // 1) Init: load config + staged screenshot, populate the form and canvas
 // ============================================================================
-async function init() {
+async function init(): Promise<void> {
   config = await getConfig();
   setLanguage(config.lang);
   localizeDom(document);
@@ -96,8 +114,8 @@ async function init() {
   populateSelects();
   setupDefaults();
 
-  // Draw the screenshot. The canvas backing store equals the image's native pixels for
-  // a crisp export; CSS max-width:100% scales it down for display.
+  // Draw the screenshot. The canvas backing store equals the image's native pixels for a
+  // crisp export; CSS max-width:100% scales it down for display.
   baseImage.onload = () => {
     canvas.width = baseImage.naturalWidth;
     canvas.height = baseImage.naturalHeight;
@@ -106,18 +124,18 @@ async function init() {
   baseImage.onerror = () => setStatus(t('statusImageLoadFailed'), 'error');
   baseImage.src = pending.dataUrl;
 
-  refreshLoginHint();
+  void refreshLoginHint();
 }
 
-function populateSelects() {
+function populateSelects(): void {
   els.workspace.innerHTML = '';
   for (const ws of config.workspaces) {
     const opt = document.createElement('option');
     opt.value = ws.id;
-    opt.textContent = ws.name || `${ws.owner}/${ws.repo}`;
+    opt.textContent = wsLabel(ws);
     els.workspace.appendChild(opt);
   }
-  const wsId = pending.workspaceId || config.lastWorkspaceId;
+  const wsId = (pending && pending.workspaceId) || config.lastWorkspaceId;
   if (wsId && config.workspaces.some((w) => w.id === wsId)) els.workspace.value = wsId;
 
   els.type.innerHTML = '';
@@ -127,39 +145,45 @@ function populateSelects() {
     opt.textContent = ty;
     els.type.appendChild(opt);
   }
-  if (pending.type && config.types.includes(pending.type)) els.type.value = pending.type;
+  if (pending && pending.type && config.types.includes(pending.type)) els.type.value = pending.type;
 }
 
-function defaultTitle() {
+function defaultTitle(): string {
   const ty = els.type.value || '';
-  return [pending.pageTitle || '', ty].filter(Boolean).join(' ').trim();
+  return [(pending && pending.pageTitle) || '', ty].filter(Boolean).join(' ').trim();
 }
 
-function setupDefaults() {
+function setupDefaults(): void {
   els.title.value = defaultTitle();
-  els.body.value = pending.pageUrl ? t('bodyDefaultPage', [pending.pageUrl]) + '\n\n' : '';
+  const pageUrl = (pending && pending.pageUrl) || '';
+  els.body.value = pageUrl ? t('bodyDefaultPage', [pageUrl]) + '\n\n' : '';
 }
 
-els.title.addEventListener('input', () => { titleDirty = true; });
+els.title.addEventListener('input', () => {
+  titleDirty = true;
+});
 
 els.type.addEventListener('change', () => {
-  rememberSelection({ type: els.type.value });
+  void rememberSelection({ type: els.type.value });
   if (!titleDirty) els.title.value = defaultTitle();
 });
 els.workspace.addEventListener('change', () => {
-  rememberSelection({ workspaceId: els.workspace.value });
-  refreshLoginHint();
+  void rememberSelection({ workspaceId: els.workspace.value });
+  void refreshLoginHint();
 });
 
-async function refreshLoginHint() {
-  els.loginState.textContent = t('loginChecking');
-  els.loginState.style.color = 'var(--muted)';
+async function refreshLoginHint(): Promise<void> {
+  const ws = selectedWorkspace();
+  if (!ws) {
+    els.loginState.textContent = '';
+    return;
+  }
   try {
-    const { loggedIn, login } = await checkGithubLogin();
-    els.loginState.textContent = loggedIn ? t('loginSignedInAs', [login]) : '⚠ ' + t('loginNotSignedIn');
-    els.loginState.style.color = loggedIn ? 'var(--muted)' : 'var(--danger)';
+    const { text, ok } = await getProvider(wsKind(ws)).hint(ws, t);
+    els.loginState.textContent = text;
+    els.loginState.style.color = ok ? 'var(--muted)' : 'var(--danger)';
   } catch (e) {
-    els.loginState.textContent = t('loginUnknown', [e && e.message ? e.message : String(e)]);
+    els.loginState.textContent = t('loginUnknown', [e instanceof Error ? e.message : String(e)]);
     els.loginState.style.color = 'var(--danger)';
   }
 }
@@ -170,19 +194,54 @@ async function refreshLoginHint() {
 //    base image, replay ops, then draw the in-progress preview. Undo pops the last op.
 // ============================================================================
 
-document.getElementById('toolbar').addEventListener('click', (e) => {
-  const btn = e.target.closest('.tool');
+$('toolbar').addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest('.tool') as HTMLElement | null;
   if (!btn) return;
-  currentTool = btn.dataset.tool;
+  currentTool = btn.dataset.tool || 'rect';
   document.querySelectorAll('.tool').forEach((b) => b.classList.toggle('active', b === btn));
   commitTextIfAny();
 });
 
-els.undo.addEventListener('click', () => { commitTextIfAny(); ops.pop(); redraw(); });
-els.clear.addEventListener('click', () => { commitTextIfAny(); ops = []; redraw(); });
+els.undo.addEventListener('click', () => {
+  commitTextIfAny();
+  ops.pop();
+  redraw();
+});
+els.clear.addEventListener('click', () => {
+  commitTextIfAny();
+  ops = [];
+  redraw();
+});
+
+// Page-level shortcuts:
+//   Esc        → close this editor tab
+//   Ctrl/Cmd+Z → undo the last annotation (native undo still works inside text fields)
+function closeEditorTab(): void {
+  chrome.tabs
+    .getCurrent()
+    .then((tab) => {
+      if (tab && tab.id != null) void chrome.tabs.remove(tab.id);
+    })
+    .catch(() => {});
+}
+window.addEventListener('keydown', (e) => {
+  if (e.target === textInput) return; // the text-tool input manages its own keys
+  if (e.key === 'Escape') {
+    closeEditorTab();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return; // leave text undo alone
+    e.preventDefault();
+    commitTextIfAny();
+    ops.pop();
+    redraw();
+  }
+});
 
 /** Map screen coordinates to canvas pixel coordinates (the canvas is scaled by CSS). */
-function toCanvasXY(evt) {
+function toCanvasXY(evt: MouseEvent): { x: number; y: number } {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
   const scaleY = canvas.height / rect.height;
@@ -192,12 +251,18 @@ function toCanvasXY(evt) {
 canvas.addEventListener('mousedown', (e) => {
   if (!baseImage.src) return;
   const p = toCanvasXY(e);
-  if (currentTool === 'text') { openTextInput(p, e); return; }
+  if (currentTool === 'text') {
+    openTextInput(p, e);
+    return;
+  }
   drawing = {
     tool: currentTool,
     color: els.color.value,
     width: Number(els.width.value),
-    x0: p.x, y0: p.y, x1: p.x, y1: p.y,
+    x0: p.x,
+    y0: p.y,
+    x1: p.x,
+    y1: p.y,
   };
 });
 
@@ -211,21 +276,21 @@ canvas.addEventListener('mousemove', (e) => {
 
 window.addEventListener('mouseup', () => {
   if (!drawing) return;
-  const moved = Math.hypot(drawing.x1 - drawing.x0, drawing.y1 - drawing.y0) > 3;
+  const moved = Math.hypot((drawing.x1 ?? 0) - (drawing.x0 ?? 0), (drawing.y1 ?? 0) - (drawing.y0 ?? 0)) > 3;
   if (moved) ops.push(drawing);
   drawing = null;
   redraw();
 });
 
 // Text tool: float an input over the canvas; commit a text op on Enter/blur.
-function openTextInput(p, evt) {
+function openTextInput(p: { x: number; y: number }, evt: MouseEvent): void {
   const wrapRect = canvasWrap.getBoundingClientRect();
   textInput.style.left = evt.clientX - wrapRect.left + canvasWrap.scrollLeft + 'px';
   textInput.style.top = evt.clientY - wrapRect.top + canvasWrap.scrollTop + 'px';
   textInput.style.display = 'block';
   textInput.style.color = els.color.value;
   textInput.value = '';
-  textInput._op = {
+  pendingTextOp = {
     tool: 'text',
     color: els.color.value,
     size: Math.max(14, Number(els.width.value) * 5),
@@ -235,23 +300,29 @@ function openTextInput(p, evt) {
   setTimeout(() => textInput.focus(), 0);
 }
 
-function commitTextIfAny() {
-  if (textInput.style.display !== 'none' && textInput.value.trim() && textInput._op) {
-    ops.push({ ...textInput._op, text: textInput.value });
+function commitTextIfAny(): void {
+  if (textInput.style.display !== 'none' && textInput.value.trim() && pendingTextOp) {
+    ops.push({ ...pendingTextOp, text: textInput.value });
   }
   textInput.style.display = 'none';
-  textInput._op = null;
+  pendingTextOp = null;
   redraw();
 }
 
 textInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); commitTextIfAny(); }
-  if (e.key === 'Escape') { textInput.style.display = 'none'; textInput._op = null; }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    commitTextIfAny();
+  }
+  if (e.key === 'Escape') {
+    textInput.style.display = 'none';
+    pendingTextOp = null;
+  }
 });
 textInput.addEventListener('blur', commitTextIfAny);
 
 /** Redraw the whole canvas: base image + committed ops + the in-progress preview. */
-function redraw() {
+function redraw(): void {
   if (!canvas.width) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(baseImage, 0, 0, canvas.width, canvas.height);
@@ -259,7 +330,7 @@ function redraw() {
   if (drawing) drawOp(drawing);
 }
 
-function drawOp(op) {
+function drawOp(op: Op): void {
   ctx.save();
   ctx.strokeStyle = op.color;
   ctx.fillStyle = op.color;
@@ -268,8 +339,9 @@ function drawOp(op) {
   ctx.lineCap = 'round';
 
   if (op.tool === 'rect') {
-    const x = Math.min(op.x0, op.x1), y = Math.min(op.y0, op.y1);
-    ctx.strokeRect(x, y, Math.abs(op.x1 - op.x0), Math.abs(op.y1 - op.y0));
+    const x = Math.min(op.x0 ?? 0, op.x1 ?? 0);
+    const y = Math.min(op.y0 ?? 0, op.y1 ?? 0);
+    ctx.strokeRect(x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)));
   } else if (op.tool === 'arrow') {
     drawArrow(op);
   } else if (op.tool === 'mosaic') {
@@ -279,15 +351,18 @@ function drawOp(op) {
     ctx.textBaseline = 'top';
     ctx.lineWidth = Math.max(2, (op.size || 20) / 8);
     ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-    ctx.strokeText(op.text, op.x, op.y);
+    ctx.strokeText(op.text || '', op.x ?? 0, op.y ?? 0);
     ctx.fillStyle = op.color;
-    ctx.fillText(op.text, op.x, op.y);
+    ctx.fillText(op.text || '', op.x ?? 0, op.y ?? 0);
   }
   ctx.restore();
 }
 
-function drawArrow(op) {
-  const { x0, y0, x1, y1 } = op;
+function drawArrow(op: Op): void {
+  const x0 = op.x0 ?? 0;
+  const y0 = op.y0 ?? 0;
+  const x1 = op.x1 ?? 0;
+  const y1 = op.y1 ?? 0;
   const head = Math.max(10, (op.width || 4) * 3);
   const angle = Math.atan2(y1 - y0, x1 - x0);
   ctx.beginPath();
@@ -307,18 +382,19 @@ function drawArrow(op) {
  * back enlarged with smoothing off to produce hard pixel blocks. Sampling the base image
  * (not the current canvas) keeps redaction of the original content stable.
  */
-function drawMosaic(op) {
-  const x = Math.round(Math.min(op.x0, op.x1));
-  const y = Math.round(Math.min(op.y0, op.y1));
-  const w = Math.round(Math.abs(op.x1 - op.x0));
-  const h = Math.round(Math.abs(op.y1 - op.y0));
+function drawMosaic(op: Op): void {
+  const x = Math.round(Math.min(op.x0 ?? 0, op.x1 ?? 0));
+  const y = Math.round(Math.min(op.y0 ?? 0, op.y1 ?? 0));
+  const w = Math.round(Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)));
+  const h = Math.round(Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)));
   if (w < 2 || h < 2) return;
   const block = 12;
   const sw = Math.max(1, Math.floor(w / block));
   const sh = Math.max(1, Math.floor(h / block));
   const tmp = document.createElement('canvas');
-  tmp.width = sw; tmp.height = sh;
-  const tctx = tmp.getContext('2d');
+  tmp.width = sw;
+  tmp.height = sh;
+  const tctx = tmp.getContext('2d') as CanvasRenderingContext2D;
   tctx.drawImage(baseImage, x, y, w, h, 0, 0, sw, sh);
   ctx.save();
   ctx.imageSmoothingEnabled = false;
@@ -329,7 +405,7 @@ function drawMosaic(op) {
 // ============================================================================
 // 3) Export / download
 // ============================================================================
-function canvasToDataUrl() {
+function canvasToDataUrl(): string {
   return canvas.toDataURL('image/png');
 }
 
@@ -342,87 +418,88 @@ els.download.addEventListener('click', () => {
 });
 
 // ============================================================================
-// 4) Submit
+// 4) Submit (delegated to the workspace's provider)
 // ============================================================================
-function setStatus(text, cls = 'info') {
+function setStatus(text: string, cls: 'info' | 'error' | 'ok' = 'info'): void {
   els.status.className = cls;
   els.status.textContent = text;
 }
-function setStatusBusy(text) {
+function setStatusBusy(text: string): void {
   els.status.className = 'info';
   els.status.innerHTML = `<span class="spin"></span>${text}`;
 }
-function disableSubmit(v) {
+function disableSubmit(v: boolean): void {
   els.submit.disabled = v;
   els.submitNoImage.disabled = v;
 }
 
-function selectedWorkspace() {
+function selectedWorkspace(): Workspace | null {
   return config.workspaces.find((w) => w.id === els.workspace.value) || null;
 }
 
 /** Validate preconditions. Returns { ws } or throws. */
-function preflight() {
+function preflight(): { ws: Workspace } {
   if (!pending) throw new Error(t('errNoShot'));
   const ws = selectedWorkspace();
   if (!ws) throw new Error(t('errSelectWorkspace'));
-  if (!ws.owner || !ws.repo) throw new Error(t('errWorkspaceIncomplete'));
+  const errKey = getProvider(wsKind(ws)).validate(ws);
+  if (errKey) throw new Error(t(errKey));
   if (!els.title.value.trim()) throw new Error(t('errTitleEmpty'));
   return { ws };
 }
 
-els.submit.addEventListener('click', () => submit({ withImage: true }));
-els.submitNoImage.addEventListener('click', () => submit({ withImage: false }));
+els.submit.addEventListener('click', () => void submit({ withImage: true }));
+els.submitNoImage.addEventListener('click', () => void submit({ withImage: false }));
 
-async function submit({ withImage }) {
+async function submit({ withImage }: { withImage: boolean }): Promise<void> {
   commitTextIfAny();
   els.result.innerHTML = '';
-  let ws;
+  let ws: Workspace;
   try {
     ({ ws } = preflight());
   } catch (e) {
-    setStatus(e.message, 'error');
+    setStatus(e instanceof Error ? e.message : String(e), 'error');
     return;
   }
 
   disableSubmit(true);
   try {
-    const title = els.title.value.trim();
-    const dataUrl = withImage ? canvasToDataUrl() : '';
-    const filename = `shot-${Date.now()}.png`;
-
-    // Both upload and creation use the github.com web session; require sign-in.
-    setStatusBusy(t('statusCheckingLogin'));
-    const { loggedIn, login } = await checkGithubLogin();
-    if (!loggedIn) throw new Error(t('errNotSignedIn'));
-    els.loginState.textContent = t('loginSignedInAs', [login]);
-
-    setStatusBusy(withImage ? t('statusSubmitting') : t('statusSubmittingNoImage'));
-    const url = await submitIssueViaPage({
-      owner: ws.owner, repo: ws.repo, title, body: els.body.value, dataUrl, filename, withImage,
+    const issue: IssueResult = await getProvider(wsKind(ws)).submit(ws, {
+      title: els.title.value.trim(),
+      body: els.body.value,
+      dataUrl: withImage ? canvasToDataUrl() : '',
+      filename: `shot-${Date.now()}.png`,
+      withImage,
+      t,
+      busy: (key: string) => setStatusBusy(t(key)),
     });
-    const num = (url.match(/\/issues\/(\d+)/) || [])[1] || '';
-    const issue = { html_url: url, number: num };
 
+    const num = issue.number || '';
     showResult(issue);
     await clearPendingShot();
 
     // Optionally return to the captured tab and close this editor tab.
-    if (config.closeAfterSubmit && pending.sourceTabId != null) {
+    if (config.closeAfterSubmit && pending && pending.sourceTabId != null) {
       setStatus(num ? t('statusReturning', [num]) : t('statusCreatedNoNumber'), 'ok');
       await sleep(900);
-      try { await chrome.tabs.update(pending.sourceTabId, { active: true }); } catch (_) {}
+      try {
+        await chrome.tabs.update(pending.sourceTabId, { active: true });
+      } catch {
+        /* the source tab may be gone */
+      }
       try {
         const me = await chrome.tabs.getCurrent();
-        if (me) await chrome.tabs.remove(me.id);
-      } catch (_) {}
+        if (me && me.id != null) await chrome.tabs.remove(me.id);
+      } catch {
+        /* ignore */
+      }
       return;
     }
 
     setStatus(num ? t('statusCreated', [num]) : t('statusCreatedNoNumber'), 'ok');
   } catch (err) {
     console.error(err);
-    setStatus(t('statusSubmitFailed', [err && err.message ? err.message : String(err)]), 'error');
+    setStatus(t('statusSubmitFailed', [err instanceof Error ? err.message : String(err)]), 'error');
     if (withImage) {
       const hint = document.createElement('div');
       hint.className = 'hint';
@@ -434,21 +511,21 @@ async function submit({ withImage }) {
   }
 }
 
-function showResult(issue) {
+function showResult(issue: IssueResult): void {
   els.result.innerHTML = '';
   const a = document.createElement('a');
-  a.href = issue.html_url;
-  a.textContent = issue.html_url;
+  a.href = issue.url;
+  a.textContent = issue.url;
   a.target = '_blank';
   const open = document.createElement('button');
   open.className = 'primary';
   open.textContent = t('openIssue');
   open.style.marginLeft = '10px';
-  open.addEventListener('click', () => chrome.tabs.create({ url: issue.html_url }));
+  open.addEventListener('click', () => chrome.tabs.create({ url: issue.url }));
   const wrap = document.createElement('div');
   wrap.appendChild(a);
   wrap.appendChild(open);
   els.result.appendChild(wrap);
 }
 
-init();
+void init();

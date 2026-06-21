@@ -2,51 +2,57 @@
 
 **English** | [简体中文](README.zh-CN.md) | [日本語](README.ja.md)
 
-A Chrome extension (Manifest V3) for filing GitHub issues from a screenshot. Click the
-toolbar icon to capture the current tab, annotate the image, write a title and
-description, and submit. The screenshot is attached as a native GitHub
-`user-attachments` asset and rendered inline in the issue body.
+A Chrome extension (Manifest V3) for filing GitHub or YouTrack issues from a screenshot.
+Click the toolbar icon to capture the current tab, annotate the image, write a title and
+description, and submit. The screenshot is attached to the issue and rendered inline.
 
-The extension is client-side only. It communicates with `github.com` and nothing else,
-and it requires no personal access token: submission uses your existing github.com
-browser session.
+The extension is written in TypeScript and is client-side only; it talks to no
+third-party servers. GitHub submission requires no personal access token — it uses your
+existing github.com browser session. YouTrack submission uses its REST API with a
+permanent token you provide.
 
 <p align="center">
-  <img src="extension/icons/icon128.png" width="96" alt="shot2issue icon" />
+  <img src="src/icons/icon128.png" width="96" alt="shot2issue icon" />
 </p>
 
 ## Features
 
 - One click to capture the visible area of the current tab.
 - Canvas annotation: rectangle, arrow, text, and mosaic (for redacting sensitive
-  content before submitting).
-- Multiple workspaces, each targeting one repository (public or private).
-- Submission runs in a background tab without stealing focus; the editor can optionally
-  close and return you to the page you captured.
+  content before submitting). Undo with Ctrl/Cmd+Z; close the editor with Esc.
+- Multiple workspaces, each targeting a GitHub repository or a YouTrack project.
+- GitHub submission runs in a background tab without stealing focus; the editor can
+  optionally close and return you to the page you captured.
+- Optional keyboard shortcut to capture the current tab (off by default).
 - Interface available in English, Simplified Chinese, and Japanese (English by default).
-- No token, no backend, no analytics. Settings are stored locally and can be exported.
+- No backend and no analytics. Settings are stored locally and can be exported.
 
 ## Requirements
 
 - Google Chrome (or a Chromium-based browser) with Manifest V3 support.
-- An active github.com session in the same browser. The signed-in account must have
-  access to the target repository, including private repositories.
+- For GitHub targets: an active github.com session in the same browser, signed in to an
+  account with access to the target repository (including private repositories).
+- For YouTrack targets: the instance base URL, a project, and a permanent token.
 
 ## Installation
 
+The extension is written in TypeScript and must be compiled before it can be loaded.
+
 1. Clone or download this repository.
-2. Open `chrome://extensions`.
-3. Enable **Developer mode** (top right).
-4. Choose **Load unpacked** and select the **`extension/`** directory (the subdirectory,
-   not the repository root).
-5. The options page opens on first install. Add at least one workspace.
+2. Run `npm install`, then `npm run build`. This compiles TypeScript and copies static
+   assets into the `build/` directory.
+3. Open `chrome://extensions`.
+4. Enable **Developer mode** (top right).
+5. Choose **Load unpacked** and select the **`build/`** directory (not the repository
+   root and not `src/`).
+6. The options page opens on first install. Add at least one workspace.
 
 A packaged build (`dist/shot2issue-<version>.zip`, see [Building](#building)) can be
 loaded the same way or uploaded to the Chrome Web Store.
 
-To update after pulling new code, use the **Reload** button on the extension card in
-`chrome://extensions`. Settings are preserved across reloads; removing the extension
-clears them.
+To iterate while developing, run `npm run watch`, which recompiles on every change; then
+use the **Reload** button on the extension card in `chrome://extensions` to pick up the
+new output. Settings are preserved across reloads; removing the extension clears them.
 
 ## Usage
 
@@ -67,8 +73,10 @@ manually, or **Submit without screenshot** to file the issue without the image.
 Open the options page from `chrome://extensions` (Details → Extension options) or from
 the **Settings** link in the editor.
 
-- **Workspaces** — each workspace is one target repository, defined by a display name,
-  an owner (user or organization), and a repository name.
+- **Workspaces** — each workspace is one issue target. For GitHub: a display name, owner
+  (user or organization), and repository name. For YouTrack: a display name, base URL,
+  project (short name or id), and a permanent token (created in YouTrack → Profile →
+  Account Security → Tokens). Tokens are stored locally in this browser.
 - **Types** — shown in the editor's Type dropdown and used as the default title suffix.
   Defaults: Change, Bug, Feature.
 - **Language** — English, Simplified Chinese, or Japanese.
@@ -81,6 +89,8 @@ the **Settings** link in the editor.
   are stored only in this browser (`chrome.storage.local`).
 
 ## How submission works
+
+### GitHub
 
 GitHub issue attachments (`user-attachments/assets`) have no official API: personal
 access tokens, OAuth, and GitHub Apps cannot upload them. Only the github.com web
@@ -112,6 +122,14 @@ changes. The code uses several selectors, a paste-then-drop fallback, and explic
 timeouts. The **Download PNG** and **Submit without screenshot** actions remain available
 as fallbacks.
 
+### YouTrack
+
+YouTrack provides a documented REST API for both issue creation and attachments, so this
+path uses the API directly with your permanent token: the extension creates the issue
+(`POST /api/issues`), then uploads the screenshot (`POST /api/issues/{id}/attachments`)
+and embeds it inline by file name. The first submission to a given instance prompts for
+permission to access that origin, since instance URLs are not known in advance.
+
 ## Permissions
 
 | Permission | Purpose |
@@ -120,9 +138,13 @@ as fallbacks.
 | `storage` | Stores settings in `chrome.storage.local` and the pending screenshot in `chrome.storage.session`. |
 | `scripting` | Injects the submission script into the background github.com tab. |
 
-Host permissions are limited to `https://github.com/*`, which is the only origin the
-extension contacts. The screenshot bytes are uploaded to GitHub's storage by GitHub's
-own page code, so the extension does not need permission for those storage hosts.
+Host permissions are limited to `https://github.com/*` by default, the only origin the
+extension contacts for GitHub. The screenshot bytes are uploaded to GitHub's storage by
+GitHub's own page code, so the extension does not need permission for those storage hosts.
+
+YouTrack instance URLs are not known in advance, so they are declared as
+`optional_host_permissions` and requested at runtime: the first time you save or submit
+to an instance, Chrome asks permission to access that specific origin.
 
 ## Privacy
 
@@ -139,41 +161,54 @@ own page code, so the extension does not need permission for those storage hosts
 
 ## Project structure
 
+`src/` holds the TypeScript sources and static assets. The build compiles them into
+`build/`, which is the **Load unpacked** target; `dist/` holds the packaged release zip.
+
 ```
 shot2issue/
-├── extension/                   # load unpacked points here
-│   ├── manifest.json            # MV3 manifest; host permissions limited to github.com
-│   ├── background.js            # service worker: capture on icon click, open the editor
-│   ├── editor.html / .js / .css # main UI: selection, canvas annotation, submission
-│   ├── options.html / .js       # settings: workspaces, types, language, backup
+├── src/                          # TypeScript sources + static assets
+│   ├── manifest.json             # MV3 manifest; github.com host perm + optional YouTrack origins
+│   ├── background.ts             # service worker: capture on icon click / shortcut, open editor
+│   ├── editor.ts / .html / .css  # main UI: selection, canvas annotation, submission
+│   ├── options.ts / .html        # settings: workspaces, types, language, shortcut, backup
 │   ├── lib/
-│   │   ├── storage.js           # chrome.storage access (settings + pending screenshot)
-│   │   ├── i18n.js              # interface strings (en / zh / ja)
-│   │   ├── page-upload.js       # in-page submission via github.com's web form
-│   │   └── github-attach.js     # github.com sign-in detection
-│   └── icons/                   # 16 / 48 / 128 px icons
-├── scripts/build.sh             # validate the manifest and package the zip
-├── Dockerfile                   # Docker build for the release archive
-├── .github/workflows/build.yml  # CI: Docker build, upload artifact, attach to releases
+│   │   ├── storage.ts            # chrome.storage access (settings + pending screenshot)
+│   │   ├── i18n.ts               # interface strings (en / zh / ja)
+│   │   ├── github-attach.ts      # github.com sign-in detection
+│   │   ├── page-upload.ts        # GitHub: in-page submission via github.com's web form
+│   │   ├── youtrack.ts           # YouTrack: issue + attachment via REST API
+│   │   └── providers/
+│   │       ├── index.ts          # provider registry
+│   │       ├── types.ts          # Provider interface and shared types
+│   │       ├── github.ts         # GitHub provider
+│   │       └── youtrack.ts       # YouTrack provider
+│   └── icons/                    # 16 / 48 / 128 px icons
+├── scripts/copy-assets.mjs       # copy static assets (html, css, manifest, icons) into build/
+├── package.json                  # npm scripts: build, watch, typecheck
+├── tsconfig.json                 # strict NodeNext TypeScript configuration
+├── build/                        # compiled output; load unpacked points here (generated)
+├── dist/                         # packaged release zip (generated)
+├── Dockerfile                    # Docker build for the release archive
+├── .github/workflows/build.yml   # CI: Docker build, upload artifact, attach to releases
 ├── LICENSE
 └── README.md
 ```
 
 ## Building
 
-Development with **Load unpacked** does not require a build. The build only produces a
-distributable archive containing the contents of `extension/`.
+A build is required before **Load unpacked**, since the sources are TypeScript. Compile
+locally with npm:
 
-With Docker:
+```bash
+npm install && npm run build
+# Output: build/ (the Load unpacked target)
+```
+
+Or build the distributable archive with Docker, which produces the release zip without a
+local toolchain:
 
 ```bash
 docker build --target export --output type=local,dest=dist .
-```
-
-Or directly (requires `bash` and `zip`; `jq` optional):
-
-```bash
-bash scripts/build.sh
 # Output: dist/shot2issue-<version>.zip
 ```
 
@@ -185,6 +220,15 @@ archive to a GitHub release:
 ```bash
 git tag v1.0.0 && git push origin v1.0.0
 ```
+
+## Adding an issue backend
+
+Each issue tracker is a provider. To add one, implement the `Provider` interface from
+[`src/lib/providers/types.ts`](src/lib/providers/types.ts) in a new module under
+`src/lib/providers/`, then register it in
+[`src/lib/providers/index.ts`](src/lib/providers/index.ts). The provider declares its
+configuration fields, validates a workspace, requests any host permissions it needs, and
+implements `submit()`; the editor and options pages pick it up from the registry.
 
 ## Limitations
 

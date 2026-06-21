@@ -2,50 +2,64 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | **日本語**
 
-スクリーンショットから GitHub issue を作成する Chrome 拡張機能（Manifest V3）です。ツール
-バーのアイコンをクリックすると現在のタブを撮影し、注釈を加え、タイトルと説明を入力して送信
-できます。スクリーンショットは GitHub のネイティブ添付（`user-attachments`）としてアップロード
-され、issue 本文にインライン画像として表示されます。
+スクリーンショットから GitHub または YouTrack の issue を作成する Chrome 拡張機能（Manifest
+V3）です。ツールバーのアイコンをクリックすると現在のタブを撮影し、注釈を加え、タイトルと説明を
+入力して送信できます。スクリーンショットは issue に添付され、インライン表示されます。
 
-本拡張機能はクライアントサイドのみで動作し、通信先は `github.com` だけです。Personal Access
-Token は不要で、送信には現在の github.com のブラウザセッションを利用します。
+本拡張機能はクライアントサイドのみで動作し、サードパーティのサーバーとは通信しません。GitHub
+への送信に Personal Access Token は不要で、現在の github.com のブラウザセッションを利用します。
+YouTrack への送信には、指定した永続トークンで REST API を使用します。
+
+本拡張機能は TypeScript で書かれており、読み込み可能な拡張機能を生成するにはビルドが必要です。
 
 <p align="center">
-  <img src="extension/icons/icon128.png" width="96" alt="shot2issue icon" />
+  <img src="src/icons/icon128.png" width="96" alt="shot2issue icon" />
 </p>
 
 ## 機能
 
 - 現在のタブの表示領域をワンクリックで撮影。
-- Canvas による注釈：矩形、矢印、テキスト、モザイク（送信前に機密情報を伏せるため）。
-- 複数のワークスペースに対応。各ワークスペースは 1 つのリポジトリ（public / private いずれも可）
-  を対象とします。
-- 送信はバックグラウンドのタブで行われ、フォーカスを奪いません。送信後にエディタを閉じて撮影元
-  のページに戻る挙動も選択できます。
+- Canvas による注釈：矩形、矢印、テキスト、モザイク（送信前に機密情報を伏せるため）。Ctrl/Cmd+Z で元に戻し、Esc でエディタを閉じます。
+- 複数のワークスペースに対応。各ワークスペースは 1 つの送信先（GitHub リポジトリまたは YouTrack
+  プロジェクト）を対象とします。
+- GitHub への送信はバックグラウンドのタブで行われ、フォーカスを奪いません。送信後にエディタを
+  閉じて撮影元のページに戻る挙動も選択できます。
+- 現在のタブを撮影する任意のキーボードショートカット（既定では無効）。
 - インターフェースは英語・簡体中文・日本語に対応（既定は英語）。
-- トークン不要、バックエンドなし、解析・トラッキングなし。設定はローカルにのみ保存され、書き出し
-  も可能です。
+- バックエンドなし、解析・トラッキングなし。設定はローカルにのみ保存され、書き出しも可能です。
 
 ## 動作要件
 
 - Manifest V3 に対応した Google Chrome（または Chromium 系ブラウザ）。
-- 同じブラウザで github.com にサインイン済みであること。サインイン中のアカウントが対象リポジトリ
-  （非公開を含む）にアクセスできる必要があります。
+- GitHub 送信先：同じブラウザで github.com にサインインし、対象リポジトリ（非公開を含む）に
+  アクセスできるアカウントであること。
+- YouTrack 送信先：インスタンスの Base URL、プロジェクト、永続トークン。
 
 ## インストール
 
 1. 本リポジトリをクローンまたはダウンロードします。
-2. `chrome://extensions` を開きます。
-3. 右上の「デベロッパーモード」を有効にします。
-4. 「パッケージ化されていない拡張機能を読み込む」を選び、**`extension/`** ディレクトリ（リポジトリ
-   ルートではなくこのサブディレクトリ）を指定します。
-5. 初回インストール時に設定ページが開きます。ワークスペースを少なくとも 1 つ追加してください。
+2. 拡張機能をビルドします（[ビルド](#ビルド)を参照）。
+
+   ```bash
+   npm install
+   npm run build
+   ```
+
+   これにより `build/` ディレクトリが生成されます。
+3. `chrome://extensions` を開きます。
+4. 右上の「デベロッパーモード」を有効にします。
+5. 「パッケージ化されていない拡張機能を読み込む」を選び、**`build/`** ディレクトリ（`extension/`
+   ではなくなりました）を指定します。
+6. 初回インストール時に設定ページが開きます。ワークスペースを少なくとも 1 つ追加してください。
+
+開発時は `npm run watch` で変更を自動的に再コンパイルし、変更を反映するには
+`chrome://extensions` の拡張機能カードにある「更新」ボタンを押します。
 
 ビルド成果物（`dist/shot2issue-<version>.zip`、[ビルド](#ビルド)を参照）も同じ方法で読み込めます。
 Chrome Web Store へのアップロードにも使用できます。
 
-新しいコードを取得した後は、`chrome://extensions` の拡張機能カードにある「更新」ボタンを使って
-更新します。更新では設定は保持されます。拡張機能を削除すると設定は消去されます。
+新しいコードを取得した後は、再ビルドしてから `chrome://extensions` の拡張機能カードにある「更新」
+ボタンを使って更新します。更新では設定は保持されます。拡張機能を削除すると設定は消去されます。
 
 ## 使い方
 
@@ -65,8 +79,10 @@ Chrome Web Store へのアップロードにも使用できます。
 設定ページは `chrome://extensions`（詳細 → 拡張機能のオプション）またはエディタの「設定」リンク
 から開けます。
 
-- **ワークスペース** —— 各ワークスペースは 1 つの対象リポジトリで、表示名・owner（ユーザーまたは
-  組織）・リポジトリ名で定義します。
+- **ワークスペース** —— 各ワークスペースは 1 つの送信先です。GitHub：表示名・owner（ユーザーまたは
+  組織）・リポジトリ名。YouTrack：表示名・Base URL・プロジェクト（短縮名または id）・永続トークン
+  （YouTrack → プロフィール → Account Security → Tokens で作成）。トークンはこのブラウザ内にのみ
+  保存されます。
 - **種類** —— エディタの「種類」ドロップダウンに表示され、既定タイトルの接尾辞に使われます。既定値：
   Change、Bug、Feature。
 - **言語** —— 英語、簡体中文、または日本語。
@@ -78,6 +94,8 @@ Chrome Web Store へのアップロードにも使用できます。
   （`chrome.storage.local`）にのみ保存されます。
 
 ## 送信の仕組み
+
+### GitHub
 
 GitHub の issue 添付（`user-attachments/assets`）には公式 API がありません。Personal Access Token、
 OAuth、GitHub App ではアップロードできず、github.com のウェブセッションのみが可能です。そのため本
@@ -106,6 +124,14 @@ OAuth、GitHub App ではアップロードできず、github.com のウェブ�
 コードでは複数のセレクタ、「貼り付け→ドロップ」のフォールバック、明示的なタイムアウトを用いています。
 「PNG をダウンロード」と「スクリーンショットなしで送信」は常にフォールバックとして利用できます。
 
+### YouTrack
+
+YouTrack は issue 作成と添付の両方に文書化された REST API を提供しているため、このパスでは永続
+トークンで API を直接利用します。issue を作成し（`POST /api/issues`）、スクリーンショットを
+アップロードして（`POST /api/issues/{id}/attachments`）ファイル名でインライン埋め込みします。
+インスタンス URL は事前に分からないため、各インスタンスへの初回送信時にそのオリジンへのアクセス
+許可を求めます。
+
 ## 権限
 
 | 権限 | 用途 |
@@ -114,9 +140,13 @@ OAuth、GitHub App ではアップロードできず、github.com のウェブ�
 | `storage` | 設定を `chrome.storage.local` に、保留中のスクリーンショットを `chrome.storage.session` に保存。 |
 | `scripting` | バックグラウンドの github.com タブに送信用スクリプトを注入。 |
 
-ホスト権限は `https://github.com/*` に限定されており、これが拡張機能の唯一の通信先です。スクリーン
+既定のホスト権限は `https://github.com/*` のみで、GitHub 送信時の唯一の通信先です。スクリーン
 ショットのバイト列は GitHub 自身のページコードがそのストレージへアップロードするため、拡張機能は
 それらのストレージホストの権限を必要としません。
+
+YouTrack のインスタンス URL は事前に分からないため、`optional_host_permissions` として宣言し、
+実行時に要求します。あるインスタンスに初めて保存または送信するとき、Chrome がそのオリジンへの
+アクセス許可を求めます。
 
 ## プライバシー
 
@@ -126,46 +156,57 @@ OAuth、GitHub App ではアップロードできず、github.com のウェブ�
   （2023-05 以降）。公開リポジトリの添付は匿名で閲覧できます。対象リポジトリは用途に応じて選んでください。
 - モザイクツールは伏せ字に使えます。送信前に機密情報を覆ってください。元のスクリーンショットを
   サンプリングし、選択した領域をピクセル化します。
-- トークンや秘密情報は一切保存しません。既存の github.com セッションに依存します。
+- GitHub 送信ではトークンを保存せず、既存の github.com セッションに依存します。YouTrack の永続
+  トークンはこのブラウザ内（`chrome.storage.local`）にのみ保存されます。
 
 ## プロジェクト構成
 
 ```
 shot2issue/
-├── extension/                   # 「パッケージ化されていない拡張機能を読み込む」の対象
-│   ├── manifest.json            # MV3 マニフェスト。ホスト権限は github.com に限定
-│   ├── background.js            # service worker：アイコンのクリックで撮影しエディタを開く
-│   ├── editor.html / .js / .css # メイン UI：選択、Canvas 注釈、送信
-│   ├── options.html / .js       # 設定：ワークスペース、種類、言語、バックアップ
+├── src/                          # TypeScript ソースと静的アセット
+│   ├── manifest.json            # MV3 マニフェスト。github.com ホスト権限 + 任意の YouTrack オリジン
+│   ├── background.ts            # service worker：アイコン/ショートカットで撮影しエディタを開く
+│   ├── editor.ts / .html / .css # メイン UI：選択、Canvas 注釈、送信
+│   ├── options.ts / .html       # 設定：ワークスペース、種類、言語、ショートカット、バックアップ
 │   ├── lib/
-│   │   ├── storage.js           # chrome.storage アクセス（設定 + 保留中のスクリーンショット）
-│   │   ├── i18n.js              # インターフェース文字列（en / zh / ja）
-│   │   ├── page-upload.js       # github.com のウェブフォームによるページ内送信
-│   │   └── github-attach.js     # github.com サインイン検出
+│   │   ├── storage.ts           # chrome.storage アクセス（設定 + 保留中のスクリーンショット）
+│   │   ├── i18n.ts              # インターフェース文字列（en / zh / ja）
+│   │   ├── github-attach.ts     # github.com サインイン検出
+│   │   ├── page-upload.ts       # GitHub：github.com のウェブフォームによるページ内送信
+│   │   ├── youtrack.ts          # YouTrack：REST API による issue 作成と添付アップロード
+│   │   └── providers/
+│   │       ├── index.ts         # プロバイダーのレジストリ
+│   │       ├── types.ts         # Provider インターフェースと共有型
+│   │       ├── github.ts        # GitHub プロバイダー
+│   │       └── youtrack.ts      # YouTrack プロバイダー
 │   └── icons/                   # 16 / 48 / 128 px アイコン
-├── scripts/build.sh             # マニフェストの検証と zip のパッケージ化
+├── scripts/copy-assets.mjs      # 静的アセットを build/ へコピー
+├── package.json                 # 依存関係とビルドスクリプト
+├── tsconfig.json                # TypeScript コンパイラ設定
 ├── Dockerfile                   # リリースアーカイブ用の Docker ビルド
 ├── .github/workflows/build.yml  # CI：Docker ビルド、artifact のアップロード、release への添付
 ├── LICENSE
 └── README.md
 ```
 
+ビルド出力は `build/` に生成されます（「パッケージ化されていない拡張機能を読み込む」の対象）。
+リリース用 zip は `dist/` に出力されます。
+
 ## ビルド
 
-「パッケージ化されていない拡張機能を読み込む」での開発にビルドは不要です。ビルドは `extension/` の
-内容を含む配布用アーカイブを生成するだけです。
+「パッケージ化されていない拡張機能を読み込む」には、まず TypeScript をコンパイルする必要があります。
 
-Docker を使う場合：
+ローカルでビルドする場合：
+
+```bash
+npm install && npm run build
+# 出力：build/（load unpacked の対象）
+```
+
+Docker を使う場合（コマンドは従来どおり）：
 
 ```bash
 docker build --target export --output type=local,dest=dist .
-```
-
-または直接実行（`bash` と `zip` が必要。`jq` は任意）：
-
-```bash
-bash scripts/build.sh
-# 出力：dist/shot2issue-<version>.zip
 ```
 
 継続的インテグレーション（[`.github/workflows/build.yml`](.github/workflows/build.yml)）は、`main`
@@ -175,6 +216,13 @@ bash scripts/build.sh
 ```bash
 git tag v1.0.0 && git push origin v1.0.0
 ```
+
+## issue バックエンドの追加
+
+送信先のバックエンドはプロバイダーとして実装されています。新しいバックエンドを追加するには、
+`src/lib/providers/types.ts` の `Provider` インターフェースを実装します。`src/lib/providers/` に
+新しいモジュールを作成し、`src/lib/providers/index.ts` のレジストリに登録してください。エディタと
+設定ページは登録済みのプロバイダーからフィールドと送信ロジックを取得します。
 
 ## 制限事項
 

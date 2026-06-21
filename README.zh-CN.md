@@ -2,44 +2,49 @@
 
 [English](README.md) | **简体中文** | [日本語](README.ja.md)
 
-一个用于从截图创建 GitHub issue 的 Chrome 扩展（Manifest V3）。点击工具栏图标即可截取当前
-标签页，对截图进行标注、填写标题和描述并提交。截图会作为 GitHub 原生附件
-（`user-attachments`）上传，并以内联图片的形式呈现在 issue 正文中。
+一个用于从截图创建 GitHub 或 YouTrack issue 的 Chrome 扩展（Manifest V3）。点击工具栏图标即可
+截取当前标签页，对截图进行标注、填写标题和描述并提交。截图会附加到 issue 并内联显示。
 
-本扩展为纯客户端实现，仅与 `github.com` 通信，且无需任何 Personal Access Token：提交过程
-复用你当前的 github.com 浏览器会话。
+本扩展使用 TypeScript 编写，为纯客户端实现，不与任何第三方服务器通信。提交到 GitHub 无需任何
+Personal Access Token——复用你当前的 github.com 浏览器会话；提交到 YouTrack 则通过其 REST API、
+使用你提供的永久 token。
 
 <p align="center">
-  <img src="extension/icons/icon128.png" width="96" alt="shot2issue icon" />
+  <img src="src/icons/icon128.png" width="96" alt="shot2issue icon" />
 </p>
 
 ## 功能
 
 - 一键截取当前标签页的可见区域。
-- 基于 Canvas 的标注：矩形、箭头、文字，以及马赛克（用于在提交前遮挡敏感内容）。
-- 支持多个工作空间，每个工作空间对应一个仓库（public 或 private 均可）。
-- 提交在后台标签页中进行，不抢占焦点；编辑页可选择在提交后自动关闭并切回截图时所在的页面。
+- 基于 Canvas 的标注：矩形、箭头、文字，以及马赛克（用于在提交前遮挡敏感内容）。可用 Ctrl/Cmd+Z 撤销，按 Esc 关闭编辑页。
+- 支持多个工作空间，每个工作空间对应一个 GitHub 仓库或一个 YouTrack 项目。
+- 提交到 GitHub 在后台标签页中进行，不抢占焦点；编辑页可选择在提交后自动关闭并切回截图时所在的页面。
+- 可选的快捷键截图（默认关闭）。
 - 界面支持英文、简体中文和日文（默认英文）。
-- 无 Token、无后端、无统计追踪。设置仅保存在本地，并可导出。
+- 无后端、无统计追踪。设置仅保存在本地，并可导出。
 
 ## 运行要求
 
 - 支持 Manifest V3 的 Google Chrome（或基于 Chromium 的浏览器）。
-- 同一浏览器中已登录 github.com，且所用账号对目标仓库（包括私有仓库）具有访问权限。
+- GitHub 目标：同一浏览器中已登录 github.com，且所用账号对目标仓库（包括私有仓库）具有访问权限。
+- YouTrack 目标：实例的 Base URL、项目，以及一个永久 token。
 
 ## 安装
 
+本扩展用 TypeScript 编写，「加载已解压的扩展程序」前需先构建。
+
 1. 克隆或下载本仓库。
-2. 打开 `chrome://extensions`。
-3. 启用右上角的「开发者模式」。
-4. 点击「加载已解压的扩展程序」，选择 **`extension/`** 目录（是该子目录，而非仓库根目录）。
-5. 首次安装会自动打开设置页，请至少添加一个工作空间。
+2. 安装依赖并构建：`npm install` 然后 `npm run build`。这会将扩展编译到 **`build/`** 目录。
+3. 打开 `chrome://extensions`。
+4. 启用右上角的「开发者模式」。
+5. 点击「加载已解压的扩展程序」，选择 **`build/`** 目录（即编译输出目录，而非 `src/` 或仓库根目录）。
+6. 首次安装会自动打开设置页，请至少添加一个工作空间。
 
 构建产物（`dist/shot2issue-<version>.zip`，见 [构建](#构建)）可以同样方式加载，或上传至
 Chrome Web Store。
 
-拉取新代码后，在 `chrome://extensions` 中点击该扩展卡片上的「刷新」按钮即可更新。刷新会保留
-设置；移除扩展则会清空设置。
+开发时可运行 `npm run watch` 自动重新编译；改动源码后，在 `chrome://extensions` 的扩展卡片上点击
+「刷新」按钮即可加载最新代码。刷新会保留设置；移除扩展则会清空设置。
 
 ## 使用
 
@@ -56,7 +61,9 @@ Chrome Web Store。
 
 可从 `chrome://extensions`（详情 → 扩展程序选项）或编辑页中的「设置」链接打开设置页。
 
-- **工作空间** —— 每个工作空间对应一个目标仓库，由显示名称、owner（用户或组织）和仓库名构成。
+- **工作空间** —— 每个工作空间对应一个提交目标。GitHub：显示名称、owner（用户或组织）和仓库名。
+  YouTrack：显示名称、Base URL、项目（短名称或 id），以及永久 token（在 YouTrack → 个人资料 →
+  Account Security → Tokens 创建）。token 仅保存在本浏览器。
 - **类型** —— 显示在编辑页的「类型」下拉框中，并用作默认标题的后缀。默认值：Change、Bug、Feature。
 - **语言** —— 英文、简体中文或日文。
 - **行为** —— 是否在提交成功后关闭编辑页并切回截图时所在的页面。
@@ -66,6 +73,8 @@ Chrome Web Store。
   （`chrome.storage.local`）。
 
 ## 提交的工作原理
+
+### GitHub
 
 GitHub 的 issue 附件（`user-attachments/assets`）没有任何官方 API：Personal Access Token、
 OAuth、GitHub App 都无法上传，只有 github.com 网页会话可以。因此本扩展在目标仓库的新建
@@ -90,6 +99,22 @@ issue 页面上复刻「人工操作」：
 该流程依赖 GitHub 网页界面的结构，若该界面发生变化可能需要更新。代码中使用了多个选择器、
 「先粘贴后拖放」的回退方案以及明确的超时。「下载 PNG」和「不含截图提交」始终可作为回退手段。
 
+### YouTrack
+
+YouTrack 为 issue 创建和附件都提供了文档化的 REST API，因此这条路径直接使用你的永久 token
+调用 API：先创建 issue（`POST /api/issues`），再上传截图（`POST /api/issues/{id}/attachments`）
+并按文件名内联嵌入。由于实例 URL 无法预先确定，首次提交到某个实例时会请求访问该来源的权限。
+
+## 新增 issue 后端
+
+新增一个提交后端只需实现单一接口，无需改动编辑页或设置页。
+
+1. 实现 `src/lib/providers/types.ts` 中定义的 `Provider` 接口。
+2. 在 `src/lib/providers/` 下新建对应模块（可参考 `github.ts` 与 `youtrack.ts`）。
+3. 在 `src/lib/providers/index.ts` 中注册该 provider。
+
+完成后，新后端即可出现在工作空间配置中并参与提交流程。
+
 ## 权限
 
 | 权限 | 用途 |
@@ -98,8 +123,11 @@ issue 页面上复刻「人工操作」：
 | `storage` | 在 `chrome.storage.local` 中保存设置，在 `chrome.storage.session` 中暂存待编辑的截图。 |
 | `scripting` | 向后台的 github.com 标签页注入提交脚本。 |
 
-主机权限仅限 `https://github.com/*`，这是本扩展唯一访问的来源。截图的字节由 GitHub 自己的
-页面代码上传至其存储，因此扩展无需声明那些存储主机的权限。
+默认主机权限仅限 `https://github.com/*`，即 GitHub 提交时唯一访问的来源。截图的字节由 GitHub
+自己的页面代码上传至其存储，因此扩展无需声明那些存储主机的权限。
+
+YouTrack 实例 URL 无法预先确定，因此以 `optional_host_permissions` 声明并在运行时请求：首次
+保存或提交到某个实例时，Chrome 会请求访问该来源的权限。
 
 ## 隐私
 
@@ -108,24 +136,38 @@ issue 页面上复刻「人工操作」：
 - 附件的可见性跟随仓库的可见性。私有仓库的附件需登录后才能查看（自 2023-05 起）；公开仓库
   的附件匿名即可查看。请据此选择目标仓库。
 - 马赛克工具用于遮挡：在提交前覆盖敏感内容。它会对原始截图采样并将所选区域像素化。
-- 不存储任何 Token 或密钥；扩展依赖你已登录的 github.com 会话。
+- GitHub 提交不存储任何 Token，依赖你已登录的 github.com 会话；YouTrack 的永久 token 仅保存在
+  本浏览器（`chrome.storage.local`）。
 
 ## 项目结构
 
+源码（TypeScript 与静态资源）位于 `src/`。`npm run build` 会将 TypeScript 编译到 `build/`，并把
+manifest、HTML/CSS 和图标一并复制过去；「加载已解压的扩展程序」指向 `build/`。发布用的 zip 包
+则输出到 `dist/`。
+
 ```
 shot2issue/
-├── extension/                   # 「加载已解压的扩展程序」指向此处
-│   ├── manifest.json            # MV3 清单；主机权限仅限 github.com
-│   ├── background.js            # service worker：点击图标即截图并打开编辑页
-│   ├── editor.html / .js / .css # 主界面：选择、Canvas 标注、提交
-│   ├── options.html / .js       # 设置：工作空间、类型、语言、备份
+├── src/                          # TypeScript 源码与静态资源
+│   ├── manifest.json            # MV3 清单；github.com 主机权限 + 可选 YouTrack 来源
+│   ├── background.ts            # service worker：点击图标/快捷键即截图并打开编辑页
+│   ├── editor.ts / .html / .css # 主界面：选择、Canvas 标注、提交
+│   ├── options.ts / .html       # 设置：工作空间、类型、语言、快捷键、备份
 │   ├── lib/
-│   │   ├── storage.js           # chrome.storage 读写（设置 + 暂存截图）
-│   │   ├── i18n.js              # 界面文案（en / zh / ja）
-│   │   ├── page-upload.js       # 通过 github.com 网页表单的页面内提交
-│   │   └── github-attach.js     # github.com 登录态检测
+│   │   ├── storage.ts           # chrome.storage 读写（设置 + 暂存截图）
+│   │   ├── i18n.ts              # 界面文案（en / zh / ja）
+│   │   ├── github-attach.ts     # github.com 登录态检测
+│   │   ├── page-upload.ts       # GitHub：通过 github.com 网页表单的页面内提交
+│   │   ├── youtrack.ts          # YouTrack：通过 REST API 创建 issue 和上传附件
+│   │   └── providers/
+│   │       ├── index.ts         # provider 注册表
+│   │       ├── types.ts         # Provider 接口与共享 provider 类型
+│   │       ├── github.ts        # GitHub provider
+│   │       └── youtrack.ts      # YouTrack provider
 │   └── icons/                   # 16 / 48 / 128 px 图标
+├── scripts/copy-assets.mjs      # 编译后将静态资源从 src/ 复制到 build/
 ├── scripts/build.sh             # 校验清单并打包 zip
+├── package.json                 # 脚本（build / watch / typecheck）与开发依赖
+├── tsconfig.json                # 严格的 TypeScript 配置（NodeNext）
 ├── Dockerfile                   # 用于产出发布包的 Docker 构建
 ├── .github/workflows/build.yml  # CI：Docker 构建、上传 artifact、关联到 release
 ├── LICENSE
@@ -134,8 +176,12 @@ shot2issue/
 
 ## 构建
 
-使用「加载已解压的扩展程序」进行开发无需构建。构建只是产出一个包含 `extension/` 内容的
-发布包。
+本地构建：
+
+```bash
+npm install && npm run build
+# 输出：build/（可用「加载已解压的扩展程序」加载）
+```
 
 使用 Docker：
 
@@ -143,7 +189,7 @@ shot2issue/
 docker build --target export --output type=local,dest=dist .
 ```
 
-或直接运行（需要 `bash` 和 `zip`；`jq` 可选）：
+或直接运行 `scripts/build.sh` 打包发布 zip（需要 `bash` 和 `zip`；`jq` 可选）：
 
 ```bash
 bash scripts/build.sh

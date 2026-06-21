@@ -1,0 +1,17 @@
+{
+  "name": "shot2issue",
+  "version": "1.2.0",
+  "description": "Capture the current tab and file it as a GitHub or YouTrack issue, with the screenshot inline.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "watch": "tsc -p tsconfig.json --watch"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.270",
+    "typescript": "^5.5.4"
+  }
+}

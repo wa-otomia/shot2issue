@@ -22,7 +22,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 });
 
 /** Capture the given tab, stage the result, and open the editor. */
-async function captureAndOpenEditor(tab) {
+async function captureAndOpenEditor(tab: chrome.tabs.Tab): Promise<void> {
   const config = await getConfig();
   setLanguage(config.lang);
   try {
@@ -43,7 +43,7 @@ async function captureAndOpenEditor(tab) {
   } catch (e) {
     // Restricted pages (chrome://, the Web Store, etc.) cannot be captured. Stage an
     // error so the editor can explain why, instead of failing silently.
-    await setPendingShot({ error: t('captureFailed', [e && e.message ? e.message : String(e)]) });
+    await setPendingShot({ error: t('captureFailed', [e instanceof Error && e.message ? e.message : String(e)]) });
   }
   // Open the editor either way (it shows the error when capture failed).
   await chrome.tabs.create({ url: chrome.runtime.getURL('editor.html') });
@@ -56,7 +56,7 @@ chrome.action.onClicked.addListener((tab) => {
 
 // Optional keyboard shortcut. The key is bound at chrome://extensions/shortcuts; this
 // handler only acts when the user has enabled the shortcut in Settings (off by default).
-chrome.commands.onCommand.addListener(async (command, tab) => {
+chrome.commands.onCommand.addListener(async (command: string, tab?: chrome.tabs.Tab) => {
   if (command !== 'capture') return;
   const config = await getConfig();
   if (!config.shortcutEnabled) return;

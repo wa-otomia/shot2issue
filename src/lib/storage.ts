@@ -6,10 +6,13 @@
 //   when the browser restarts) so large images are not kept on disk.
 // This module only reads and writes; it contains no network logic.
 
+import type { Config, Workspace, PendingShot } from './types.js';
+
 /** Default configuration, used on first install and to backfill missing fields. */
-const DEFAULT_CONFIG = {
-  // Each workspace is a repository used as an issue target. Visibility is unrestricted.
-  workspaces: [], // [{ id, name, owner, repo }]
+const DEFAULT_CONFIG: Config = {
+  // Each workspace is an issue target. kind 'github': { id, kind, name, owner, repo };
+  // kind 'youtrack': { id, kind, name, baseUrl, project, token }. Missing kind == 'github'.
+  workspaces: [],
   // Types shown in the editor's Type dropdown; used as the default title suffix.
   types: ['Change', 'Bug', 'Feature'],
   // UI language: 'en' | 'zh' | 'ja'. English is the default.
@@ -26,29 +29,29 @@ const DEFAULT_CONFIG = {
 const CONFIG_KEY = 'config';
 
 /** Generate a stable local id without external dependencies. */
-export function makeId() {
+export function makeId(): string {
   return 'ws_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
 }
 
 /** Read the full configuration, backfilling any missing fields with defaults. */
-export async function getConfig() {
+export async function getConfig(): Promise<Config> {
   const raw = await chrome.storage.local.get(CONFIG_KEY);
-  const stored = raw[CONFIG_KEY] || {};
+  const stored = (raw[CONFIG_KEY] ?? {}) as Partial<Config>;
   return {
     ...DEFAULT_CONFIG,
     ...stored,
-    workspaces: Array.isArray(stored.workspaces) ? stored.workspaces : [],
+    workspaces: Array.isArray(stored.workspaces) ? (stored.workspaces as Workspace[]) : [],
     types: Array.isArray(stored.types) && stored.types.length ? stored.types : DEFAULT_CONFIG.types.slice(),
   };
 }
 
 /** Persist the full configuration. */
-export async function setConfig(config) {
+export async function setConfig(config: Config): Promise<void> {
   await chrome.storage.local.set({ [CONFIG_KEY]: config });
 }
 
 /** Update a subset of fields (read-modify-write). */
-export async function patchConfig(patch) {
+export async function patchConfig(patch: Partial<Config>): Promise<Config> {
   const config = await getConfig();
   const next = { ...config, ...patch };
   await setConfig(next);
@@ -56,8 +59,8 @@ export async function patchConfig(patch) {
 }
 
 /** Remember the current selection (called when the editor changes workspace/type). */
-export async function rememberSelection({ workspaceId, type }) {
-  const patch = {};
+export async function rememberSelection({ workspaceId, type }: { workspaceId?: string; type?: string }): Promise<Config> {
+  const patch: Partial<Config> = {};
   if (workspaceId !== undefined) patch.lastWorkspaceId = workspaceId;
   if (type !== undefined) patch.lastType = type;
   return patchConfig(patch);
@@ -71,19 +74,19 @@ const PENDING_KEY = 'pendingShot';
 
 /**
  * Stage a screenshot and its context for editing.
- * @param {object} shot dataUrl + page metadata, or { error } when capture failed.
+ * @param shot dataUrl + page metadata, or { error } when capture failed.
  */
-export async function setPendingShot(shot) {
+export async function setPendingShot(shot: PendingShot): Promise<void> {
   await chrome.storage.session.set({ [PENDING_KEY]: shot });
 }
 
 /** Read the staged screenshot. */
-export async function getPendingShot() {
+export async function getPendingShot(): Promise<PendingShot | null> {
   const raw = await chrome.storage.session.get(PENDING_KEY);
-  return raw[PENDING_KEY] || null;
+  return (raw[PENDING_KEY] as PendingShot | undefined) ?? null;
 }
 
 /** Clear the staged screenshot to avoid keeping a large image in memory. */
-export async function clearPendingShot() {
+export async function clearPendingShot(): Promise<void> {
   await chrome.storage.session.remove(PENDING_KEY);
 }

@@ -11,14 +11,14 @@ const GH = 'https://github.com';
  * Check whether the user is signed in to github.com (via the web session cookie).
  * When signed in, the page <head> contains <meta name="user-login" content="...">.
  * If that cannot be found, report signed-out conservatively.
- * @returns {Promise<{loggedIn: boolean, login: string}>}
  */
-export async function checkGithubLogin() {
-  let resp;
+export async function checkGithubLogin(): Promise<{ loggedIn: boolean; login: string }> {
+  let resp: Response;
   try {
     resp = await fetch(`${GH}/`, { credentials: 'include' });
-  } catch (e) {
-    throw new Error('Cannot reach github.com (network error or blocked): ' + (e && e.message ? e.message : e));
+  } catch (e: unknown) {
+    const detail = e instanceof Error && e.message ? e.message : String(e);
+    throw new Error('Cannot reach github.com (network error or blocked): ' + detail);
   }
   const html = await resp.text();
   const doc = new DOMParser().parseFromString(html, 'text/html');

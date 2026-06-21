@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
 #
 # Build the extension release archive with Docker. The build logic lives in
-# scripts/build.sh (validate the manifest, then zip). This image only provides a clean,
-# reproducible environment (alpine + bash/zip/jq) with no heavyweight dependencies.
+# scripts/build.sh (compile TypeScript, copy assets, validate the manifest, then zip).
+# This image provides a clean, reproducible environment (node + bash/zip/jq).
 #
 # Usage:
 #   # Produce the zip into ./dist (recommended; also used by CI):
@@ -13,8 +13,8 @@
 #   id=$(docker create shot2issue-build) && docker cp "$id":/dist ./dist && docker rm "$id"
 
 # ---- Build stage: run build.sh; the artifact lands in /src/dist ----
-FROM alpine:3.20 AS build
-RUN apk add --no-cache bash zip unzip jq
+FROM node:20-alpine AS build
+RUN apk add --no-cache bash zip jq
 WORKDIR /src
 COPY . .
 RUN bash scripts/build.sh

@@ -23,18 +23,40 @@
 // button reads "Paste, drop, or click to add files"), so paste/drop events are used.
 // The whole flow runs in a background tab (active:false) so focus is not stolen.
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** Result returned by the injected pageCreateIssue function. */
+interface PageCreateResult {
+  ok: boolean;
+  error?: string;
+}
 
 /**
  * Create an issue through github.com's web form, optionally with a screenshot.
- * @param {{owner:string, repo:string, title:string, body:string, dataUrl:string, filename:string, withImage:boolean}} opts
- * @returns {Promise<string>} URL of the created issue
+ * @returns URL of the created issue
  */
-export async function submitIssueViaPage({ owner, repo, title, body, dataUrl, filename, withImage }) {
+export async function submitIssueViaPage({
+  owner,
+  repo,
+  title,
+  body,
+  dataUrl,
+  filename,
+  withImage,
+}: {
+  owner: string;
+  repo: string;
+  title: string;
+  body: string;
+  dataUrl: string;
+  filename: string;
+  withImage: boolean;
+}): Promise<string> {
   const newIssueUrl = `https://github.com/${owner}/${repo}/issues/new`;
   // Background tab (active:false): does not steal focus or interrupt the user.
   const tab = await chrome.tabs.create({ url: newIssueUrl, active: false });
   const tabId = tab.id;
+  if (tabId === undefined) throw new Error('Failed to open the github.com new-issue tab.');
   try {
     await waitTabReady(tabId);
     const injections = await chrome.scripting.executeScript({
@@ -43,7 +65,7 @@ export async function submitIssueViaPage({ owner, repo, title, body, dataUrl, fi
       func: pageCreateIssue,
       args: [{ title, body, dataUrl: withImage ? dataUrl : '', filename, withImage: !!withImage }],
     });
-    const res = injections?.[0]?.result;
+    const res = injections?.[0]?.result as PageCreateResult | undefined;
     if (!res) throw new Error('The injected script returned no result (possibly signed out or no access to the repository).');
     if (!res.ok) throw new Error(res.error || 'Web-form submission failed.');
     // After clicking Create, poll the URL until it moves from /issues/new to /issues/{number}.
@@ -54,11 +76,11 @@ export async function submitIssueViaPage({ owner, repo, title, body, dataUrl, fi
 }
 
 /** Poll the tab URL until it navigates to a created issue (/issues/{number}). */
-async function waitForCreatedIssue(tabId) {
+async function waitForCreatedIssue(tabId: number): Promise<string> {
   for (let i = 0; i < 40; i++) { // ~20s
     try {
       const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: () => location.href });
-      const href = r?.result || '';
+      const href = (r?.result as string | undefined) || '';
       if (/https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/\d+(?:[?#]|$)/.test(href)) {
         return href.split(/[?#]/)[0];
       }
@@ -73,14 +95,14 @@ async function waitForCreatedIssue(tabId) {
  * executeScript to avoid requiring the "tabs" permission; a redirect to the
  * sign-in page is reported immediately.
  */
-async function waitTabReady(tabId) {
+async function waitTabReady(tabId: number): Promise<void> {
   for (let i = 0; i < 60; i++) { // up to ~30s
     try {
       const [r] = await chrome.scripting.executeScript({
         target: { tabId },
         func: () => ({ url: location.href, ready: document.readyState }),
       });
-      const v = r?.result;
+      const v = r?.result as { url: string; ready: DocumentReadyState } | undefined;
       if (v) {
         if (/\/login(\?|$)/.test(v.url)) {
           throw new Error('Not signed in to github.com (redirected to the sign-in page). Sign in to github.com in this browser and try again.');
@@ -88,7 +110,7 @@ async function waitTabReady(tabId) {
         if (/\/issues\/new/.test(v.url) && v.ready !== 'loading') return;
       }
     } catch (e) {
-      if (String(e?.message || e).includes('Not signed in')) throw e;
+      if (String((e as { message?: unknown })?.message ?? e).includes('Not signed in')) throw e;
     }
     await sleep(500);
   }
@@ -100,31 +122,37 @@ async function waitTabReady(tabId) {
  * (optional), fills the title and body, and clicks Create. Returns { ok } or
  * { ok:false, error }. Self-contained: references only its arguments and page globals.
  */
-function pageCreateIssue(opts) {
+function pageCreateIssue(opts: {
+  title: string;
+  body: string;
+  dataUrl: string;
+  filename: string;
+  withImage: boolean;
+}): Promise<{ ok: boolean; error?: string }> {
   const { title, body, dataUrl, filename, withImage } = opts;
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-  function findTitle() {
+  function findTitle(): HTMLInputElement | null {
     return (
-      document.querySelector('input[aria-label="Add a title"]') ||
-      document.querySelector('input[placeholder="Title"]') ||
-      document.querySelector('input[name="issue[title]"]') ||
-      document.querySelector('#issue_title')
+      document.querySelector<HTMLInputElement>('input[aria-label="Add a title"]') ||
+      document.querySelector<HTMLInputElement>('input[placeholder="Title"]') ||
+      document.querySelector<HTMLInputElement>('input[name="issue[title]"]') ||
+      document.querySelector<HTMLInputElement>('#issue_title')
     );
   }
-  function findBody() {
+  function findBody(): HTMLTextAreaElement | null {
     return (
-      document.querySelector('textarea[aria-label="Markdown value"]') ||
-      document.querySelector('textarea[aria-label*="markdown" i]') ||
-      document.querySelector('textarea[name="issue[body]"]') ||
-      document.querySelector('#issue_body') ||
-      document.querySelector('textarea[placeholder*="description" i]') ||
-      document.querySelector('textarea.prc-Textarea-TextArea-snlco')
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Markdown value"]') ||
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label*="markdown" i]') ||
+      document.querySelector<HTMLTextAreaElement>('textarea[name="issue[body]"]') ||
+      document.querySelector<HTMLTextAreaElement>('#issue_body') ||
+      document.querySelector<HTMLTextAreaElement>('textarea[placeholder*="description" i]') ||
+      document.querySelector<HTMLTextAreaElement>('textarea.prc-Textarea-TextArea-snlco')
     );
   }
-  function findCreateBtn() {
+  function findCreateBtn(): HTMLElement | null {
     return (
-      document.querySelector('[data-testid="create-issue-button"]') ||
+      document.querySelector<HTMLElement>('[data-testid="create-issue-button"]') ||
       Array.from(document.querySelectorAll('button')).find((b) => {
         const label = (b.textContent || '').trim();
         return /^create/i.test(label) && !/more/i.test(label);
@@ -134,14 +162,14 @@ function pageCreateIssue(opts) {
   }
   // React controlled inputs: set value via the native setter, then dispatch an input
   // event so React adopts the new value.
-  function setNativeValue(el, value) {
+  function setNativeValue(el: HTMLInputElement | HTMLTextAreaElement, value: string): void {
     const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-    const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value')!.set!;
     setter.call(el, value);
     el.dispatchEvent(new Event('input', { bubbles: true }));
   }
   // dataURL -> File via atob. Not fetch(dataUrl): github.com's CSP blocks data: URLs.
-  function dataUrlToFile(durl, name) {
+  function dataUrlToFile(durl: string, name: string): File {
     const comma = durl.indexOf(',');
     const mime = (durl.slice(0, comma).match(/data:([^;]+)/) || [])[1] || 'image/png';
     const bin = atob(durl.slice(comma + 1));
@@ -152,7 +180,7 @@ function pageCreateIssue(opts) {
 
   return (async () => {
     // 1) Wait for the title and body fields.
-    let titleEl = null, bodyEl = null;
+    let titleEl: HTMLInputElement | null = null, bodyEl: HTMLTextAreaElement | null = null;
     for (let i = 0; i < 60 && !(titleEl && bodyEl); i++) {
       titleEl = findTitle();
       bodyEl = findBody();
@@ -175,19 +203,19 @@ function pageCreateIssue(opts) {
     //    GitHub append ![](url) and manage the upload. Continue only once the URL is
     //    present and "Uploading…" is gone (upload truly complete).
     if (withImage && dataUrl) {
-      let file;
+      let file: File;
       try {
         file = dataUrlToFile(dataUrl, filename);
       } catch (e) {
-        return { ok: false, error: 'Failed to convert image data: ' + (e && e.message ? e.message : e) };
+        return { ok: false, error: 'Failed to convert image data: ' + (e && (e as { message?: unknown }).message ? (e as { message: unknown }).message : e) };
       }
-      const makeDT = () => { const dt = new DataTransfer(); dt.items.add(file); return dt; };
-      const firePaste = () => { try { bodyEl.focus(); bodyEl.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: makeDT() })); } catch (_) {} };
-      const fireDrop = () => {
+      const makeDT = (): DataTransfer => { const dt = new DataTransfer(); dt.items.add(file); return dt; };
+      const firePaste = (): void => { try { bodyEl!.focus(); bodyEl!.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: makeDT() })); } catch (_) {} };
+      const fireDrop = (): void => {
         try {
-          bodyEl.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: makeDT() }));
-          bodyEl.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: makeDT() }));
-          bodyEl.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: makeDT() }));
+          bodyEl!.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: makeDT() }));
+          bodyEl!.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: makeDT() }));
+          bodyEl!.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: makeDT() }));
         } catch (_) {}
       };
       firePaste();
@@ -214,7 +242,7 @@ function pageCreateIssue(opts) {
     // 4) Click Create (enabled once the title is non-empty). Do not overwrite the body.
     const btn = findCreateBtn();
     if (!btn) return { ok: false, error: 'Could not find the Create button (the page structure may have changed).' };
-    for (let i = 0; i < 20 && btn.disabled; i++) await sleep(150);
+    for (let i = 0; i < 20 && (btn as HTMLButtonElement).disabled; i++) await sleep(150);
     btn.click();
     return { ok: true };
   })();
