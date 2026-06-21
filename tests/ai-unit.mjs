@@ -20,7 +20,7 @@ import {
   buildComplaintInput,
   buildComplaintRequest,
   parseComplaintOutput,
-  partialJsonField,
+  partialComplaintFields,
   DEFAULT_MODELS,
   DEFAULT_TITLE_PROMPT,
   CLIENT_ID,
@@ -150,12 +150,20 @@ check('complaint: parse JSON embedded in text', parseComplaintOutput('here you g
 const fb = parseComplaintOutput('Save button broken\nWhen I click save nothing happens.');
 check('complaint: parse falls back to first line = title', fb.title === 'Save button broken' && fb.body === 'When I click save nothing happens.');
 
-// --- streaming field extraction (live title/body as JSON streams in) ---
-check('partial: title from complete JSON', partialJsonField('{"title":"Hi","body":"x"}', 'title') === 'Hi');
-check('partial: body from complete JSON', partialJsonField('{"title":"T","body":"the body"}', 'body') === 'the body');
-check('partial: current value for an unterminated string', partialJsonField('{"title":"Save butt', 'title') === 'Save butt');
-check('partial: decodes escapes', partialJsonField('{"body":"line1\\nline2"}', 'body') === 'line1\nline2');
-check('partial: null before the field appears', partialJsonField('{"title":"T"', 'body') === null);
+// --- streaming field extraction (live title/body as the structured JSON streams in) ---
+check('partial: complete JSON yields both fields',
+  JSON.stringify(partialComplaintFields('{"title":"Hi","body":"x"}')) === JSON.stringify({ title: 'Hi', body: 'x' }));
+check('partial: title done, body mid-stream', (() => {
+  const r = partialComplaintFields('{"title":"T","body":"half');
+  return r.title === 'T' && r.body === 'half';
+})());
+check('partial: only the title so far (body not started)', (() => {
+  const r = partialComplaintFields('{"title":"Save');
+  return r.title === 'Save' && r.body === undefined;
+})());
+check('partial: escapes/newlines decoded by JSON.parse',
+  partialComplaintFields('{"title":"a","body":"line1\\nline2"}').body === 'line1\nline2');
+check('partial: nothing extractable yet → {}', JSON.stringify(partialComplaintFields('{"ti')) === '{}');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

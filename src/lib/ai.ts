@@ -219,7 +219,9 @@ export function parseQuotaHeaders(headers: Headers, now: number): AiQuota | unde
 export const DEFAULT_TITLE_PROMPT =
   'You write concise, specific issue titles. Read the report below and return ONLY the ' +
   'title: a single line, no surrounding quotes, no trailing punctuation, at most about ' +
-  '80 characters. Write the title in the same language as the description.';
+  '80 characters. Write the title in the SAME language as the description below — detect the ' +
+  'language from that text itself, and do not use any other language (not the interface, system, ' +
+  'or account-region language).';
 
 /**
  * Build the instructions + input for the title-generation request. `instructions` is the
@@ -646,8 +648,9 @@ export const DEFAULT_COMPLAINT_PROMPT =
   'Write a concise, specific title and a well-structured Markdown body (what happened, where ' +
   'it happened, steps if any, and expected vs. actual). If a screenshot has numbered boxes ' +
   '(circled numbers), refer to them by number in the description, e.g. "in screenshot 1, ' +
-  'box #1 …". Write in the same language as the report. Return ONLY a JSON object with string ' +
-  'fields "title" and "body".';
+  'box #1 …". Write BOTH the title and body in the SAME language as the report below — detect ' +
+  'the language from that text itself, and do not use any other language (not the interface, ' +
+  'system, or account-region language). Return ONLY a JSON object with string fields "title" and "body".';
 
 /** Coerce the stored model to a valid one and persist any repair; returns [auth, model]. */
 async function healModelFor(auth: AiAuth, override?: string): Promise<{ auth: AiAuth; model: string }> {
@@ -759,29 +762,27 @@ export function parseComplaintOutput(text: string): { title: string; body: strin
 }
 
 /**
- * Extract a string field's current value from a possibly-incomplete JSON object (the streaming
- * accumulator), so structured {title, body} output can be shown live as the JSON streams in.
- * Handles escapes; an unterminated value returns what's decoded so far, or null if not started.
+ * Best-effort {title, body} from the in-flight (usually unterminated) JSON of a streaming
+ * structured reply — for LIVE PREVIEW ONLY. The final value always comes from a real JSON.parse
+ * (parseComplaintOutput), so correctness never depends on this. It uses the standard parser
+ * (correct escapes/unicode) and only appends closing tokens to make the truncated accumulator
+ * parseable; a chunk that still won't parse (e.g. mid-escape) yields {} and is retried next delta.
  */
-export function partialJsonField(acc: string, field: string): string | null {
-  const m = new RegExp(`"${field}"\\s*:\\s*"`).exec(acc);
-  if (!m) return null;
-  const map: Record<string, string> = { n: '\n', t: '\t', r: '\r', b: '\b', f: '\f', '"': '"', '\\': '\\', '/': '/' };
-  let out = '';
-  for (let i = m.index + m[0].length; i < acc.length; i++) {
-    const ch = acc[i];
-    if (ch === '\\') {
-      const nx = acc[i + 1];
-      if (nx === undefined) break; // incomplete escape at the end of the chunk
-      out += map[nx] ?? nx;
-      i++;
-    } else if (ch === '"') {
-      break; // closing quote → value complete
-    } else {
-      out += ch;
+export function partialComplaintFields(acc: string): { title?: string; body?: string } {
+  const s = acc.trim();
+  if (!s.startsWith('{')) return {};
+  for (const suffix of ['', '"}', '}', '"}}', '""}']) {
+    try {
+      const o = JSON.parse(s + suffix) as { title?: unknown; body?: unknown };
+      const r: { title?: string; body?: string } = {};
+      if (typeof o.title === 'string') r.title = o.title;
+      if (typeof o.body === 'string') r.body = o.body;
+      if (r.title !== undefined || r.body !== undefined) return r;
+    } catch {
+      /* not parseable with this fixup — try the next */
     }
   }
-  return out;
+  return {};
 }
 
 /**

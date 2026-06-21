@@ -22,7 +22,7 @@ import {
 } from './lib/storage.js';
 import { setLanguage, localizeDom, t } from './lib/i18n.js';
 import { getProvider } from './lib/providers/index.js';
-import { generateTitle, transcribeAudio, generateComplaint, partialJsonField } from './lib/ai.js';
+import { generateTitle, transcribeAudio, generateComplaint, partialComplaintFields } from './lib/ai.js';
 import type { Config, Workspace, Op, Attachment, PendingShots, IssueResult, EditorPrefs } from './lib/types.js';
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -664,13 +664,12 @@ async function runComplaint(text: string): Promise<void> {
         onReasoning: (_d, full) => bubbleThink(full),
         onText: (_d, full) => {
           // The structured JSON streams in; show each field live in its own control.
-          const tt = partialJsonField(full, 'title');
-          if (tt != null) {
-            els.title.value = tt.slice(0, 200);
+          const r = partialComplaintFields(full);
+          if (r.title != null) {
+            els.title.value = r.title.slice(0, 200);
             titleDirty = true;
           }
-          const bb = partialJsonField(full, 'body');
-          if (bb != null) els.body.value = bb;
+          if (r.body != null) els.body.value = r.body;
           bubbleStatus('aiStateWriting');
         },
       }
