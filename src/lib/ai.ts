@@ -28,8 +28,12 @@ export const ORIGINATOR = 'codex_cli_rs';
 export const RESPONSES_URL = 'https://chatgpt.com/backend-api/codex/responses';
 /** Dynamic model list for Codex-with-ChatGPT (returns dotted slugs; no timestamps). */
 export const MODELS_URL = 'https://chatgpt.com/backend-api/codex/models';
-/** Sent as the client_version query param required by the models endpoint. */
-export const CODEX_CLIENT_VERSION = '0.105.0';
+/**
+ * Sent as the client_version query param to the models endpoint. The server gates which
+ * models it returns by this version, so it must track a recent Codex CLI release — too old
+ * a value caps the list (e.g. hides gpt-5.5). Bump this as new Codex releases ship.
+ */
+export const CODEX_CLIENT_VERSION = '0.141.0';
 /** Origins the assistant needs; requested as optional host permissions on a gesture. */
 export const AI_ORIGINS = ['https://auth.openai.com/*', 'https://chatgpt.com/*'];
 /**
