@@ -188,14 +188,15 @@ fetched dynamically from the Codex models endpoint (with a curated fallback). Th
 prompt is editable in Settings, with a **Restore default prompt** button that resets it to
 the current interface language's default.
 
-**Voice “Complaint”.** The **Complaint** button records from your microphone, transcribes
-the audio with your ChatGPT subscription (`whisper-1`), then asks the model to write a
-title and a Markdown body from the transcript, the screenshots, and the page metadata
-(structured JSON output). Note: the transcription endpoint is a Codex Desktop route that is
-undocumented and accepts only the ChatGPT session token (not an API key), so this path is
-best-effort and may change; if it fails, the transcript is kept in the description so the
-recording is not lost. Capture failures (including screen capture) are shown as a system
-notification. Like the title prompt, the complaint system prompt is editable in Settings,
+**“Complaint”.** The **Complaint** button opens a dialog where you type a complaint or
+dictate it (recording is transcribed with your ChatGPT subscription, `whisper-1`). The
+model then writes a title and a Markdown body from that text, the screenshots, and the page
+metadata (structured JSON output), referencing any numbered boxes in the screenshots. The
+dialog keeps its content between opens and can generate repeatedly. Note: the transcription
+endpoint is a Codex Desktop route that is undocumented and accepts only the ChatGPT session
+token (not an API key), so dictation is best-effort and may change (typing always works).
+Capture failures (including screen capture) are shown as a system notification. Like the
+title prompt, the complaint system prompt is editable in Settings,
 each with its own **Restore default prompt** button.
 
 > Note: the assistant talks to undocumented `chatgpt.com` endpoints that may change, and is

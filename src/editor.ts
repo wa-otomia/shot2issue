@@ -50,6 +50,12 @@ const els = {
   aiModel: $('aiModel') as HTMLSelectElement,
   aiTitle: $('aiTitle') as HTMLButtonElement,
   complaint: $('complaint') as HTMLButtonElement,
+  complaintModal: $('complaintModal'),
+  complaintClose: $('complaintClose') as HTMLButtonElement,
+  complaintText: $('complaintText') as HTMLTextAreaElement,
+  complaintRecord: $('complaintRecord') as HTMLButtonElement,
+  complaintGenerate: $('complaintGenerate') as HTMLButtonElement,
+  complaintStatus: $('complaintStatus'),
   body: $('body') as HTMLTextAreaElement,
   submit: $('submit') as HTMLButtonElement,
   submitNoImage: $('submitNoImage') as HTMLButtonElement,
@@ -289,10 +295,8 @@ async function refreshAiButton(): Promise<void> {
   const auth = await getAiAuth();
   els.aiTitle.disabled = !auth;
   els.aiTitle.title = auth ? t('aiTitleTitle') : t('aiTitleNeedConnect');
-  if (!recording) {
-    els.complaint.disabled = !auth;
-    els.complaint.title = auth ? t('complaintTitle') : t('aiTitleNeedConnect');
-  }
+  els.complaint.disabled = !auth;
+  els.complaint.title = auth ? t('complaintTitle') : t('aiTitleNeedConnect');
   // Model picker: same options as Settings, kept in sync (auth.model is shared).
   const models = auth && auth.models && auth.models.length ? auth.models : [];
   if (models.length) {
@@ -314,22 +318,47 @@ els.aiModel.addEventListener('change', () => {
   void patchAiAuth({ model: els.aiModel.value });
 });
 
-// ---- Voice "Complaint": record → transcribe → AI writes title + body ----
+// ---- Complaint modal: type or dictate → transcribe → AI writes title + body ----
+// The modal content is NOT cleared between opens (within the page), and Generate can be run
+// repeatedly.
 let recording = false;
 let mediaRecorder: MediaRecorder | null = null;
 let recordedChunks: Blob[] = [];
 
-els.complaint.addEventListener('click', async () => {
+function complaintModalOpen(): boolean {
+  return !els.complaintModal.classList.contains('hidden');
+}
+function openComplaintModal(): void {
+  els.complaintModal.classList.remove('hidden');
+  setComplaintStatus('');
+  setTimeout(() => els.complaintText.focus(), 0);
+}
+function closeComplaintModal(): void {
+  if (recording) stopRecording();
+  els.complaintModal.classList.add('hidden');
+}
+function setComplaintStatus(text: string, cls: 'info' | 'error' | 'ok' = 'info'): void {
+  els.complaintStatus.className = cls;
+  els.complaintStatus.textContent = text;
+}
+
+els.complaint.addEventListener('click', () => openComplaintModal()); // content persists
+els.complaintClose.addEventListener('click', () => closeComplaintModal());
+els.complaintModal.addEventListener('click', (e) => {
+  if (e.target === els.complaintModal) closeComplaintModal(); // click on the backdrop
+});
+
+// Record → transcribe → append into the text box (you can dictate several times + edit).
+els.complaintRecord.addEventListener('click', async () => {
   if (recording) {
     stopRecording();
     return;
   }
-  // Start recording.
   let stream: MediaStream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch {
-    setStatus(t('complaintMicDenied'), 'error');
+    setComplaintStatus(t('complaintMicDenied'), 'error');
     return;
   }
   recordedChunks = [];
@@ -339,16 +368,18 @@ els.complaint.addEventListener('click', async () => {
   };
   mediaRecorder.onstop = () => {
     stream.getTracks().forEach((tr) => tr.stop());
-    void processComplaint(new Blob(recordedChunks, { type: mediaRecorder?.mimeType || 'audio/webm' }));
+    void transcribeIntoBox(new Blob(recordedChunks, { type: mediaRecorder?.mimeType || 'audio/webm' }));
   };
   mediaRecorder.start();
   recording = true;
-  els.complaint.classList.add('recording');
-  els.complaint.textContent = t('complaintRecording');
+  els.complaintRecord.classList.add('recording');
+  els.complaintRecord.textContent = t('complaintRecordStop');
 });
 
 function stopRecording(): void {
   recording = false;
+  els.complaintRecord.classList.remove('recording');
+  els.complaintRecord.textContent = t('complaintRecordStart');
   try {
     mediaRecorder?.stop();
   } catch {
@@ -356,23 +387,38 @@ function stopRecording(): void {
   }
 }
 
-async function processComplaint(blob: Blob): Promise<void> {
-  els.complaint.classList.remove('recording');
-  els.complaint.disabled = true;
-  let transcript = '';
+async function transcribeIntoBox(blob: Blob): Promise<void> {
+  els.complaintRecord.disabled = true;
   try {
-    els.complaint.textContent = t('complaintTranscribing');
-    setStatus(t('complaintTranscribing'), 'info');
-    transcript = await transcribeAudio(blob);
-    if (!transcript) throw new Error('empty transcript');
+    setComplaintStatus(t('complaintTranscribing'));
+    const transcript = (await transcribeAudio(blob)).trim();
+    if (transcript) {
+      const cur = els.complaintText.value;
+      els.complaintText.value = cur ? cur.replace(/\s*$/, '') + '\n' + transcript : transcript;
+    }
+    setComplaintStatus('');
+  } catch (e) {
+    setComplaintStatus(t('complaintFailed', [e instanceof Error ? e.message : String(e)]), 'error');
+  } finally {
+    els.complaintRecord.disabled = false;
+  }
+}
 
-    els.complaint.textContent = t('complaintGenerating');
-    setStatus(t('complaintGenerating'), 'info');
+// Generate the issue title + body from the text box content + the screenshots. Repeatable.
+els.complaintGenerate.addEventListener('click', async () => {
+  const text = els.complaintText.value.trim();
+  if (!text) {
+    setComplaintStatus(t('complaintNeedText'), 'error');
+    return;
+  }
+  els.complaintGenerate.disabled = true;
+  try {
+    setComplaintStatus(t('complaintGenerating'));
     const images = await aiImages();
     const p = primary();
     const { title, body } = await generateComplaint(
       {
-        transcript,
+        transcript: text,
         type: els.type.value,
         pageTitle: p?.pageTitle,
         pageUrl: p?.pageUrl,
@@ -385,16 +431,13 @@ async function processComplaint(blob: Blob): Promise<void> {
       titleDirty = true;
     }
     if (body) els.body.value = body;
-    setStatus('', 'info');
+    setComplaintStatus(t('complaintDone'), 'ok'); // keep the modal open for another run
   } catch (e) {
-    // Don't lose the transcription if only the writing step failed.
-    if (transcript) els.body.value = (els.body.value ? els.body.value + '\n\n' : '') + transcript;
-    setStatus(t('complaintFailed', [e instanceof Error ? e.message : String(e)]), 'error');
+    setComplaintStatus(t('complaintFailed', [e instanceof Error ? e.message : String(e)]), 'error');
   } finally {
-    els.complaint.textContent = t('complaint');
-    els.complaint.disabled = false;
+    els.complaintGenerate.disabled = false;
   }
-}
+});
 
 els.aiTitle.addEventListener('click', async () => {
   if (!els.body.value.trim()) {
@@ -511,6 +554,10 @@ function showToast(message: string): void {
 
 window.addEventListener('keydown', (e) => {
   if (e.target === textInput) return; // the text-tool input manages its own keys
+  if (e.key === 'Escape' && complaintModalOpen()) {
+    closeComplaintModal();
+    return;
+  }
   if (e.key === 'Escape') {
     if (escArmed) {
       window.clearTimeout(escTimer);

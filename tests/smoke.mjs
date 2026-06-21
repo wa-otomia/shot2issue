@@ -327,6 +327,20 @@ try {
     (await editor2.$eval('#aiModel', (el) => !el.classList.contains('hidden'))) === true &&
       (await editor2.$$eval('#aiModel option', (opts) => opts.length)) >= 1);
 
+  // Complaint opens a modal with a text box + record + generate; content persists on reopen.
+  await editor2.click('#complaint');
+  await editor2.waitForSelector('#complaintModal:not(.hidden)', { timeout: 3000 });
+  check('editor: complaint modal has text box, record, generate',
+    !!(await editor2.$('#complaintText')) && !!(await editor2.$('#complaintRecord')) && !!(await editor2.$('#complaintGenerate')));
+  await editor2.fill('#complaintText', 'box 1 is broken');
+  await editor2.click('#complaintClose');
+  await editor2.waitForFunction(() => document.getElementById('complaintModal').classList.contains('hidden'), { timeout: 2000 });
+  await editor2.click('#complaint');
+  await editor2.waitForSelector('#complaintModal:not(.hidden)', { timeout: 3000 });
+  check('editor: complaint modal keeps its content on reopen',
+    (await editor2.$eval('#complaintText', (el) => el.value)) === 'box 1 is broken');
+  await editor2.click('#complaintClose');
+
   // --- Popup: two capture sources; shortcut chips hidden until bound ---
   const popup = await context.newPage();
   popup.on('pageerror', (e) => pageErrors.push(String(e)));

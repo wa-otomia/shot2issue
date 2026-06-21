@@ -150,6 +150,19 @@ button.ghost {
 button.ghost:disabled { opacity: .5; cursor: not-allowed; color: var(--muted); }
 button.ghost.recording { color: #fff; background: var(--danger); border-color: var(--danger); }
 
+/* Complaint modal */
+.modal-overlay { position: fixed; inset: 0; background: #0007; display: flex; align-items: center; justify-content: center; z-index: 50; }
+.modal-overlay.hidden { display: none; }
+.modal { width: min(560px, 92vw); background: Canvas; color: CanvasText; border: 1px solid var(--border); border-radius: 10px; padding: 16px; box-shadow: 0 12px 40px #0006; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; margin-bottom: 10px; }
+.modal-close { border: none; background: none; cursor: pointer; font-size: 16px; color: var(--muted); padding: 2px 6px; }
+.modal textarea { width: 100%; min-height: 120px; resize: vertical; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: Field; color: FieldText; font: inherit; box-sizing: border-box; }
+.modal-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.modal-actions .spacer { flex: 1; }
+#complaintStatus { margin-top: 10px; font-size: 13px; min-height: 18px; }
+#complaintStatus.error { color: var(--danger); }
+#complaintStatus.ok { color: var(--ok); }
+
 /* AI actions row (below the form) */
 .ai-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
 .ai-actions select { width: auto; max-width: 200px; padding: 7px 8px; border-radius: 6px; border: 1px solid var(--border); background: Field; color: FieldText; font: inherit; }

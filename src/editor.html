@@ -74,6 +74,23 @@
     </div>
   </div>
 
+  <!-- Complaint modal: type or dictate a complaint, then generate the title + body -->
+  <div class="modal-overlay hidden" id="complaintModal">
+    <div class="modal">
+      <div class="modal-head">
+        <span data-i18n="complaintModalTitle"></span>
+        <button class="modal-close" id="complaintClose" title="Esc">✕</button>
+      </div>
+      <textarea id="complaintText" data-i18n-placeholder="complaintPlaceholder"></textarea>
+      <div class="modal-actions">
+        <button id="complaintRecord" class="ghost" data-i18n="complaintRecordStart"></button>
+        <span class="spacer"></span>
+        <button id="complaintGenerate" class="primary" data-i18n="complaintGenerate"></button>
+      </div>
+      <div id="complaintStatus" class="info"></div>
+    </div>
+  </div>
+
   <script type="module" src="editor.js"></script>
 </body>
 </html>
