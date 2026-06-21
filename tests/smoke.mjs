@@ -297,8 +297,9 @@ try {
   check('editor: has a Paste button for clipboard images', !!(await editor.$('#paste')));
 
   // New toolbar: outline color, font size, and the crop tool.
-  check('editor: toolbar has outline color, font size, and crop tool',
-    !!(await editor.$('#strokeColor')) && !!(await editor.$('#fontSize')) && !!(await editor.$('.tool[data-tool="crop"]')));
+  check('editor: toolbar has outline color, outline width, font size, and crop tool',
+    !!(await editor.$('#strokeColor')) && !!(await editor.$('#strokeWidth')) && !!(await editor.$('#fontSize')) && !!(await editor.$('.tool[data-tool="crop"]')));
+  check('editor: has the AI status bubble + section heading', !!(await editor.$('#aiBubble')) && !!(await editor.$('.ai-actions-head')));
   await editor.click('.tool[data-tool="text"]');
   check('editor: text tool swaps thickness → font size',
     (await editor.$eval('#fontSizeCtl', (el) => el.classList.contains('hidden'))) === false &&
@@ -402,6 +403,9 @@ try {
   check('editor: model picker shown + populated when connected',
     (await editor2.$eval('#aiModel', (el) => !el.classList.contains('hidden'))) === true &&
       (await editor2.$$eval('#aiModel option', (opts) => opts.length)) >= 1);
+  check('editor: reasoning-effort picker shown when connected (default off)',
+    (await editor2.$eval('#aiReasoning', (el) => !el.classList.contains('hidden'))) === true &&
+      (await editor2.$eval('#aiReasoning', (el) => el.value)) === 'off');
 
   // Complaint opens a modal with a text box + record + generate; content persists on reopen.
   await editor2.click('#complaint');

@@ -253,18 +253,24 @@ export function buildResponsesRequest(opts: {
   input: string;
   images?: string[];
   stream?: boolean;
+  reasoningEffort?: string;
 }): Record<string, unknown> {
   const content: Array<Record<string, unknown>> = [{ type: 'input_text', text: opts.input }];
   for (const img of opts.images || []) {
     if (img) content.push({ type: 'input_image', image_url: img, detail: 'auto' });
   }
-  return {
+  const req: Record<string, unknown> = {
     model: opts.model,
     instructions: opts.instructions,
     input: [{ type: 'message', role: 'user', content }],
     store: false,
     stream: opts.stream !== false,
   };
+  // Ask for a reasoning summary so the thinking stream has content (best-effort; 'off' skips it).
+  if (opts.reasoningEffort && opts.reasoningEffort !== 'off') {
+    req.reasoning = { effort: opts.reasoningEffort, summary: 'auto' };
+  }
+  return req;
 }
 
 /** Tidy a raw model response into a single-line title. */
@@ -591,7 +597,7 @@ export async function fetchModels(auth: AiAuth): Promise<string[]> {
  */
 export async function generateTitle(
   content: { type?: string; pageTitle?: string; pageUrl?: string; body?: string; images?: string[] },
-  opts?: { model?: string; instructions?: string; signal?: AbortSignal } & StreamCallbacks
+  opts?: { model?: string; instructions?: string; signal?: AbortSignal; reasoningEffort?: string } & StreamCallbacks
 ): Promise<{ title: string; quota?: AiQuota; auth: AiAuth }> {
   let auth = await getAiAuth();
   if (!auth) throw new Error('Not connected. Sign in to the AI assistant in Settings.');
@@ -612,7 +618,7 @@ export async function generateTitle(
     fetch(RESPONSES_URL, {
       method: 'POST',
       headers: { ...authHeaders(auth), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-      body: JSON.stringify(buildResponsesRequest({ model, instructions, input, images: withImages ? images : undefined })),
+      body: JSON.stringify(buildResponsesRequest({ model, instructions, input, images: withImages ? images : undefined, reasoningEffort: opts?.reasoningEffort })),
       signal: opts?.signal,
     });
 
@@ -709,8 +715,9 @@ export function buildComplaintRequest(opts: {
   input: string;
   images?: string[];
   schema?: boolean;
+  reasoningEffort?: string;
 }): Record<string, unknown> {
-  const req = buildResponsesRequest({ model: opts.model, instructions: opts.instructions, input: opts.input, images: opts.images });
+  const req = buildResponsesRequest({ model: opts.model, instructions: opts.instructions, input: opts.input, images: opts.images, reasoningEffort: opts.reasoningEffort });
   if (opts.schema) {
     req.text = {
       format: {
@@ -758,7 +765,7 @@ export function parseComplaintOutput(text: string): { title: string; body: strin
  */
 export async function generateComplaint(
   content: { transcript: string; type?: string; pageTitle?: string; pageUrl?: string; images?: string[] },
-  opts?: { model?: string; instructions?: string; signal?: AbortSignal } & StreamCallbacks
+  opts?: { model?: string; instructions?: string; signal?: AbortSignal; reasoningEffort?: string } & StreamCallbacks
 ): Promise<{ title: string; body: string; quota?: AiQuota; auth: AiAuth }> {
   const base = await getAiAuth();
   if (!base) throw new Error('Not connected. Sign in to the AI assistant in Settings.');
@@ -772,7 +779,7 @@ export async function generateComplaint(
     fetch(RESPONSES_URL, {
       method: 'POST',
       headers: { ...authHeaders(auth), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-      body: JSON.stringify(buildComplaintRequest({ model, instructions, input, images: withImages ? images : undefined, schema })),
+      body: JSON.stringify(buildComplaintRequest({ model, instructions, input, images: withImages ? images : undefined, schema, reasoningEffort: opts?.reasoningEffort })),
       signal: opts?.signal,
     });
 

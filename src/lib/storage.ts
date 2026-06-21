@@ -31,6 +31,8 @@ const DEFAULT_CONFIG: Config = {
   aiComplaintPrompt: '',
   // Voice-input dictionary: terms sent as a transcription prompt to improve recognition.
   aiVocabulary: [],
+  // Reasoning effort for AI generation ('off' | 'low' | 'medium' | 'high'). Off by default.
+  aiReasoning: 'off',
   // Close the editor and switch back to the captured tab after a successful submit.
   closeAfterSubmit: true,
   // Allow a keyboard shortcut (configured at chrome://extensions/shortcuts) to capture. Off by default.
@@ -128,6 +130,7 @@ const EDITOR_PREFS_KEY = 'editorPrefs';
 export const DEFAULT_EDITOR_PREFS: EditorPrefs = {
   color: '#ff3b30',
   strokeColor: '#ffffff',
+  strokeWidth: 3,
   width: 4,
   fontSize: 28,
 };

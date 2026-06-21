@@ -48,6 +48,8 @@ export interface Config {
   aiComplaintPrompt: string;
   /** Voice-input dictionary: terms sent as a transcription prompt to bias speech recognition. */
   aiVocabulary: string[];
+  /** Reasoning effort for AI generation: 'off' | 'low' | 'medium' | 'high'. */
+  aiReasoning: string;
   closeAfterSubmit: boolean;
   shortcutEnabled: boolean;
   lastWorkspaceId: string;
@@ -59,6 +61,7 @@ export interface Op {
   tool: string;
   color: string;
   strokeColor?: string; // contrasting halo/outline color drawn under lines and behind text
+  strokeWidth?: number; // outline/halo thickness (0 = no outline); undefined → default
   width?: number;
   x0?: number;
   y0?: number;
@@ -77,6 +80,7 @@ export interface Op {
 export interface EditorPrefs {
   color: string; // primary fill/line color
   strokeColor: string; // contrasting halo/outline color
+  strokeWidth: number; // outline/halo thickness (0 = no outline)
   width: number; // line thickness (non-text tools)
   fontSize: number; // text size (independent of width)
 }

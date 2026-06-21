@@ -8,6 +8,7 @@
 
 import {
   getConfig,
+  patchConfig,
   getPendingShots,
   setPendingShots,
   clearPendingShots,
@@ -45,6 +46,7 @@ const els = {
   canvasEmpty: $('canvasEmpty'),
   color: $('color') as HTMLInputElement,
   strokeColor: $('strokeColor') as HTMLInputElement,
+  strokeWidth: $('strokeWidth') as HTMLInputElement,
   width: $('width') as HTMLInputElement,
   fontSize: $('fontSize') as HTMLInputElement,
   widthCtl: $('widthCtl'),
@@ -70,10 +72,11 @@ const els = {
   complaintClear: $('complaintClear') as HTMLButtonElement,
   complaintGenerate: $('complaintGenerate') as HTMLButtonElement,
   complaintStatus: $('complaintStatus'),
-  complaintThink: $('complaintThink'),
-  complaintThinkText: $('complaintThinkText'),
-  aiThink: $('aiThink'),
-  aiThinkText: $('aiThinkText'),
+  aiReasoning: $('aiReasoning') as HTMLSelectElement,
+  aiBubble: $('aiBubble'),
+  aiBubbleStatus: $('aiBubbleStatus'),
+  aiBubbleThink: $('aiBubbleThink'),
+  aiBubbleOut: $('aiBubbleOut'),
   body: $('body') as HTMLTextAreaElement,
   submit: $('submit') as HTMLButtonElement,
   submitNoImage: $('submitNoImage') as HTMLButtonElement,
@@ -99,7 +102,7 @@ let pendingTextOp: Op | null = null; // op being entered via the floating text i
 let titleDirty = false; // true once the user edits the title (stop auto-filling the default)
 
 // Remembered tool settings (color, outline, thickness, font size); loaded on init.
-let prefs: EditorPrefs = { color: '#ff3b30', strokeColor: '#ffffff', width: 4, fontSize: 28 };
+let prefs: EditorPrefs = { color: '#ff3b30', strokeColor: '#ffffff', strokeWidth: 3, width: 4, fontSize: 28 };
 
 // Select-and-manipulate: the last drawn op stays "selected" (movable + reshapeable) until the
 // user clicks elsewhere on the canvas. Pen commits immediately and is never selected.
@@ -152,9 +155,18 @@ async function init(): Promise<void> {
   prefs = await getEditorPrefs();
   els.color.value = prefs.color;
   els.strokeColor.value = prefs.strokeColor;
+  els.strokeWidth.value = String(prefs.strokeWidth);
   els.width.value = String(prefs.width);
   els.fontSize.value = String(prefs.fontSize);
   applyToolControls();
+  // Move toolbar button titles to data-tip so they render as styled hover tooltips.
+  document.querySelectorAll('#toolbar .tool[title], #toolbar .act[title]').forEach((el) => {
+    const tip = el.getAttribute('title');
+    if (tip) {
+      (el as HTMLElement).dataset.tip = tip;
+      el.removeAttribute('title');
+    }
+  });
 
   void refreshAiButton(); // enable the AI-title button only when the assistant is connected
 
@@ -357,13 +369,20 @@ async function refreshAiButton(): Promise<void> {
     }
     els.aiModel.value = auth?.model && models.includes(auth.model) ? auth.model : models[0];
     els.aiModel.classList.remove('hidden');
+    els.aiReasoning.value = config.aiReasoning || 'off';
+    els.aiReasoning.classList.remove('hidden');
   } else {
     els.aiModel.classList.add('hidden');
+    els.aiReasoning.classList.add('hidden');
   }
 }
 
 els.aiModel.addEventListener('change', () => {
   void patchAiAuth({ model: els.aiModel.value });
+});
+els.aiReasoning.addEventListener('change', () => {
+  config.aiReasoning = els.aiReasoning.value; // reasoning effort is shared with Settings
+  void patchConfig({ aiReasoning: config.aiReasoning });
 });
 
 // ---- Complaint modal: type or dictate → transcribe → AI writes title + body ----
@@ -505,14 +524,15 @@ function insertAtCursor(ta: HTMLTextAreaElement, text: string): void {
 
 async function transcribeIntoBox(blob: Blob): Promise<void> {
   els.complaintRecord.disabled = true;
+  openBubble(els.complaintRecord, 'aiStateTranscribing'); // bubble points at the voice-input button
   try {
-    setComplaintStatus(t('complaintTranscribing'));
+    setComplaintStatus('');
     const prompt = (config.aiVocabulary || []).join(', '); // dictionary terms bias recognition
     const transcript = (await transcribeAudio(blob, { prompt })).trim();
     if (transcript) insertAtCursor(els.complaintText, transcript); // at the caret, never clearing
-    setComplaintStatus('');
+    bubbleDone();
   } catch (e) {
-    setComplaintStatus(t('complaintFailed', [e instanceof Error ? e.message : String(e)]), 'error');
+    bubbleFail(t('complaintFailed', [errMsg(e)]));
   } finally {
     els.complaintRecord.disabled = false;
   }
@@ -524,27 +544,96 @@ els.complaintClear.addEventListener('click', () => {
 });
 
 // Generate the issue title + body from the text box content + the screenshots. Repeatable.
-// ---- Streaming AI generation (live output + reasoning bubble, with a Stop button) ----
+// ---- Streaming AI generation: a status bubble that points at the active button ----
 let titleAbort: AbortController | null = null;
 let complaintAbort: AbortController | null = null;
+let aiBusy = false; // true while a generation is streaming (locks the canvas + toolbar)
+let bubbleAnchor: HTMLElement | null = null;
+let bubbleCloseTimer: number | undefined;
 
-function startThink(bubble: HTMLElement, textEl: HTMLElement): void {
-  textEl.textContent = '';
-  textEl.classList.add('streaming');
-  bubble.classList.remove('hidden', 'done');
-}
-function pushThink(bubble: HTMLElement, textEl: HTMLElement, full: string): void {
-  textEl.textContent = full;
-  bubble.scrollTop = bubble.scrollHeight;
-}
-function endThink(bubble: HTMLElement, textEl: HTMLElement, keep: boolean): void {
-  textEl.classList.remove('streaming');
-  if (keep && textEl.textContent) bubble.classList.add('done');
-  else bubble.classList.add('hidden');
-}
 const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 const wasAborted = (c: AbortController | null, e: unknown): boolean =>
   !!c?.signal.aborted || (e instanceof Error && e.name === 'AbortError');
+
+/** Position the bubble above (or below) its anchor button, arrow pointing at it. */
+function positionBubble(): void {
+  if (!bubbleAnchor || els.aiBubble.classList.contains('hidden')) return;
+  const r = bubbleAnchor.getBoundingClientRect();
+  if (r.width === 0 && r.height === 0) return; // anchor is hidden (e.g. modal closed) — keep last position
+  const b = els.aiBubble.getBoundingClientRect();
+  const gap = 10;
+  let top: number;
+  let pointDown: boolean;
+  if (r.top - b.height - gap >= 8) {
+    top = r.top - b.height - gap;
+    pointDown = true; // bubble above → arrow on its bottom edge
+  } else {
+    top = r.bottom + gap;
+    pointDown = false;
+  }
+  let left = r.left + r.width / 2 - b.width / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - b.width - 8));
+  els.aiBubble.style.left = `${left}px`;
+  els.aiBubble.style.top = `${top}px`;
+  els.aiBubble.classList.toggle('point-down', pointDown);
+  els.aiBubble.classList.toggle('point-up', !pointDown);
+  els.aiBubble.style.setProperty('--arrow-x', `${r.left + r.width / 2 - left}px`);
+}
+function openBubble(anchor: HTMLElement, statusKey: string): void {
+  window.clearTimeout(bubbleCloseTimer);
+  bubbleAnchor = anchor;
+  els.aiBubble.classList.remove('hidden', 'done', 'error', 'closing');
+  els.aiBubbleStatus.textContent = t(statusKey);
+  els.aiBubbleThink.textContent = '';
+  els.aiBubbleOut.textContent = '';
+  positionBubble();
+}
+function bubbleStatus(statusKey: string): void {
+  els.aiBubbleStatus.textContent = t(statusKey);
+}
+function bubbleThink(full: string): void {
+  if (els.aiBubbleStatus.textContent === t('aiStateRequesting')) bubbleStatus('aiThinking');
+  els.aiBubbleThink.textContent = full;
+  els.aiBubbleThink.scrollTop = els.aiBubbleThink.scrollHeight;
+  positionBubble();
+}
+function bubbleOut(full: string): void {
+  bubbleStatus('aiStateWriting');
+  els.aiBubbleOut.textContent = full;
+  els.aiBubbleOut.scrollTop = els.aiBubbleOut.scrollHeight;
+  positionBubble();
+}
+function bubbleDone(): void {
+  els.aiBubble.classList.add('done');
+  els.aiBubbleStatus.textContent = t('aiStateDone');
+  bubbleCloseTimer = window.setTimeout(closeBubble, 1500);
+}
+function bubbleFail(msg: string): void {
+  els.aiBubble.classList.add('error');
+  els.aiBubbleStatus.textContent = msg;
+  bubbleCloseTimer = window.setTimeout(closeBubble, 3000);
+}
+function closeBubble(): void {
+  els.aiBubble.classList.add('closing');
+  bubbleCloseTimer = window.setTimeout(() => {
+    els.aiBubble.classList.add('hidden');
+    els.aiBubble.classList.remove('closing', 'done', 'error');
+    bubbleAnchor = null;
+  }, 250);
+}
+window.addEventListener('resize', positionBubble);
+window.addEventListener('scroll', positionBubble, true);
+
+/** Disable the rest of the UI during a generation so nothing conflicts (the Stop button stays live). */
+function setAiBusy(busy: boolean, except: HTMLElement | null): void {
+  aiBusy = busy;
+  const list: Array<HTMLButtonElement | HTMLSelectElement> = [
+    els.submit, els.submitNoImage, els.aiModel, els.aiReasoning, els.workspace, els.type,
+    els.aiTitle, els.complaint, els.complaintRecord, els.complaintClear,
+  ];
+  for (const el of list) el.disabled = busy && el !== except;
+  $('toolbar').classList.toggle('disabled', busy);
+}
 
 els.complaintGenerate.addEventListener('click', async () => {
   if (complaintAbort) {
@@ -560,8 +649,11 @@ els.complaintGenerate.addEventListener('click', async () => {
   const label = els.complaintGenerate.textContent;
   els.complaintGenerate.textContent = t('aiStop');
   els.complaintGenerate.classList.add('ai-busy');
-  startThink(els.complaintThink, els.complaintThinkText);
-  setComplaintStatus(t('complaintGenerating'));
+  setAiBusy(true, els.complaintGenerate);
+  openBubble(els.complaintRecord, 'aiStateRequesting'); // anchor in the modal; reanchor below
+  bubbleAnchor = els.complaintGenerate;
+  positionBubble();
+  setComplaintStatus('');
   try {
     const images = await aiImages();
     const p = primary();
@@ -570,7 +662,9 @@ els.complaintGenerate.addEventListener('click', async () => {
       {
         instructions: config.aiComplaintPrompt || t('aiComplaintPromptDefault'),
         signal: complaintAbort.signal,
-        onReasoning: (_d, full) => pushThink(els.complaintThink, els.complaintThinkText, full),
+        reasoningEffort: config.aiReasoning,
+        onReasoning: (_d, full) => bubbleThink(full),
+        onText: () => bubbleStatus('aiStateWriting'),
       }
     );
     if (title) {
@@ -578,18 +672,23 @@ els.complaintGenerate.addEventListener('click', async () => {
       titleDirty = true;
     }
     if (body) els.body.value = body;
-    endThink(els.complaintThink, els.complaintThinkText, false);
-    setComplaintStatus('');
+    bubbleAnchor = els.complaint; // the modal button is about to hide → point at the toolbar button
+    positionBubble();
+    bubbleDone();
     closeComplaintModal(); // done — close (content is kept for next time)
     showToast(t('complaintDone'));
   } catch (e) {
-    endThink(els.complaintThink, els.complaintThinkText, false);
-    if (wasAborted(complaintAbort, e)) setComplaintStatus(t('aiStopped'));
-    else setComplaintStatus(t('complaintFailed', [errMsg(e)]), 'error');
+    if (wasAborted(complaintAbort, e)) {
+      bubbleStatus('aiStopped');
+      closeBubble();
+    } else {
+      bubbleFail(t('complaintFailed', [errMsg(e)]));
+    }
   } finally {
     els.complaintGenerate.textContent = label || t('complaintGenerate');
     els.complaintGenerate.classList.remove('ai-busy');
     complaintAbort = null;
+    setAiBusy(false, null);
   }
 });
 
@@ -608,7 +707,8 @@ els.aiTitle.addEventListener('click', async () => {
   const dirtyBefore = titleDirty;
   els.aiTitle.textContent = t('aiStop');
   els.aiTitle.classList.add('ai-busy');
-  startThink(els.aiThink, els.aiThinkText);
+  setAiBusy(true, els.aiTitle);
+  openBubble(els.aiTitle, 'aiStateRequesting');
   els.title.classList.add('streaming');
   try {
     commitTextIfAny(); // flush any in-progress text so it appears in the screenshots
@@ -619,31 +719,35 @@ els.aiTitle.addEventListener('click', async () => {
       {
         instructions: config.aiTitlePrompt || t('aiTitlePromptDefault'),
         signal: titleAbort.signal,
+        reasoningEffort: config.aiReasoning,
         onText: (_d, full) => {
-          els.title.value = (full.split('\n')[0] || '').slice(0, 120); // stream the title in, live
+          const line = (full.split('\n')[0] || '').slice(0, 120);
+          els.title.value = line; // stream the title in, live
           titleDirty = true;
+          bubbleOut(line);
         },
-        onReasoning: (_d, full) => pushThink(els.aiThink, els.aiThinkText, full),
+        onReasoning: (_d, full) => bubbleThink(full),
       }
     );
     els.title.value = title;
     titleDirty = true;
-    endThink(els.aiThink, els.aiThinkText, true);
+    bubbleDone();
     setStatus('', 'info');
   } catch (e) {
-    endThink(els.aiThink, els.aiThinkText, false);
     if (wasAborted(titleAbort, e)) {
       els.title.value = titleBefore;
       titleDirty = dirtyBefore;
-      setStatus(t('aiStopped'));
+      bubbleStatus('aiStopped');
+      closeBubble();
     } else {
-      setStatus(t('aiTitleFailed', [errMsg(e)]), 'error');
+      bubbleFail(t('aiTitleFailed', [errMsg(e)]));
     }
   } finally {
     els.aiTitle.textContent = label || t('aiTitle');
     els.aiTitle.classList.remove('ai-busy');
     els.title.classList.remove('streaming');
     titleAbort = null;
+    setAiBusy(false, null);
   }
 });
 
@@ -723,6 +827,15 @@ els.strokeColor.addEventListener('input', () => {
   void patchEditorPrefs({ strokeColor: prefs.strokeColor });
   if (selected) {
     selected.strokeColor = prefs.strokeColor;
+    redraw();
+    persist();
+  }
+});
+els.strokeWidth.addEventListener('input', () => {
+  prefs.strokeWidth = Number(els.strokeWidth.value); // 0 = no outline
+  void patchEditorPrefs({ strokeWidth: prefs.strokeWidth });
+  if (selected) {
+    selected.strokeWidth = prefs.strokeWidth;
     redraw();
     persist();
   }
@@ -830,6 +943,13 @@ window.addEventListener('keydown', (e) => {
     if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return; // don't crop while typing
     e.preventDefault();
     applyCrop();
+    return;
+  }
+  if (selected && e.key === 'Enter') {
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return; // don't fire while typing
+    e.preventDefault();
+    deselect(); // commit/fix the selected annotation
     return;
   }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
@@ -1047,6 +1167,7 @@ function applyCrop(): void {
 // ---- Pointer interaction ---------------------------------------------------
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return; // right/middle click must not draw
+  if (aiBusy) return; // don't edit the canvas while a generation is streaming
   if (!baseImage.src) return;
   const p = toCanvasXY(e);
 
@@ -1073,14 +1194,14 @@ canvas.addEventListener('mousedown', (e) => {
 
   if (currentTool === 'text') {
     commitTextIfAny();
-    drawing = { tool: 'textbox', color: prefs.color, strokeColor: prefs.strokeColor, width: prefs.width, x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+    drawing = { tool: 'textbox', color: prefs.color, strokeColor: prefs.strokeColor, strokeWidth: prefs.strokeWidth, width: prefs.width, x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     return;
   }
   if (currentTool === 'pen') {
-    drawing = { tool: 'pen', color: prefs.color, strokeColor: prefs.strokeColor, width: prefs.width, points: [{ x: p.x, y: p.y }] };
+    drawing = { tool: 'pen', color: prefs.color, strokeColor: prefs.strokeColor, strokeWidth: prefs.strokeWidth, width: prefs.width, points: [{ x: p.x, y: p.y }] };
     return;
   }
-  drawing = { tool: currentTool, color: prefs.color, strokeColor: prefs.strokeColor, width: prefs.width, x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+  drawing = { tool: currentTool, color: prefs.color, strokeColor: prefs.strokeColor, strokeWidth: prefs.strokeWidth, width: prefs.width, x0: p.x, y0: p.y, x1: p.x, y1: p.y };
   // Next badge = max existing + 1 (not count + 1), so a crop that drops a middle box won't collide.
   if (currentTool === 'numrect') drawing.num = Math.max(0, ...ops.filter((o) => o.tool === 'numrect').map((o) => o.num ?? 0)) + 1;
 });
@@ -1093,14 +1214,59 @@ canvas.addEventListener('mousemove', (e) => {
     cropRect.x = clamp(cropOrig.x + (p.x - dragStart.x), 0, canvas.width - cropRect.w);
     cropRect.y = clamp(cropOrig.y + (p.y - dragStart.y), 0, canvas.height - cropRect.h);
     redraw();
+    positionCropBar();
     return;
   }
-  if (dragMode === 'crop-resize') { resizeCrop(dragHandle, p); redraw(); return; }
-  if (!drawing) return;
+  if (dragMode === 'crop-resize') { resizeCrop(dragHandle, p); redraw(); positionCropBar(); return; }
+  if (!drawing) {
+    updateHoverCursor(p); // change the cursor over handles / movable bodies
+    return;
+  }
   if (drawing.tool === 'pen') drawing.points?.push({ x: p.x, y: p.y });
   else { drawing.x1 = p.x; drawing.y1 = p.y; }
   redraw();
 });
+
+/** Resize cursor for a handle name (move for endpoints/body). */
+function cursorForHandle(h: string): string {
+  if (h === 'p0' || h === 'p1') return 'move';
+  if (h === 'nw' || h === 'se') return 'nwse-resize';
+  if (h === 'ne' || h === 'sw') return 'nesw-resize';
+  if (h === 'n' || h === 's') return 'ns-resize';
+  return 'ew-resize';
+}
+/** Update the canvas cursor based on what's under the pointer (handle / body / draw). */
+function updateHoverCursor(p: Pt): void {
+  let cur = 'crosshair';
+  if (currentTool === 'crop' && cropRect) {
+    const h = cropHandleAt(p);
+    if (h) cur = cursorForHandle(h);
+    else if (pointInRect(p, cropRect)) cur = 'move';
+  } else if (selected) {
+    const h = handleAt(selected, p);
+    if (h) cur = cursorForHandle(h);
+    else if (pointInOp(selected, p)) cur = 'move';
+  }
+  canvas.style.cursor = cur;
+}
+
+/** Position the floating crop-confirm buttons inside the crop box's bottom-right corner. */
+function positionCropBar(): void {
+  if (!cropRect) {
+    els.cropBar.classList.add('hidden');
+    return;
+  }
+  els.cropBar.classList.remove('hidden');
+  const s = canvas.getBoundingClientRect();
+  const wrap = canvasWrap.getBoundingClientRect();
+  const scale = canvas.width ? s.width / canvas.width : 1;
+  const x = s.left - wrap.left + (cropRect.x + cropRect.w) * scale;
+  const y = s.top - wrap.top + (cropRect.y + cropRect.h) * scale;
+  els.cropBar.style.left = `${x - 6}px`;
+  els.cropBar.style.top = `${y - 38 >= 2 ? y - 38 : y + 6}px`; // inside the box, or just below if no room
+  els.cropBar.style.transform = 'translateX(-100%)'; // right-align to the crop box edge
+}
+window.addEventListener('resize', positionCropBar);
 
 window.addEventListener('mouseup', () => {
   if (dragMode) {
@@ -1118,7 +1284,7 @@ window.addEventListener('mouseup', () => {
   if (d.tool === 'crop') {
     const x = Math.min(d.x0 ?? 0, d.x1 ?? 0), y = Math.min(d.y0 ?? 0, d.y1 ?? 0);
     const w = Math.abs((d.x1 ?? 0) - (d.x0 ?? 0)), h = Math.abs((d.y1 ?? 0) - (d.y0 ?? 0));
-    if (w > 8 && h > 8) { cropRect = { x, y, w, h }; els.cropBar.classList.remove('hidden'); }
+    if (w > 8 && h > 8) { cropRect = { x, y, w, h }; positionCropBar(); }
     redraw();
     return;
   }
@@ -1162,7 +1328,7 @@ function openTextBox(bx: number, by: number, bw: number, bh: number, size: numbe
   textInput.style.color = color;
   textInput.style.display = 'block';
   textInput.value = '';
-  pendingTextOp = { tool: 'text', color, strokeColor, size, x: bx, y: by, w: bw };
+  pendingTextOp = { tool: 'text', color, strokeColor, strokeWidth: prefs.strokeWidth, size, x: bx, y: by, w: bw };
   setTimeout(() => textInput.focus(), 0);
 }
 
@@ -1281,38 +1447,46 @@ function renderOps(c: CanvasRenderingContext2D, base: Img, w: number, h: number,
   for (const op of opsList) drawOne(c, base, op);
 }
 
-/** Halo line width: the contrasting outline drawn under a colored stroke. */
-function haloWidth(width: number): number {
-  return width + Math.max(6, width);
+/** Halo line width: the colored line width plus the outline thickness on each side. */
+function haloWidth(width: number, sw: number): number {
+  return width + 2 * sw;
 }
-/** Stroke a rectangle as a contrasting outline (halo) under the main color. */
-function strokeRectHalo(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string, stroke: string, width: number): void {
+/** Stroke a rectangle with a contrasting outline (halo) under the main color; sw=0 → no outline. */
+function strokeRectHalo(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string, stroke: string, width: number, sw: number): void {
   c.lineJoin = 'round';
-  c.strokeStyle = stroke;
-  c.lineWidth = haloWidth(width);
-  c.strokeRect(x, y, w, h);
+  if (sw > 0) {
+    c.strokeStyle = stroke;
+    c.lineWidth = haloWidth(width, sw);
+    c.strokeRect(x, y, w, h);
+  }
   c.strokeStyle = color;
   c.lineWidth = width;
   c.strokeRect(x, y, w, h);
+}
+
+/** Outline thickness for an op (older ops without the field default to 3; 0 = no outline). */
+function outlineWidth(op: Op): number {
+  return op.strokeWidth ?? 3;
 }
 
 function drawOne(c: CanvasRenderingContext2D, base: Img, op: Op): void {
   c.save();
   c.lineJoin = 'round';
   c.lineCap = 'round';
-  const stroke = op.strokeColor || '#ffffff'; // contrasting halo (default white; older ops have none)
+  const stroke = op.strokeColor || '#ffffff'; // contrasting halo color
+  const sw = outlineWidth(op);
   const width = op.width || 4;
 
   if (op.tool === 'rect') {
     const x = Math.min(op.x0 ?? 0, op.x1 ?? 0);
     const y = Math.min(op.y0 ?? 0, op.y1 ?? 0);
-    strokeRectHalo(c, x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)), op.color, stroke, width);
+    strokeRectHalo(c, x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)), op.color, stroke, width, sw);
   } else if (op.tool === 'numrect') {
-    drawNumRect(c, op, stroke);
+    drawNumRect(c, op, stroke, sw);
   } else if (op.tool === 'arrow') {
-    drawArrow(c, op, stroke);
+    drawArrow(c, op, stroke, sw);
   } else if (op.tool === 'pen') {
-    drawPen(c, op, stroke);
+    drawPen(c, op, stroke, sw);
   } else if (op.tool === 'mosaic') {
     drawMosaic(c, base, op);
   } else if (op.tool === 'textbox' || op.tool === 'crop') {
@@ -1327,13 +1501,15 @@ function drawOne(c: CanvasRenderingContext2D, base: Img, op: Op): void {
     const size = op.size || 20;
     c.font = `bold ${size}px system-ui, sans-serif`;
     c.textBaseline = 'top';
-    c.lineWidth = Math.max(2, size / 6);
     c.lineJoin = 'round';
     const lineHeight = size * 1.2;
     wrapText(c, op.text || '', op.w).forEach((line, i) => {
       const ly = (op.y ?? 0) + i * lineHeight;
-      c.strokeStyle = stroke;
-      c.strokeText(line, op.x ?? 0, ly);
+      if (sw > 0) {
+        c.lineWidth = Math.max(1, sw * 2);
+        c.strokeStyle = stroke;
+        c.strokeText(line, op.x ?? 0, ly);
+      }
       c.fillStyle = op.color;
       c.fillText(line, op.x ?? 0, ly);
     });
@@ -1374,8 +1550,8 @@ function wrapText(c: CanvasRenderingContext2D, text: string, maxW?: number): str
   return out;
 }
 
-/** Stroke a freehand pen path with a contrasting halo under the main color. */
-function drawPen(c: CanvasRenderingContext2D, op: Op, stroke: string): void {
+/** Stroke a freehand pen path with a contrasting halo under the main color (sw=0 → no halo). */
+function drawPen(c: CanvasRenderingContext2D, op: Op, stroke: string, sw: number): void {
   const pts = op.points || [];
   if (pts.length < 2) return;
   const width = op.width || 4;
@@ -1384,10 +1560,12 @@ function drawPen(c: CanvasRenderingContext2D, op: Op, stroke: string): void {
     c.moveTo(pts[0].x, pts[0].y);
     for (let i = 1; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y);
   };
-  c.strokeStyle = stroke;
-  c.lineWidth = haloWidth(width);
-  trace();
-  c.stroke();
+  if (sw > 0) {
+    c.strokeStyle = stroke;
+    c.lineWidth = haloWidth(width, sw);
+    trace();
+    c.stroke();
+  }
   c.strokeStyle = op.color;
   c.lineWidth = width;
   trace();
@@ -1395,11 +1573,11 @@ function drawPen(c: CanvasRenderingContext2D, op: Op, stroke: string): void {
 }
 
 /** Draw a rectangle with a numbered circular badge (outlined in the contrasting color). */
-function drawNumRect(c: CanvasRenderingContext2D, op: Op, stroke: string): void {
+function drawNumRect(c: CanvasRenderingContext2D, op: Op, stroke: string, sw: number): void {
   const x = Math.min(op.x0 ?? 0, op.x1 ?? 0);
   const y = Math.min(op.y0 ?? 0, op.y1 ?? 0);
   const width = op.width || 4;
-  strokeRectHalo(c, x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)), op.color, stroke, width);
+  strokeRectHalo(c, x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)), op.color, stroke, width, sw);
 
   const r = Math.max(11, width * 2.4);
   c.beginPath();
@@ -1418,7 +1596,7 @@ function drawNumRect(c: CanvasRenderingContext2D, op: Op, stroke: string): void 
   c.textAlign = 'start'; // reset for subsequent text ops
 }
 
-function drawArrow(c: CanvasRenderingContext2D, op: Op, stroke: string): void {
+function drawArrow(c: CanvasRenderingContext2D, op: Op, stroke: string, sw: number): void {
   const x0 = op.x0 ?? 0;
   const y0 = op.y0 ?? 0;
   const x1 = op.x1 ?? 0;
@@ -1438,17 +1616,19 @@ function drawArrow(c: CanvasRenderingContext2D, op: Op, stroke: string): void {
     c.lineTo(x1 - head * Math.cos(angle + Math.PI / 6), y1 - head * Math.sin(angle + Math.PI / 6));
     c.closePath();
   };
-  // Halo first (shaft + head outline), then the colored arrow on top.
-  c.strokeStyle = stroke;
-  c.lineWidth = haloWidth(width);
-  shaft();
-  c.stroke();
-  headPath();
-  c.lineJoin = 'round';
-  c.lineWidth = Math.max(4, width);
-  c.stroke();
-  c.fillStyle = stroke;
-  c.fill();
+  // Halo first (shaft + head outline), then the colored arrow on top (sw=0 → no halo).
+  if (sw > 0) {
+    c.strokeStyle = stroke;
+    c.lineWidth = haloWidth(width, sw);
+    shaft();
+    c.stroke();
+    headPath();
+    c.lineJoin = 'round';
+    c.lineWidth = Math.max(2, sw * 2);
+    c.stroke();
+    c.fillStyle = stroke;
+    c.fill();
+  }
   c.strokeStyle = op.color;
   c.lineWidth = width;
   shaft();

@@ -31,24 +31,18 @@
         <div class="ctl-group">
           <label class="swatch" data-i18n-title="color"><input type="color" id="color" value="#ff3b30" /><span data-i18n="color"></span></label>
           <label class="swatch" data-i18n-title="strokeColorTitle"><input type="color" id="strokeColor" value="#ffffff" /><span data-i18n="strokeColor"></span></label>
+          <label class="slider" id="strokeWidthCtl" data-i18n-title="strokeWidth"><span data-i18n="strokeWidth"></span><input type="range" id="strokeWidth" min="0" max="12" value="3" /></label>
           <label class="slider" id="widthCtl"><span data-i18n="thickness"></span><input type="range" id="width" min="2" max="14" value="4" /></label>
           <label class="slider hidden" id="fontSizeCtl"><span data-i18n="fontSize"></span><input type="range" id="fontSize" min="12" max="96" value="28" /></label>
         </div>
         <span class="sep"></span>
         <div class="tool-group">
-          <button id="undo" class="act" data-i18n-title="undoTitle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7l-5 5 5 5"/><path d="M4 12h11a5 5 0 1 1 0 10h-2"/></svg></button>
+          <button id="undo" class="act" data-i18n-title="undoTitle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l-5 5 5 5"/><path d="M4 10h9a5 5 0 0 1 0 10h-2"/></svg></button>
           <button id="clear" class="act" data-i18n-title="clearTitle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1 -13"/></svg></button>
           <button id="download" class="act" data-i18n-title="downloadPngTitle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg></button>
           <button id="copy" class="act" data-i18n-title="copyPngTitle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="1.5"/><path d="M5 15V6a1 1 0 0 1 1-1h9"/></svg></button>
           <button id="paste" class="act" data-i18n-title="pasteImageTitle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="5" width="12" height="16" rx="1.5"/><path d="M9 5V3.5h6V5"/></svg></button>
         </div>
-      </div>
-
-      <div class="crop-bar hidden" id="cropBar">
-        <span class="hint" data-i18n="cropHint"></span>
-        <span class="spacer"></span>
-        <button id="cropApply" class="primary" data-i18n="cropApply" data-i18n-title="cropApplyTitle"></button>
-        <button id="cropCancel" class="ghost" data-i18n="cropCancel" data-i18n-title="cropCancelTitle"></button>
       </div>
 
       <div class="thumb-strip hidden" id="thumbStrip"></div>
@@ -57,6 +51,11 @@
         <canvas id="canvas"></canvas>
         <textarea id="textInput" wrap="off" rows="1" spellcheck="false"></textarea>
         <div class="canvas-empty hidden" id="canvasEmpty" data-i18n="canvasEmpty"></div>
+        <!-- Crop confirm buttons float next to the crop box (positioned in editor.ts) -->
+        <div class="crop-actions hidden" id="cropBar">
+          <button id="cropApply" class="primary" data-i18n="cropApply" data-i18n-title="cropApplyTitle"></button>
+          <button id="cropCancel" class="ghost" data-i18n="cropCancel" data-i18n-title="cropCancelTitle"></button>
+        </div>
       </div>
     </div>
 
@@ -74,17 +73,18 @@
       <label for="body"><span data-i18n="fieldBody"></span> <span class="hint" data-i18n="bodyHint"></span></label>
       <textarea id="body" data-i18n-placeholder="bodyPlaceholder"></textarea>
 
-      <!-- AI actions, just above the submit buttons -->
+      <!-- AI assistant, just above the submit buttons -->
+      <div class="ai-actions-head" data-i18n="aiActionsHeading"></div>
       <div class="ai-actions" id="aiActions">
         <select id="aiModel" class="hidden" data-i18n-title="aiModel"></select>
+        <select id="aiReasoning" class="hidden" data-i18n-title="aiReasoningLabel">
+          <option value="off" data-i18n="aiReasoningOff"></option>
+          <option value="low" data-i18n="aiReasoningLow"></option>
+          <option value="medium" data-i18n="aiReasoningMedium"></option>
+          <option value="high" data-i18n="aiReasoningHigh"></option>
+        </select>
         <button id="aiTitle" class="ghost" data-i18n="aiTitle" data-i18n-title="aiTitleTitle"></button>
         <button id="complaint" class="ghost" data-i18n="complaint" data-i18n-title="complaintTitle"></button>
-      </div>
-
-      <!-- Live thinking bubble for "Summarize title" generation -->
-      <div class="think-bubble hidden" id="aiThink">
-        <div class="think-head"><span class="think-dot"></span><span data-i18n="aiThinking"></span></div>
-        <div class="think-text" id="aiThinkText"></div>
       </div>
 
       <div class="actions">
@@ -111,12 +111,19 @@
         <span class="spacer"></span>
         <button id="complaintGenerate" class="primary" data-i18n="complaintGenerate"></button>
       </div>
-      <div class="think-bubble hidden" id="complaintThink">
-        <div class="think-head"><span class="think-dot"></span><span data-i18n="aiThinking"></span></div>
-        <div class="think-text" id="complaintThinkText"></div>
-      </div>
       <div id="complaintStatus" class="info"></div>
     </div>
+  </div>
+
+  <!-- Floating AI status bubble; points at the active button (positioned in editor.ts) -->
+  <div class="ai-bubble hidden" id="aiBubble">
+    <div class="ai-bubble-head">
+      <span class="ai-bubble-dot"></span>
+      <span class="ai-bubble-status" id="aiBubbleStatus"></span>
+      <span class="ai-bubble-check" id="aiBubbleCheck">✓</span>
+    </div>
+    <div class="ai-bubble-think" id="aiBubbleThink"></div>
+    <div class="ai-bubble-out" id="aiBubbleOut"></div>
   </div>
 
   <script type="module" src="editor.js"></script>

@@ -73,6 +73,7 @@ const els = {
   aiRefresh: $('aiRefresh') as HTMLButtonElement,
   aiSignOut: $('aiSignOut') as HTMLButtonElement,
   aiStatus: $('aiStatus'),
+  aiReasoning: $('aiReasoning') as HTMLSelectElement,
   aiTitlePrompt: $('aiTitlePrompt') as HTMLTextAreaElement,
   aiPromptRestore: $('aiPromptRestore') as HTMLButtonElement,
   aiComplaintPrompt: $('aiComplaintPrompt') as HTMLTextAreaElement,
@@ -617,6 +618,9 @@ els.aiPromptRestore.addEventListener('click', () => {
   draft.aiTitlePrompt = '';
   els.aiTitlePrompt.value = t('aiTitlePromptDefault');
 });
+els.aiReasoning.addEventListener('change', () => {
+  draft.aiReasoning = els.aiReasoning.value;
+});
 els.aiComplaintPrompt.addEventListener('input', () => {
   draft.aiComplaintPrompt = els.aiComplaintPrompt.value;
 });
@@ -743,6 +747,7 @@ els.importFile.addEventListener('change', async () => {
       aiTitlePrompt: typeof obj.aiTitlePrompt === 'string' ? obj.aiTitlePrompt : draft.aiTitlePrompt,
       aiComplaintPrompt: typeof obj.aiComplaintPrompt === 'string' ? obj.aiComplaintPrompt : draft.aiComplaintPrompt,
       aiVocabulary: Array.isArray(obj.aiVocabulary) ? (obj.aiVocabulary as string[]) : draft.aiVocabulary,
+      aiReasoning: typeof obj.aiReasoning === 'string' ? obj.aiReasoning : draft.aiReasoning,
       closeAfterSubmit: typeof obj.closeAfterSubmit === 'boolean' ? obj.closeAfterSubmit : draft.closeAfterSubmit,
       shortcutEnabled: typeof obj.shortcutEnabled === 'boolean' ? obj.shortcutEnabled : draft.shortcutEnabled,
       lastWorkspaceId: typeof obj.lastWorkspaceId === 'string' ? obj.lastWorkspaceId : '',
@@ -772,6 +777,7 @@ function applyDraftToControls(): void {
   // Show the effective prompts: the custom override, or the current language's default.
   els.aiTitlePrompt.value = draft.aiTitlePrompt || t('aiTitlePromptDefault');
   els.aiComplaintPrompt.value = draft.aiComplaintPrompt || t('aiComplaintPromptDefault');
+  els.aiReasoning.value = draft.aiReasoning || 'off';
   els.closeAfterSubmit.checked = !!draft.closeAfterSubmit;
   els.shortcutEnabled.checked = !!draft.shortcutEnabled;
 }
