@@ -42,6 +42,10 @@ try {
           lastWorkspaceId: 'w1',
           lastType: 'Bug',
         },
+        aiAuth: {
+          accessToken: 'demo', planType: 'pro', email: 'you@example.com',
+          models: ['gpt-5', 'gpt-5-codex'], model: 'gpt-5', connectedAt: 1,
+        },
       }),
       chrome.storage.session.set({
         pendingShot: { dataUrl, pageUrl: 'https://app.example.com/dashboard', pageTitle: 'Dashboard', type: 'Bug', workspaceId: 'w1' },
@@ -107,6 +111,20 @@ try {
   await options.waitForTimeout(300);
   await options.screenshot({ path: resolve(outDir, 'options.png') });
   console.log('wrote docs/screenshots/options.png');
+
+  // --- AI assistant settings section (connected view) ---
+  const aiHead = options.locator('h2[data-i18n="aiHeading"]');
+  await aiHead.scrollIntoViewIfNeeded();
+  await options.waitForTimeout(200);
+  const hb = await aiHead.boundingBox();
+  const cb = await options.locator('#aiConnectedBox').boundingBox();
+  if (hb && cb) {
+    await options.screenshot({
+      path: resolve(outDir, 'ai.png'),
+      clip: { x: cb.x - 8, y: hb.y - 8, width: cb.width + 16, height: cb.y + cb.height - hb.y + 16 },
+    });
+    console.log('wrote docs/screenshots/ai.png');
+  }
 } finally {
   await context.close();
 }

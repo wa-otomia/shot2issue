@@ -5,9 +5,10 @@
 // The screenshot comes from chrome.storage.session, written by the service worker when
 // the toolbar icon was clicked (or the keyboard shortcut was used).
 
-import { getConfig, getPendingShot, clearPendingShot, rememberSelection } from './lib/storage.js';
+import { getConfig, getPendingShot, clearPendingShot, rememberSelection, getAiAuth } from './lib/storage.js';
 import { setLanguage, localizeDom, t } from './lib/i18n.js';
 import { getProvider } from './lib/providers/index.js';
+import { generateTitle } from './lib/ai.js';
 import type { Config, Workspace, PendingShot, IssueResult } from './lib/types.js';
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -56,6 +57,7 @@ const els = {
   workspace: $('workspace') as HTMLSelectElement,
   type: $('type') as HTMLSelectElement,
   title: $('title') as HTMLInputElement,
+  aiTitle: $('aiTitle') as HTMLButtonElement,
   body: $('body') as HTMLTextAreaElement,
   submit: $('submit') as HTMLButtonElement,
   submitNoImage: $('submitNoImage') as HTMLButtonElement,
@@ -93,6 +95,8 @@ async function init(): Promise<void> {
       ` <span style="font-weight:400;color:var(--muted);font-size:12px;">v${chrome.runtime.getManifest().version}</span>`
     );
   }
+
+  void refreshAiButton(); // enable the AI-title button only when the assistant is connected
 
   pending = await getPendingShot();
 
@@ -175,6 +179,39 @@ function setupDefaults(): void {
 
 els.title.addEventListener('input', () => {
   titleDirty = true;
+});
+
+/** Enable the AI-title button only when the assistant is connected. */
+async function refreshAiButton(): Promise<void> {
+  const auth = await getAiAuth();
+  els.aiTitle.disabled = !auth;
+  els.aiTitle.title = auth ? t('aiTitleTitle') : t('aiTitleNeedConnect');
+}
+
+els.aiTitle.addEventListener('click', async () => {
+  if (!els.body.value.trim()) {
+    setStatus(t('aiTitleNeedBody'), 'error');
+    return;
+  }
+  els.aiTitle.disabled = true;
+  const label = els.aiTitle.textContent;
+  els.aiTitle.textContent = t('aiTitleGenerating');
+  try {
+    const { title } = await generateTitle({
+      type: els.type.value,
+      pageTitle: pending?.pageTitle,
+      pageUrl: pending?.pageUrl,
+      body: els.body.value,
+    });
+    els.title.value = title;
+    titleDirty = true;
+    setStatus('', 'info');
+  } catch (e) {
+    setStatus(t('aiTitleFailed', [e instanceof Error ? e.message : String(e)]), 'error');
+  } finally {
+    els.aiTitle.textContent = label || t('aiTitle');
+    els.aiTitle.disabled = false;
+  }
 });
 
 els.type.addEventListener('change', () => {

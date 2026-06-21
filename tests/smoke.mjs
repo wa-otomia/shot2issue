@@ -104,6 +104,11 @@ try {
     (await options.$eval('#titleTemplate', (el) => el.value)) === '[{type}] {pageTitle}' &&
       (await options.$eval('#bodyTemplate', (el) => el.value)) === 'URL: {pageUrl}');
 
+  // AI assistant: with no credentials, the disconnected view (Sign in) is shown.
+  check('options: AI shows disconnected view by default',
+    (await options.$eval('#aiConnectedBox', (el) => el.classList.contains('hidden'))) === true &&
+      (await options.$eval('#aiConnect', (el) => el.offsetParent !== null)) === true);
+
   // --- Editor page: renders staged screenshot, Esc closes the tab ---
   const editor = await context.newPage();
   editor.on('pageerror', (e) => pageErrors.push(String(e)));
@@ -127,6 +132,10 @@ try {
     (await editor.$eval('#title', (el) => el.value)) === '[Bug] Example');
   check('editor: body prefilled from template',
     (await editor.$eval('#body', (el) => el.value)) === 'URL: https://example.com/x');
+
+  // The AI-title button is disabled until the assistant is connected.
+  check('editor: AI title button disabled when not connected',
+    (await editor.$eval('#aiTitle', (el) => el.disabled)) === true);
 
   // Geometry of the (scaled-to-fit) canvas; click using fractions so points land on it.
   const box = await editor.$eval('#canvas', (c) => {
@@ -209,6 +218,40 @@ try {
   // The second keypress may reject if the page closes mid-call — that itself means it worked.
   await editor.keyboard.press('Escape').catch(() => {});
   check('editor: second Esc closes the tab', await closed);
+
+  // --- AI assistant connected view (seed credentials, then re-open both pages) ---
+  await sw.evaluate(() => {
+    return chrome.storage.local.set({
+      aiAuth: {
+        accessToken: 'tok', refreshToken: 'r', idToken: 'i',
+        accountId: 'acc_test', planType: 'pro', email: 'dev@example.com',
+        models: ['gpt-5', 'gpt-5-codex'], model: 'gpt-5', connectedAt: 1,
+      },
+    });
+  });
+
+  const options2 = await context.newPage();
+  options2.on('pageerror', (e) => pageErrors.push(String(e)));
+  await options2.goto(`chrome-extension://${extId}/options.html`);
+  await options2.waitForFunction(() => {
+    const box = document.getElementById('aiConnectedBox');
+    return box && !box.classList.contains('hidden');
+  }, { timeout: 8000 });
+  check('options: AI connected view shows account + plan',
+    (await options2.$eval('#aiAccount', (el) => el.textContent)) === 'dev@example.com' &&
+      (await options2.$eval('#aiPlan', (el) => el.textContent)) === 'pro');
+  const aiModels = await options2.$$eval('#aiModel option', (opts) => opts.map((o) => o.value));
+  check('options: AI model dropdown populated from auth', aiModels.includes('gpt-5') && aiModels.includes('gpt-5-codex'));
+
+  const editor2 = await context.newPage();
+  editor2.on('pageerror', (e) => pageErrors.push(String(e)));
+  await editor2.goto(`chrome-extension://${extId}/editor.html`);
+  await editor2.waitForFunction(() => {
+    const b = document.getElementById('aiTitle');
+    return b && !b.disabled;
+  }, { timeout: 8000 }).catch(() => {});
+  check('editor: AI title button enabled when connected',
+    (await editor2.$eval('#aiTitle', (el) => el.disabled)) === false);
 
   check('no uncaught page errors during flows', pageErrors.length === 0);
   if (pageErrors.length) console.log('  page errors:\n' + pageErrors.map((e) => '    ' + e).join('\n'));

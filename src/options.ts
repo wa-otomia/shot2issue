@@ -5,10 +5,19 @@
 // An in-memory draft is edited on the page and written to storage only on Save (the
 // language change applies immediately so the UI re-localizes as you pick it).
 
-import { getConfig, setConfig, makeId } from './lib/storage.js';
+import { getConfig, setConfig, makeId, getAiAuth, setAiAuth, patchAiAuth, clearAiAuth } from './lib/storage.js';
 import { setLanguage, localizeDom, t, SUPPORTED_LANGS } from './lib/i18n.js';
 import { PROVIDER_LIST, getProvider } from './lib/providers/index.js';
-import type { Config, Workspace } from './lib/types.js';
+import {
+  connectAuto,
+  beginManualAuth,
+  completeManualAuth,
+  ensureAiPermissions,
+  ensureFreshAuth,
+  fetchModels,
+  DEFAULT_MODELS,
+} from './lib/ai.js';
+import type { Config, Workspace, AiAuth, AiQuota } from './lib/types.js';
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement;
 const els = {
@@ -28,6 +37,22 @@ const els = {
   exportConfig: $('exportConfig'),
   importConfig: $('importConfig'),
   importFile: $('importFile') as HTMLInputElement,
+  // AI assistant
+  aiDisconnected: $('aiDisconnected'),
+  aiConnect: $('aiConnect') as HTMLButtonElement,
+  aiManualToggle: $('aiManualToggle'),
+  aiManual: $('aiManual'),
+  aiManualOpen: $('aiManualOpen') as HTMLButtonElement,
+  aiPasted: $('aiPasted') as HTMLInputElement,
+  aiManualComplete: $('aiManualComplete') as HTMLButtonElement,
+  aiConnectedBox: $('aiConnectedBox'),
+  aiAccount: $('aiAccount'),
+  aiPlan: $('aiPlan'),
+  aiModel: $('aiModel') as HTMLSelectElement,
+  aiUsage: $('aiUsage'),
+  aiRefresh: $('aiRefresh') as HTMLButtonElement,
+  aiSignOut: $('aiSignOut') as HTMLButtonElement,
+  aiStatus: $('aiStatus'),
 };
 
 let draft: Config;
@@ -173,6 +198,7 @@ els.lang.addEventListener('change', () => {
   localizeDom(document);
   renderWorkspaces(); // re-render dynamically built content in the new language
   renderTypes();
+  void renderAi();
 });
 
 // ---- Default templates ----
@@ -181,6 +207,132 @@ els.titleTemplate.addEventListener('input', () => {
 });
 els.bodyTemplate.addEventListener('input', () => {
   draft.bodyTemplate = els.bodyTemplate.value;
+});
+
+// ---- AI assistant ----
+function aiStatus(text: string, cls = ''): void {
+  els.aiStatus.className = cls;
+  els.aiStatus.textContent = text;
+}
+
+function renderUsage(q?: AiQuota): string {
+  if (!q) return t('aiUsageUnknown');
+  const parts: string[] = [];
+  if (q.primaryUsedPercent != null) parts.push(`${t('aiUsage5h')}: ${q.primaryUsedPercent}%`);
+  if (q.secondaryUsedPercent != null) parts.push(`${t('aiUsageWeek')}: ${q.secondaryUsedPercent}%`);
+  if (!parts.length) parts.push(Object.entries(q.raw).map(([k, v]) => `${k}=${v}`).join(', '));
+  return parts.join(' · ');
+}
+
+async function renderAi(): Promise<void> {
+  const auth = await getAiAuth();
+  const connected = !!auth;
+  els.aiDisconnected.classList.toggle('hidden', connected);
+  els.aiConnectedBox.classList.toggle('hidden', !connected);
+  if (!auth) return;
+
+  els.aiAccount.textContent = auth.email || auth.accountId || '—';
+  els.aiPlan.textContent = auth.planType || '—';
+  els.aiUsage.textContent = renderUsage(auth.quota);
+
+  const models = auth.models && auth.models.length ? auth.models : DEFAULT_MODELS;
+  els.aiModel.innerHTML = '';
+  for (const m of models) {
+    const opt = document.createElement('option');
+    opt.value = m;
+    opt.textContent = m;
+    els.aiModel.appendChild(opt);
+  }
+  els.aiModel.value = auth.model || models[0];
+}
+
+els.aiConnect.addEventListener('click', async () => {
+  if (!(await ensureAiPermissions())) {
+    aiStatus(t('aiPermDenied'), 'error');
+    return;
+  }
+  aiStatus(t('aiConnecting'));
+  els.aiConnect.disabled = true;
+  try {
+    const auth = await connectAuto();
+    aiStatus(t('aiConnectedOk', [auth.email || auth.accountId || '']), 'ok');
+    await renderAi();
+  } catch {
+    // Automatic redirect was rejected or cancelled: fall back to the manual paste flow.
+    try {
+      const { url } = await beginManualAuth();
+      els.aiManual.classList.remove('hidden');
+      await chrome.tabs.create({ url });
+      aiStatus(t('aiAutoFailedManual')); // recoverable: a tab opened, awaiting the pasted link
+    } catch (e) {
+      aiStatus(t('aiConnectFailed', [e instanceof Error ? e.message : String(e)]), 'error');
+    }
+  } finally {
+    els.aiConnect.disabled = false;
+  }
+});
+
+els.aiManualToggle.addEventListener('click', () => {
+  els.aiManual.classList.toggle('hidden');
+});
+
+els.aiManualOpen.addEventListener('click', async () => {
+  if (!(await ensureAiPermissions())) {
+    aiStatus(t('aiPermDenied'), 'error');
+    return;
+  }
+  try {
+    const { url } = await beginManualAuth();
+    await chrome.tabs.create({ url });
+  } catch (e) {
+    aiStatus(t('aiConnectFailed', [e instanceof Error ? e.message : String(e)]), 'error');
+  }
+});
+
+els.aiManualComplete.addEventListener('click', async () => {
+  const pasted = els.aiPasted.value.trim();
+  if (!pasted) return;
+  els.aiManualComplete.disabled = true;
+  try {
+    const auth = await completeManualAuth(pasted);
+    els.aiPasted.value = '';
+    els.aiManual.classList.add('hidden');
+    aiStatus(t('aiConnectedOk', [auth.email || auth.accountId || '']), 'ok');
+    await renderAi();
+  } catch (e) {
+    aiStatus(t('aiConnectFailed', [e instanceof Error ? e.message : String(e)]), 'error');
+  } finally {
+    els.aiManualComplete.disabled = false;
+  }
+});
+
+els.aiModel.addEventListener('change', () => {
+  void patchAiAuth({ model: els.aiModel.value });
+});
+
+els.aiRefresh.addEventListener('click', async () => {
+  const auth = await getAiAuth();
+  if (!auth) return;
+  els.aiRefresh.disabled = true;
+  try {
+    const fresh = await ensureFreshAuth(auth);
+    const models = await fetchModels(fresh);
+    const model = models.includes(fresh.model || '') ? fresh.model : models[0];
+    const next: AiAuth = { ...fresh, models, model };
+    await setAiAuth(next);
+    await renderAi();
+    aiStatus(t('aiRefreshed'), 'ok');
+  } catch (e) {
+    aiStatus(t('aiConnectFailed', [e instanceof Error ? e.message : String(e)]), 'error');
+  } finally {
+    els.aiRefresh.disabled = false;
+  }
+});
+
+els.aiSignOut.addEventListener('click', async () => {
+  await clearAiAuth();
+  await renderAi();
+  aiStatus(t('aiSignedOut'));
 });
 
 // ---- Behavior ----
@@ -304,6 +456,7 @@ async function init(): Promise<void> {
   applyDraftToControls();
   renderWorkspaces();
   renderTypes();
+  void renderAi();
 }
 
 void init();

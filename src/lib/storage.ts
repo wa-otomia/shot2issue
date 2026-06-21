@@ -6,7 +6,7 @@
 //   when the browser restarts) so large images are not kept on disk.
 // This module only reads and writes; it contains no network logic.
 
-import type { Config, Workspace, PendingShot } from './types.js';
+import type { Config, Workspace, PendingShot, AiAuth, AiPendingAuth } from './types.js';
 
 /** Default configuration, used on first install and to backfill missing fields. */
 const DEFAULT_CONFIG: Config = {
@@ -92,4 +92,53 @@ export async function getPendingShot(): Promise<PendingShot | null> {
 /** Clear the staged screenshot to avoid keeping a large image in memory. */
 export async function clearPendingShot(): Promise<void> {
   await chrome.storage.session.remove(PENDING_KEY);
+}
+
+// ---- AI assistant credentials (local storage) ------------------------------
+//
+// Stored under their own key, kept out of Config so configuration export/import never
+// carries the access/refresh tokens. The pending PKCE state lives in session storage and
+// is discarded when the flow completes (or the browser restarts).
+const AI_AUTH_KEY = 'aiAuth';
+const AI_PENDING_KEY = 'aiPendingAuth';
+
+/** Read the stored AI credentials, or null if the assistant is not connected. */
+export async function getAiAuth(): Promise<AiAuth | null> {
+  const raw = await chrome.storage.local.get(AI_AUTH_KEY);
+  return (raw[AI_AUTH_KEY] as AiAuth | undefined) ?? null;
+}
+
+/** Persist the AI credentials. */
+export async function setAiAuth(auth: AiAuth): Promise<void> {
+  await chrome.storage.local.set({ [AI_AUTH_KEY]: auth });
+}
+
+/** Update a subset of the stored AI credentials (no-op if not connected). */
+export async function patchAiAuth(patch: Partial<AiAuth>): Promise<AiAuth | null> {
+  const current = await getAiAuth();
+  if (!current) return null;
+  const next = { ...current, ...patch };
+  await setAiAuth(next);
+  return next;
+}
+
+/** Disconnect the AI assistant. */
+export async function clearAiAuth(): Promise<void> {
+  await chrome.storage.local.remove(AI_AUTH_KEY);
+}
+
+/** Stash the PKCE verifier/state while the user completes the OAuth flow. */
+export async function setPendingAuth(pending: AiPendingAuth): Promise<void> {
+  await chrome.storage.session.set({ [AI_PENDING_KEY]: pending });
+}
+
+/** Read the in-flight OAuth PKCE state. */
+export async function getPendingAuth(): Promise<AiPendingAuth | null> {
+  const raw = await chrome.storage.session.get(AI_PENDING_KEY);
+  return (raw[AI_PENDING_KEY] as AiPendingAuth | undefined) ?? null;
+}
+
+/** Discard the in-flight OAuth PKCE state. */
+export async function clearPendingAuth(): Promise<void> {
+  await chrome.storage.session.remove(AI_PENDING_KEY);
 }

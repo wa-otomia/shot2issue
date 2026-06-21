@@ -34,6 +34,14 @@
     #status.error { color: var(--danger); }
     code { background: #8881; padding: 1px 5px; border-radius: 4px; }
     a { color: var(--accent); }
+    .hidden { display: none; }
+    .ai-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-top: 10px; }
+    .ai-manual { border: 1px dashed var(--border); border-radius: 8px; padding: 12px; margin-top: 10px; }
+    .ai-row { margin: 4px 0; }
+    .ai-k { color: var(--muted); display: inline-block; min-width: 76px; }
+    #aiStatus { font-size: 13px; margin-top: 8px; }
+    #aiStatus.ok { color: var(--ok); }
+    #aiStatus.error { color: var(--danger); }
   </style>
 </head>
 <body>
@@ -67,6 +75,36 @@
   <input type="text" id="titleTemplate" />
   <label for="bodyTemplate" data-i18n="bodyTemplateLabel"></label>
   <textarea id="bodyTemplate" rows="3"></textarea>
+
+  <h2 data-i18n="aiHeading"></h2>
+  <p class="hint" data-i18n="aiHint"></p>
+  <div id="aiDisconnected">
+    <div class="row">
+      <button id="aiConnect" data-i18n="aiConnect"></button>
+      <a id="aiManualToggle" class="hint" data-i18n="aiManualLink" style="cursor:pointer;"></a>
+    </div>
+    <div id="aiManual" class="ai-manual hidden">
+      <p class="hint" data-i18n="aiManualStep1"></p>
+      <button id="aiManualOpen" data-i18n="aiManualOpen"></button>
+      <p class="hint" data-i18n="aiManualStep2"></p>
+      <input type="text" id="aiPasted" data-i18n-placeholder="aiManualPlaceholder" />
+      <div class="row" style="margin-top:8px;">
+        <button id="aiManualComplete" class="primary" data-i18n="aiManualComplete"></button>
+      </div>
+    </div>
+  </div>
+  <div id="aiConnectedBox" class="ai-card hidden">
+    <div class="ai-row"><span class="ai-k" data-i18n="aiAccount"></span> <span id="aiAccount"></span></div>
+    <div class="ai-row"><span class="ai-k" data-i18n="aiPlan"></span> <span id="aiPlan" class="chip"></span></div>
+    <label for="aiModel" data-i18n="aiModel"></label>
+    <select id="aiModel"></select>
+    <div class="ai-row" style="margin-top:10px;"><span class="ai-k" data-i18n="aiUsage"></span> <span id="aiUsage"></span></div>
+    <div class="row" style="margin-top:10px;">
+      <button id="aiRefresh" data-i18n="aiRefresh"></button>
+      <button id="aiSignOut" class="danger" data-i18n="aiSignOut"></button>
+    </div>
+  </div>
+  <div id="aiStatus"></div>
 
   <h2 data-i18n="behaviorHeading"></h2>
   <div class="check-row">

@@ -23,12 +23,17 @@ Personal Access Token——复用你当前的 github.com 浏览器会话；提�
 
 ![设置页](docs/screenshots/options.png)
 
+AI 助手 —— 使用 ChatGPT 订阅账号登录以生成标题：
+
+![AI assistant](docs/screenshots/ai.png)
+
 ## 功能
 
 - 一键截取当前标签页的可见区域。
 - 基于 Canvas 的标注：矩形、编号框（自动递增徽标）、箭头、画笔、可调整大小并自动换行的文字框，以及用于遮挡敏感内容的马赛克。可用 Ctrl/Cmd+Z 撤销，连按两次 Esc 关闭编辑页。
 - 标注后的图片可下载为 PNG，或直接复制到剪贴板。
 - 可预配置默认标题与正文模板（占位符 {pageTitle}、{pageUrl}、{type}）。
+- 可选的 AI 助手：使用 OpenAI Codex / ChatGPT 订阅账号登录，即可从描述生成 issue 标题，并查看可用模型及用量。
 - 支持多个工作空间，每个工作空间对应一个 GitHub 仓库或一个 YouTrack 项目。
 - 提交到 GitHub 在后台标签页中进行，不抢占焦点；编辑页可选择在提交后自动关闭并切回截图时所在的页面。
 - 可选的快捷键截图（默认关闭）。
@@ -79,6 +84,7 @@ Chrome Web Store。
 - **类型** —— 显示在编辑页的「类型」下拉框中，并用于默认标题。默认值：Change、Bug、Feature。
 - **语言** —— 英文、简体中文或日文。
 - **默认标题与正文** —— 用于预填新建 issue 的模板，占位符：`{pageTitle}`、`{pageUrl}`、`{type}`。
+- **AI 助手** —— 可选用 OpenAI Codex / ChatGPT 账号登录以生成标题。详见下文 [AI 助手](#ai-助手)。
 - **行为** —— 是否在提交成功后关闭编辑页并切回截图时所在的页面。
 - **快捷键** —— 可选用快捷键触发截图。默认关闭；在此启用后，于 Chrome 的快捷键页面
   （`chrome://extensions/shortcuts`，可由「设置快捷键」按钮打开）分配按键组合。
@@ -128,6 +134,19 @@ YouTrack 为 issue 创建和附件都提供了文档化的 REST API，因此这�
 
 完成后，新后端即可出现在工作空间配置中并参与提交流程。
 
+## AI 助手
+
+可选的 AI 助手会使用 OpenAI Codex / ChatGPT 订阅账号登录（OAuth、PKCE），从而能够根据你的描述生成 issue 标题，并显示可用的模型和用量。它使用的是你的订阅，而非按量计费的 API key。
+
+Codex 标准的 OAuth 使用 http://localhost:1455 回调，而浏览器扩展无法在该地址上监听，因此提供了两种登录方式：
+
+1. **自动** —— 使用 chrome.identity.launchWebAuthFlow，配合扩展自身的 https://<id>.chromiumapp.org/ 重定向。仅当 OpenAI 为公共 Codex client 接受该重定向 URI 时才有效。
+2. **手动（粘贴链接）** —— 作为回退方式使用。扩展会打开授权页面并使用 Codex 的 localhost 重定向；登录后，浏览器会停留在一个「无法访问 localhost」的页面，其地址中包含 ?code=…。复制该完整地址并粘贴回来，扩展便会自行完成 PKCE token 交换。
+
+点击「使用 ChatGPT 登录」会先尝试自动方式，并在失败时自动回退到手动方式。随后在编辑页中，「AI 标题」会根据当前的类型、页面标题、页面 URL 和描述生成标题。
+
+> 注意：该助手会与未公开文档的 chatgpt.com 端点通信，这些端点可能发生变化，并受 OpenAI 针对你账号的条款约束。token 仅保存在 chrome.storage.local 中，绝不会包含在设置备份里。
+
 ## 权限
 
 | 权限 | 用途 |
@@ -135,17 +154,21 @@ YouTrack 为 issue 创建和附件都提供了文档化的 REST API，因此这�
 | `activeTab` | 点击图标时授予；用于截取可见标签页并读取其标题和 URL。 |
 | `storage` | 在 `chrome.storage.local` 中保存设置，在 `chrome.storage.session` 中暂存待编辑的截图。 |
 | `scripting` | 向后台的 github.com 标签页注入提交脚本。 |
+| `identity` | 运行 AI 助手的 OAuth 登录（`launchWebAuthFlow`）。仅在你连接该助手时使用。 |
 
 默认主机权限仅限 `https://github.com/*`，即 GitHub 提交时唯一访问的来源。截图的字节由 GitHub
 自己的页面代码上传至其存储，因此扩展无需声明那些存储主机的权限。
 
 YouTrack 实例 URL 无法预先确定，因此以 `optional_host_permissions` 声明并在运行时请求：首次
-保存或提交到某个实例时，Chrome 会请求访问该来源的权限。
+保存或提交到某个实例时，Chrome 会请求访问该来源的权限。当你连接 AI 助手时，它同样会请求访问 `https://auth.openai.com/*` 和 `https://chatgpt.com/*`。
 
 ## 隐私
 
 - 仅使用截图、标题、描述和当前页面 URL。扩展不收集控制台输出、网络活动或设备信息，也不含
   任何统计追踪。
+- AI 助手在你连接之前处于关闭状态。当你使用「AI 标题」时，标题、类型、描述和页面 URL（不含
+  截图）会被发送给 OpenAI 以生成标题。其 token 仅保存在 `chrome.storage.local` 中，并被排除在
+  设置备份之外。
 - 附件的可见性跟随仓库的可见性。私有仓库的附件需登录后才能查看（自 2023-05 起）；公开仓库
   的附件匿名即可查看。请据此选择目标仓库。
 - 马赛克工具用于遮挡：在提交前覆盖敏感内容。它会对原始截图采样并将所选区域像素化。

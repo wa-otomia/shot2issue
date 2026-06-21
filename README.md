@@ -25,6 +25,10 @@ Settings — configure GitHub and YouTrack workspaces:
 
 ![Settings](docs/screenshots/options.png)
 
+AI assistant — sign in with a ChatGPT subscription to generate titles:
+
+![AI assistant](docs/screenshots/ai.png)
+
 ## Features
 
 - One click to capture the visible area of the current tab.
@@ -33,6 +37,8 @@ Settings — configure GitHub and YouTrack workspaces:
   Ctrl/Cmd+Z; close the editor with Esc (pressed twice).
 - Save the annotated image: download as PNG or copy it straight to the clipboard.
 - Pre-configurable default title and body templates ({pageTitle}, {pageUrl}, {type}).
+- Optional AI assistant: sign in with an OpenAI Codex / ChatGPT-subscription account to
+  generate an issue title from the description, and view the available models and usage.
 - Multiple workspaces, each targeting a GitHub repository or a YouTrack project.
 - GitHub submission runs in a background tab without stealing focus; the editor can
   optionally close and return you to the page you captured.
@@ -95,6 +101,8 @@ the **Settings** link in the editor.
 - **Language** — English, Simplified Chinese, or Japanese.
 - **Default title & body** — templates that prefill new issues, with the placeholders
   `{pageTitle}`, `{pageUrl}`, and `{type}`.
+- **AI assistant** — optionally sign in with an OpenAI Codex / ChatGPT account to generate
+  titles. See [AI assistant](#ai-assistant) below.
 - **Behavior** — whether to close the editor and switch back to the captured page after a
   successful submission.
 - **Keyboard shortcut** — optionally trigger a capture with a keyboard shortcut. Off by
@@ -145,6 +153,31 @@ path uses the API directly with your permanent token: the extension creates the 
 and embeds it inline by file name. The first submission to a given instance prompts for
 permission to access that origin, since instance URLs are not known in advance.
 
+## AI assistant
+
+The optional AI assistant signs in with an OpenAI Codex / ChatGPT-subscription account
+(OAuth, PKCE) so it can generate an issue title from your description and show the
+available models and usage. It uses your subscription rather than a pay-per-use API key.
+
+Codex's standard OAuth uses a `http://localhost:1455` callback, which a browser extension
+cannot listen on, so two sign-in paths are offered:
+
+1. **Automatic** — `chrome.identity.launchWebAuthFlow` with the extension's own
+   `https://<id>.chromiumapp.org/` redirect. This works only if OpenAI accepts that
+   redirect URI for the public Codex client.
+2. **Manual (paste link)** — used as a fallback. The extension opens the authorize page
+   with Codex's localhost redirect; after you sign in, the browser lands on a “can't reach
+   localhost” page whose address contains `?code=…`. Copy that full address and paste it
+   back, and the extension completes the PKCE token exchange itself.
+
+Clicking **Sign in with ChatGPT** tries the automatic path first and falls back to the
+manual path automatically. In the editor, **AI title** then generates a title from the
+current type, page title, page URL, and description.
+
+> Note: the assistant talks to undocumented `chatgpt.com` endpoints that may change, and is
+> subject to OpenAI's terms for your account. Tokens are stored in `chrome.storage.local`
+> only and are never included in settings backups.
+
 ## Permissions
 
 | Permission | Purpose |
@@ -152,6 +185,7 @@ permission to access that origin, since instance URLs are not known in advance.
 | `activeTab` | Granted when the icon is clicked; used to capture the visible tab and read its title and URL. |
 | `storage` | Stores settings in `chrome.storage.local` and the pending screenshot in `chrome.storage.session`. |
 | `scripting` | Injects the submission script into the background github.com tab. |
+| `identity` | Runs the AI assistant's OAuth sign-in (`launchWebAuthFlow`). Only used if you connect the assistant. |
 
 Host permissions are limited to `https://github.com/*` by default, the only origin the
 extension contacts for GitHub. The screenshot bytes are uploaded to GitHub's storage by
@@ -159,13 +193,19 @@ GitHub's own page code, so the extension does not need permission for those stor
 
 YouTrack instance URLs are not known in advance, so they are declared as
 `optional_host_permissions` and requested at runtime: the first time you save or submit
-to an instance, Chrome asks permission to access that specific origin.
+to an instance, Chrome asks permission to access that specific origin. The AI assistant
+similarly requests `https://auth.openai.com/*` and `https://chatgpt.com/*` when you connect
+it.
 
 ## Privacy
 
 - Only the screenshot, title, description, and the current page URL are used. The
   extension does not collect console output, network activity, or device information,
   and includes no telemetry.
+- The AI assistant is off until you connect it. When you use **AI title**, the title,
+  type, description, and page URL (not the screenshot) are sent to OpenAI to generate a
+  title. Its tokens are stored in `chrome.storage.local` only and are excluded from
+  settings backups.
 - Attachment visibility follows repository visibility. Attachments in private
   repositories require sign-in to view (since 2023-05); attachments in public
   repositories are visible anonymously. Choose the target repository accordingly.
