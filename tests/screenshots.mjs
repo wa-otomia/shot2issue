@@ -69,14 +69,16 @@ try {
     await editor.mouse.up();
   };
 
-  // Rectangle around the "Save" button area.
-  await drag(at(0.25, 0.72), at(0.46, 0.86));
-  // Arrow pointing at it.
+  // Two numbered boxes (the numbered-box tool auto-numbers 1, 2).
+  await editor.click('.tool[data-tool="numrect"]');
+  await drag(at(0.25, 0.71), at(0.46, 0.86)); // box 1 around Save
+  await drag(at(0.27, 0.39), at(0.66, 0.5)); // box 2 around a content row
+  // Arrow pointing at box 1.
   await editor.click('.tool[data-tool="arrow"]');
-  await drag(at(0.68, 0.55), at(0.47, 0.79));
+  await drag(at(0.72, 0.6), at(0.47, 0.79));
   // Freehand pen underline near the title.
   await editor.click('.tool[data-tool="pen"]');
-  await drag(at(0.30, 0.30), at(0.52, 0.31));
+  await drag(at(0.3, 0.3), at(0.5, 0.305));
   // Text label.
   await editor.click('.tool[data-tool="text"]');
   const tp = at(0.55, 0.45);

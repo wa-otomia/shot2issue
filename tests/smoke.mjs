@@ -129,6 +129,18 @@ try {
   await editor.keyboard.press('Control+z');
   check('editor: annotate + Ctrl+Z ran without errors', true);
 
+  // Numbered-box tool: draw two; the badges auto-number 1, 2.
+  await editor.click('.tool[data-tool="numrect"]');
+  await editor.mouse.move(at(0.55, 0.6).x, at(0.55, 0.6).y);
+  await editor.mouse.down();
+  await editor.mouse.move(at(0.75, 0.72).x, at(0.75, 0.72).y, { steps: 5 });
+  await editor.mouse.up();
+  await editor.mouse.move(at(0.6, 0.15).x, at(0.6, 0.15).y);
+  await editor.mouse.down();
+  await editor.mouse.move(at(0.85, 0.25).x, at(0.85, 0.25).y, { steps: 5 });
+  await editor.mouse.up();
+  check('editor: numbered-box tool drew without errors', true);
+
   // Pen (freehand) tool.
   await editor.click('.tool[data-tool="pen"]');
   const a = at(0.15, 0.6), b = at(0.3, 0.75), c2 = at(0.45, 0.62);
@@ -155,12 +167,17 @@ try {
   await editor.keyboard.press('Control+Enter');
   check('editor: text commit ran without errors', true);
 
-  // Esc closes the editor tab. Move focus off the text input first (a non-text tool button).
+  // Esc requires two presses. Move focus off the text input first (a non-text tool button).
   await editor.click('.tool[data-tool="rect"]');
+  await editor.keyboard.press('Escape');
+  await editor.waitForSelector('.toast.show', { timeout: 2000 }).catch(() => {});
+  const toastShown = await editor.$eval('.toast', (el) => el.classList.contains('show')).catch(() => false);
+  check('editor: first Esc shows a toast and does not close', toastShown && !editor.isClosed());
+
   const closed = editor.waitForEvent('close', { timeout: 5000 }).then(() => true).catch(() => false);
-  // The keypress may reject if the page closes mid-call — that itself means Esc worked.
+  // The second keypress may reject if the page closes mid-call — that itself means it worked.
   await editor.keyboard.press('Escape').catch(() => {});
-  check('editor: Esc closes the tab', await closed);
+  check('editor: second Esc closes the tab', await closed);
 
   check('no uncaught page errors during flows', pageErrors.length === 0);
   if (pageErrors.length) console.log('  page errors:\n' + pageErrors.map((e) => '    ' + e).join('\n'));

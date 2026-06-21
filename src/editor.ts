@@ -31,6 +31,7 @@ interface Op {
   x1?: number;
   y1?: number;
   points?: Array<{ x: number; y: number }>; // freehand pen path
+  num?: number; // numbered-box badge value
   size?: number;
   x?: number;
   y?: number;
@@ -217,8 +218,8 @@ els.clear.addEventListener('click', () => {
 });
 
 // Page-level shortcuts:
-//   Esc        → close this editor tab
-//   Ctrl/Cmd+Z → undo the last annotation (native undo still works inside text fields)
+//   Esc (twice) → close this editor tab (the first press shows a confirmation toast)
+//   Ctrl/Cmd+Z  → undo the last annotation (native undo still works inside text fields)
 function closeEditorTab(): void {
   chrome.tabs
     .getCurrent()
@@ -227,10 +228,37 @@ function closeEditorTab(): void {
     })
     .catch(() => {});
 }
+
+let escArmed = false;
+let escTimer: number | undefined;
+let toastEl: HTMLElement | null = null;
+let toastTimer: number | undefined;
+function showToast(message: string): void {
+  if (!toastEl) {
+    toastEl = document.createElement('div');
+    toastEl.className = 'toast';
+    document.body.appendChild(toastEl);
+  }
+  toastEl.textContent = message;
+  toastEl.classList.add('show');
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => toastEl?.classList.remove('show'), 1600);
+}
+
 window.addEventListener('keydown', (e) => {
   if (e.target === textInput) return; // the text-tool input manages its own keys
   if (e.key === 'Escape') {
-    closeEditorTab();
+    if (escArmed) {
+      window.clearTimeout(escTimer);
+      escArmed = false;
+      closeEditorTab();
+    } else {
+      escArmed = true;
+      showToast(t('escAgainToClose'));
+      escTimer = window.setTimeout(() => {
+        escArmed = false;
+      }, 2000);
+    }
     return;
   }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
@@ -271,6 +299,11 @@ canvas.addEventListener('mousedown', (e) => {
     x1: p.x,
     y1: p.y,
   };
+  // Numbered box: assign the next number now so the drag preview shows it. The count is
+  // taken from the committed ops, so undo naturally frees the number for the next box.
+  if (currentTool === 'numrect') {
+    drawing.num = ops.filter((o) => o.tool === 'numrect').length + 1;
+  }
 });
 
 canvas.addEventListener('mousemove', (e) => {
@@ -371,6 +404,8 @@ function drawOp(op: Op): void {
     const x = Math.min(op.x0 ?? 0, op.x1 ?? 0);
     const y = Math.min(op.y0 ?? 0, op.y1 ?? 0);
     ctx.strokeRect(x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)));
+  } else if (op.tool === 'numrect') {
+    drawNumRect(op);
   } else if (op.tool === 'arrow') {
     drawArrow(op);
   } else if (op.tool === 'pen') {
@@ -402,6 +437,28 @@ function drawPen(op: Op): void {
   ctx.moveTo(pts[0].x, pts[0].y);
   for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
   ctx.stroke();
+}
+
+/** Draw a rectangle with a numbered, white-outlined circular badge at its top-left corner. */
+function drawNumRect(op: Op): void {
+  const x = Math.min(op.x0 ?? 0, op.x1 ?? 0);
+  const y = Math.min(op.y0 ?? 0, op.y1 ?? 0);
+  ctx.strokeRect(x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)));
+
+  const r = Math.max(11, (op.width || 4) * 2.4);
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = op.color;
+  ctx.fill();
+  ctx.lineWidth = Math.max(2, r / 6);
+  ctx.strokeStyle = '#ffffff';
+  ctx.stroke();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `bold ${Math.round(r * 1.2)}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(op.num ?? '?'), x, y + r * 0.04);
 }
 
 function drawArrow(op: Op): void {
