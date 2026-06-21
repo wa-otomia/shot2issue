@@ -22,6 +22,8 @@ const DEFAULT_CONFIG: Config = {
   bodyTemplate: 'Page: {pageUrl}',
   // AI title prompt; '' means use the current UI language's default (i18n aiTitlePromptDefault).
   aiTitlePrompt: '',
+  // AI complaint prompt; '' means use the current UI language's default (aiComplaintPromptDefault).
+  aiComplaintPrompt: '',
   // Close the editor and switch back to the captured tab after a successful submit.
   closeAfterSubmit: true,
   // Allow a keyboard shortcut (configured at chrome://extensions/shortcuts) to capture. Off by default.

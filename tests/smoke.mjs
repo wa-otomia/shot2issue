@@ -124,6 +124,14 @@ try {
   check('options: Restore default prompt refills the prompt',
     (await options.$eval('#aiTitlePrompt', (el) => el.value)) === promptDefault &&
       promptDefault !== 'my custom prompt');
+  // The complaint prompt is independently configurable with its own default + restore.
+  const complaintDefault = await options.$eval('#aiComplaintPrompt', (el) => el.value);
+  check('options: complaint prompt prefilled with its own default',
+    complaintDefault.trim().length > 20 && complaintDefault !== promptDefault);
+  await options.fill('#aiComplaintPrompt', 'custom complaint');
+  await options.click('#aiComplaintRestore');
+  check('options: Restore refills the complaint prompt',
+    (await options.$eval('#aiComplaintPrompt', (el) => el.value)) === complaintDefault);
 
   // --- Editor page: renders staged screenshot, Esc closes the tab ---
   const editor = await context.newPage();

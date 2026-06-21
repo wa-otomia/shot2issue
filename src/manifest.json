@@ -36,7 +36,8 @@
     "scripting",
     "identity",
     "desktopCapture",
-    "offscreen"
+    "offscreen",
+    "notifications"
   ],
   "host_permissions": [
     "https://github.com/*"

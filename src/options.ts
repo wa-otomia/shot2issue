@@ -57,6 +57,8 @@ const els = {
   aiStatus: $('aiStatus'),
   aiTitlePrompt: $('aiTitlePrompt') as HTMLTextAreaElement,
   aiPromptRestore: $('aiPromptRestore') as HTMLButtonElement,
+  aiComplaintPrompt: $('aiComplaintPrompt') as HTMLTextAreaElement,
+  aiComplaintRestore: $('aiComplaintRestore') as HTMLButtonElement,
 };
 
 let draft: Config;
@@ -203,8 +205,9 @@ els.lang.addEventListener('change', () => {
   renderWorkspaces(); // re-render dynamically built content in the new language
   renderTypes();
   void renderAi();
-  // If the prompt is not customized, show the new language's default.
+  // If a prompt is not customized, show the new language's default.
   if (!draft.aiTitlePrompt) els.aiTitlePrompt.value = t('aiTitlePromptDefault');
+  if (!draft.aiComplaintPrompt) els.aiComplaintPrompt.value = t('aiComplaintPromptDefault');
 });
 
 // ---- Default templates ----
@@ -358,6 +361,13 @@ els.aiPromptRestore.addEventListener('click', () => {
   draft.aiTitlePrompt = '';
   els.aiTitlePrompt.value = t('aiTitlePromptDefault');
 });
+els.aiComplaintPrompt.addEventListener('input', () => {
+  draft.aiComplaintPrompt = els.aiComplaintPrompt.value;
+});
+els.aiComplaintRestore.addEventListener('click', () => {
+  draft.aiComplaintPrompt = '';
+  els.aiComplaintPrompt.value = t('aiComplaintPromptDefault');
+});
 
 // ---- Behavior ----
 els.closeAfterSubmit.addEventListener('change', () => {
@@ -447,6 +457,7 @@ els.importFile.addEventListener('change', async () => {
       titleTemplate: typeof obj.titleTemplate === 'string' ? obj.titleTemplate : draft.titleTemplate,
       bodyTemplate: typeof obj.bodyTemplate === 'string' ? obj.bodyTemplate : draft.bodyTemplate,
       aiTitlePrompt: typeof obj.aiTitlePrompt === 'string' ? obj.aiTitlePrompt : draft.aiTitlePrompt,
+      aiComplaintPrompt: typeof obj.aiComplaintPrompt === 'string' ? obj.aiComplaintPrompt : draft.aiComplaintPrompt,
       closeAfterSubmit: typeof obj.closeAfterSubmit === 'boolean' ? obj.closeAfterSubmit : draft.closeAfterSubmit,
       shortcutEnabled: typeof obj.shortcutEnabled === 'boolean' ? obj.shortcutEnabled : draft.shortcutEnabled,
       lastWorkspaceId: typeof obj.lastWorkspaceId === 'string' ? obj.lastWorkspaceId : '',
@@ -470,8 +481,9 @@ function applyDraftToControls(): void {
   els.lang.value = draft.lang;
   els.titleTemplate.value = draft.titleTemplate;
   els.bodyTemplate.value = draft.bodyTemplate;
-  // Show the effective prompt: the custom override, or the current language's default.
+  // Show the effective prompts: the custom override, or the current language's default.
   els.aiTitlePrompt.value = draft.aiTitlePrompt || t('aiTitlePromptDefault');
+  els.aiComplaintPrompt.value = draft.aiComplaintPrompt || t('aiComplaintPromptDefault');
   els.closeAfterSubmit.checked = !!draft.closeAfterSubmit;
   els.shortcutEnabled.checked = !!draft.shortcutEnabled;
 }

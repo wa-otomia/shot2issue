@@ -349,13 +349,16 @@ async function processComplaint(blob: Blob): Promise<void> {
     setStatus(t('complaintGenerating'), 'info');
     const images = await aiImages();
     const p = primary();
-    const { title, body } = await generateComplaint({
-      transcript,
-      type: els.type.value,
-      pageTitle: p?.pageTitle,
-      pageUrl: p?.pageUrl,
-      images: images.length ? images : undefined,
-    });
+    const { title, body } = await generateComplaint(
+      {
+        transcript,
+        type: els.type.value,
+        pageTitle: p?.pageTitle,
+        pageUrl: p?.pageUrl,
+        images: images.length ? images : undefined,
+      },
+      { instructions: config.aiComplaintPrompt || t('aiComplaintPromptDefault') }
+    );
     if (title) {
       els.title.value = title;
       titleDirty = true;

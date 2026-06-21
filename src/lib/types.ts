@@ -21,6 +21,8 @@ export interface Config {
   bodyTemplate: string;
   /** AI title-generation system prompt. Empty means "use the current language's default". */
   aiTitlePrompt: string;
+  /** AI voice-complaint system prompt. Empty means "use the current language's default". */
+  aiComplaintPrompt: string;
   closeAfterSubmit: boolean;
   shortcutEnabled: boolean;
   lastWorkspaceId: string;

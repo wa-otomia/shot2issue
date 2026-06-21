@@ -194,7 +194,9 @@ title and a Markdown body from the transcript, the screenshots, and the page met
 (structured JSON output). Note: the transcription endpoint is a Codex Desktop route that is
 undocumented and accepts only the ChatGPT session token (not an API key), so this path is
 best-effort and may change; if it fails, the transcript is kept in the description so the
-recording is not lost.
+recording is not lost. Capture failures (including screen capture) are shown as a system
+notification. Like the title prompt, the complaint system prompt is editable in Settings,
+each with its own **Restore default prompt** button.
 
 > Note: the assistant talks to undocumented `chatgpt.com` endpoints that may change, and is
 > subject to OpenAI's terms for your account. Tokens are stored in `chrome.storage.local`

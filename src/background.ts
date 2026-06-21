@@ -47,6 +47,20 @@ async function focusTab(id: number): Promise<void> {
   }
 }
 
+/** Surface a capture error as a system notification (visible regardless of editor state). */
+function notify(message: string): void {
+  try {
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+      title: 'shot2issue',
+      message,
+    });
+  } catch {
+    /* notifications unavailable */
+  }
+}
+
 function makeAttachment(dataUrl: string, tab: chrome.tabs.Tab, sourceId: string): Attachment {
   return {
     id: makeAttachmentId(),
@@ -61,29 +75,24 @@ function makeAttachment(dataUrl: string, tab: chrome.tabs.Tab, sourceId: string)
   };
 }
 
-/** Append to an open editor (and focus it), or stage a fresh envelope and open the editor. */
-async function stageAndOpen(
-  tab: chrome.tabs.Tab,
-  attachment: Attachment | null,
-  captureError: string | undefined
-): Promise<void> {
+/** Append a captured screenshot to an open editor (and focus it), or open a new editor. */
+async function stageAndOpen(tab: chrome.tabs.Tab, attachment: Attachment): Promise<void> {
   const config = await getConfig();
   const existing = await getPendingShots();
   const editorOpen = !!existing && (await tabAlive(existing.editorTabId));
 
   if (editorOpen && existing) {
-    if (attachment) await appendPendingShot(attachment);
+    await appendPendingShot(attachment);
     await focusTab(existing.editorTabId as number);
     return;
   }
 
   const envelope: PendingShots = {
-    attachments: attachment ? [attachment] : [],
+    attachments: [attachment],
     type: config.lastType || config.types[0] || '',
     workspaceId: config.lastWorkspaceId || (config.workspaces[0] && config.workspaces[0].id) || '',
     sourceTabId: tab.id,
     sourceWindowId: tab.windowId,
-    error: captureError,
   };
   await setPendingShots(envelope);
   const editorTab = await chrome.tabs.create({ url: chrome.runtime.getURL('editor.html') });
@@ -94,16 +103,13 @@ async function stageAndOpen(
 async function captureWeb(tab: chrome.tabs.Tab): Promise<void> {
   const config = await getConfig();
   setLanguage(config.lang);
-  let attachment: Attachment | null = null;
-  let captureError: string | undefined;
   try {
     const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
     if (!dataUrl) throw new Error('no image data');
-    attachment = makeAttachment(dataUrl, tab, 'tab');
+    await stageAndOpen(tab, makeAttachment(dataUrl, tab, 'tab'));
   } catch (e) {
-    captureError = t('captureFailed', [e instanceof Error && e.message ? e.message : String(e)]);
+    notify(t('captureFailed', [e instanceof Error && e.message ? e.message : String(e)]));
   }
-  await stageAndOpen(tab, attachment, captureError);
 }
 
 // ---- capture: screen / window (desktopCapture + offscreen) ------------------
@@ -111,11 +117,18 @@ function chooseDesktopMedia(tab: chrome.tabs.Tab): Promise<string> {
   // Only screen + window: capturing an arbitrary tab via desktopCapture needs a different
   // consumption path and fails in the offscreen document with "Error starting tab capture".
   // The current tab is already covered by the "Web screenshot" option.
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     try {
-      chrome.desktopCapture.chooseDesktopMedia(['screen', 'window'], tab, (streamId) => resolve(streamId || ''));
-    } catch {
-      resolve('');
+      chrome.desktopCapture.chooseDesktopMedia(['screen', 'window'], tab, (streamId) => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          reject(new Error(err.message || 'picker error'));
+          return;
+        }
+        resolve(streamId || ''); // '' means the user cancelled the picker
+      });
+    } catch (e) {
+      reject(e instanceof Error ? e : new Error(String(e)));
     }
   });
 }
@@ -139,7 +152,8 @@ async function grabViaOffscreen(streamId: string): Promise<string> {
     const res = (await chrome.runtime.sendMessage({ target: 'offscreen', type: 'grab-frame', streamId })) as
       | { ok: boolean; dataUrl?: string; error?: string }
       | undefined;
-    if (!res || !res.ok || !res.dataUrl) throw new Error(res?.error || 'capture failed');
+    if (!res) throw new Error('the offscreen capture did not respond');
+    if (!res.ok || !res.dataUrl) throw new Error(res.error || 'capture failed');
     return res.dataUrl;
   } finally {
     try {
@@ -153,17 +167,14 @@ async function grabViaOffscreen(streamId: string): Promise<string> {
 async function captureDesktop(tab: chrome.tabs.Tab): Promise<void> {
   const config = await getConfig();
   setLanguage(config.lang);
-  let attachment: Attachment | null = null;
-  let captureError: string | undefined;
   try {
     const streamId = await chooseDesktopMedia(tab);
-    if (!streamId) return; // the user cancelled the picker — do nothing
+    if (!streamId) return; // the user cancelled the picker — do nothing, no error
     const dataUrl = await grabViaOffscreen(streamId);
-    attachment = makeAttachment(dataUrl, tab, 'desktop');
+    await stageAndOpen(tab, makeAttachment(dataUrl, tab, 'desktop'));
   } catch (e) {
-    captureError = t('captureDesktopFailed', [e instanceof Error && e.message ? e.message : String(e)]);
+    notify(t('captureDesktopFailed', [e instanceof Error && e.message ? e.message : String(e)]));
   }
-  await stageAndOpen(tab, attachment, captureError);
 }
 
 async function activeTab(): Promise<chrome.tabs.Tab | undefined> {
