@@ -56,6 +56,7 @@ export interface Config {
 export interface Op {
   tool: string;
   color: string;
+  strokeColor?: string; // contrasting halo/outline color drawn under lines and behind text
   width?: number;
   x0?: number;
   y0?: number;
@@ -68,6 +69,14 @@ export interface Op {
   y?: number;
   w?: number; // text wrap width (canvas pixels)
   text?: string;
+}
+
+/** Remembered editor tool settings (persisted, applied to newly drawn annotations). */
+export interface EditorPrefs {
+  color: string; // primary fill/line color
+  strokeColor: string; // contrasting halo/outline color
+  width: number; // line thickness (non-text tools)
+  fontSize: number; // text size (independent of width)
 }
 
 /** One captured image plus its own annotation ops, as an entry in the editor's strip. */
@@ -85,7 +94,7 @@ export interface Attachment {
 }
 
 /**
- * The set of screenshots staged for editing (chrome.storage.session). Multiple attachments
+ * The set of screenshots staged for editing (chrome.storage.local). Multiple attachments
  * are annotated together and submitted as one issue. `error` is set if capture failed.
  */
 export interface PendingShots {

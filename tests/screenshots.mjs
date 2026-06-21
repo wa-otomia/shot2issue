@@ -47,7 +47,8 @@ try {
           models: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'], model: 'gpt-5.5', connectedAt: 1,
         },
       }),
-      chrome.storage.session.set({
+      // Staged screenshots now live in local storage (was session) to avoid the quota limit.
+      chrome.storage.local.set({
         pendingShots: {
           attachments: [
             { id: 'a1', dataUrl, pageUrl: 'https://app.example.com/dashboard', pageTitle: 'Dashboard', ops: [], createdAt: 1 },

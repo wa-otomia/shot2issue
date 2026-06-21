@@ -99,6 +99,44 @@ function wsSummary(ws: Workspace): string {
   return detail ? `${name} · ${provider.label} · ${detail}` : `${name} · ${provider.label}`;
 }
 
+// Account cards are likewise collapsed by default and expanded only while editing.
+const expandedAcct = new Set<string>();
+
+/** One-line summary shown on a collapsed account card. */
+function acctSummary(acct: Account): string {
+  const label = getProvider(acct.kind).label;
+  const name = (acct.name || '').trim() || t('accountUntitled');
+  let host = '';
+  try {
+    host = acct.baseUrl ? new URL(acct.baseUrl).host : '';
+  } catch {
+    host = acct.baseUrl || '';
+  }
+  return host ? `${name} · ${label} · ${host}` : `${name} · ${label}`;
+}
+
+/** Two-step delete: the first click arms the button ("Click again to confirm"); the second confirms. */
+function wireConfirmRemove(btn: HTMLButtonElement, onConfirm: () => void): void {
+  let armed = false;
+  let timer: number | undefined;
+  const label = btn.textContent || '';
+  btn.addEventListener('click', () => {
+    if (armed) {
+      window.clearTimeout(timer);
+      onConfirm();
+      return;
+    }
+    armed = true;
+    btn.textContent = t('confirmRemove');
+    btn.classList.add('armed');
+    timer = window.setTimeout(() => {
+      armed = false;
+      btn.textContent = label;
+      btn.classList.remove('armed');
+    }, 3000);
+  });
+}
+
 function status(text: string, cls = ''): void {
   els.status.className = cls;
   els.status.textContent = text;
@@ -146,18 +184,27 @@ function renderAccounts(): void {
   }
   draft.accounts.forEach((acct, idx) => {
     const provider = getProvider(acct.kind);
+    const collapsed = !expandedAcct.has(acct.id);
     const card = document.createElement('div');
-    card.className = 'acct-card';
+    card.className = collapsed ? 'acct-card collapsed' : 'acct-card';
     const kindOptions = accountKinds
       .map((k) => `<option value="${escapeAttr(k)}">${escapeAttr(getProvider(k).label)}</option>`)
       .join('');
     card.innerHTML = `
-      <div class="acct-grid">
-        <div class="full"><label>${t('accountName')}</label><input type="text" data-k="name" placeholder="${escapeAttr(t('accountNamePlaceholder'))}" /></div>
-        <div class="full"><label>${t('accountKind')}</label><select data-k="kind" style="max-width:200px;">${kindOptions}</select></div>
-        ${fieldInputsHtml(provider.accountFields || [])}
+      <div class="acct-head">
+        <button type="button" class="acct-toggle" data-act="toggle">
+          <span class="acct-chev">${collapsed ? '▸' : '▾'}</span>
+          <span class="acct-summary">${escapeAttr(acctSummary(acct))}</span>
+        </button>
       </div>
-      <div class="row" style="margin-top:10px;"><button class="danger" data-act="remove">${t('accountRemove')}</button></div>`;
+      <div class="acct-body">
+        <div class="acct-grid">
+          <div class="full"><label>${t('accountName')}</label><input type="text" data-k="name" placeholder="${escapeAttr(t('accountNamePlaceholder'))}" /></div>
+          <div class="full"><label>${t('accountKind')}</label><select data-k="kind" style="max-width:200px;">${kindOptions}</select></div>
+          ${fieldInputsHtml(provider.accountFields || [])}
+        </div>
+        <div class="row" style="margin-top:10px;"><button class="danger" data-act="remove">${t('accountRemove')}</button></div>
+      </div>`;
 
     const rec = acct as unknown as Record<string, string>;
     (card.querySelector('[data-k="name"]') as HTMLInputElement).value = acct.name || '';
@@ -166,6 +213,8 @@ function renderAccounts(): void {
       const input = card.querySelector(`[data-k="${f.key}"]`) as HTMLInputElement | null;
       if (input) input.value = rec[f.key] || '';
     }
+    const summaryEl = card.querySelector('.acct-summary') as HTMLElement;
+    const chevEl = card.querySelector('.acct-chev') as HTMLElement;
     card.querySelectorAll('[data-k]').forEach((node) => {
       const input = node as HTMLInputElement | HTMLSelectElement;
       const k = input.dataset.k as string;
@@ -178,10 +227,18 @@ function renderAccounts(): void {
       } else {
         input.addEventListener('input', () => {
           (draft.accounts[idx] as unknown as Record<string, string>)[k] = input.value;
+          summaryEl.textContent = acctSummary(draft.accounts[idx]);
         });
       }
     });
-    (card.querySelector('[data-act="remove"]') as HTMLButtonElement).addEventListener('click', () => {
+    (card.querySelector('[data-act="toggle"]') as HTMLButtonElement).addEventListener('click', () => {
+      const nowCollapsed = card.classList.toggle('collapsed');
+      if (nowCollapsed) expandedAcct.delete(acct.id);
+      else expandedAcct.add(acct.id);
+      chevEl.textContent = nowCollapsed ? '▸' : '▾';
+    });
+    wireConfirmRemove(card.querySelector('[data-act="remove"]') as HTMLButtonElement, () => {
+      expandedAcct.delete(acct.id);
       draft.accounts.splice(idx, 1);
       renderAccounts();
       renderWorkspaces();
@@ -191,7 +248,9 @@ function renderAccounts(): void {
 }
 
 els.addAccount.addEventListener('click', () => {
-  draft.accounts.push({ id: makeAccountId(), kind: accountKinds[0] || 'youtrack', name: '', baseUrl: '', token: '' });
+  const id = makeAccountId();
+  draft.accounts.push({ id, kind: accountKinds[0] || 'youtrack', name: '', baseUrl: '', token: '' });
+  expandedAcct.add(id); // a freshly added account opens expanded for editing
   renderAccounts();
 });
 
@@ -241,7 +300,6 @@ function renderWorkspaces(): void {
           <span class="ws-chev">${collapsed ? '▸' : '▾'}</span>
           <span class="ws-summary">${escapeAttr(wsSummary(ws))}</span>
         </button>
-        <button class="danger" data-act="remove">${t('wsRemove')}</button>
       </div>
       <div class="ws-body">
         <div class="ws-grid">
@@ -256,6 +314,7 @@ function renderWorkspaces(): void {
           ${fieldHtml}
           ${hintHtml}
         </div>
+        <div class="row" style="margin-top:10px;"><button class="danger" data-act="remove">${t('wsRemove')}</button></div>
       </div>
     `;
 
@@ -293,7 +352,7 @@ function renderWorkspaces(): void {
       else expandedWs.add(ws.id);
       chevEl.textContent = nowCollapsed ? '▸' : '▾';
     });
-    (card.querySelector('[data-act="remove"]') as HTMLButtonElement).addEventListener('click', () => {
+    wireConfirmRemove(card.querySelector('[data-act="remove"]') as HTMLButtonElement, () => {
       expandedWs.delete(ws.id);
       draft.workspaces.splice(idx, 1);
       renderWorkspaces();

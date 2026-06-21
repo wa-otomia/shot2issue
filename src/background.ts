@@ -214,10 +214,34 @@ async function activeTab(): Promise<chrome.tabs.Tab | undefined> {
   return tab;
 }
 
+// ---- paste from clipboard (image read in the popup, staged here) -----------
+async function captureClipboard(dataUrl: string): Promise<void> {
+  const config = await getConfig();
+  setLanguage(config.lang);
+  const tab = await activeTab();
+  const att: Attachment = {
+    id: makeAttachmentId(),
+    dataUrl,
+    pageUrl: '', // a pasted image isn't tied to the current page
+    pageTitle: t('clipboardImage'),
+    sourceTabId: tab?.id,
+    sourceWindowId: tab?.windowId,
+    sourceId: 'clipboard',
+    ops: [],
+    createdAt: Date.now(),
+  };
+  await stageAndOpen(tab || ({} as chrome.tabs.Tab), att);
+}
+
 // ---- triggers --------------------------------------------------------------
 // Popup buttons.
-chrome.runtime.onMessage.addListener((msg: { type?: string }) => {
-  if (!msg || (msg.type !== 'capture-web' && msg.type !== 'capture-desktop')) return;
+chrome.runtime.onMessage.addListener((msg: { type?: string; dataUrl?: string }) => {
+  if (!msg) return;
+  if (msg.type === 'capture-clipboard') {
+    if (msg.dataUrl) void captureClipboard(msg.dataUrl);
+    return;
+  }
+  if (msg.type !== 'capture-web' && msg.type !== 'capture-desktop') return;
   void (async () => {
     const tab = await activeTab();
     if (!tab) return;
@@ -237,8 +261,17 @@ chrome.commands.onCommand.addListener(async (command: string, tab?: chrome.tabs.
   else await captureDesktop(target);
 });
 
-// Closing the editor ends the staging session (frees the image data held in memory).
+// Closing the editor ends the staging session (frees the staged image data).
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   const pending = await getPendingShots();
   if (pending && pending.editorTabId === tabId) await clearPendingShots();
+});
+
+// Staged screenshots live in chrome.storage.local (persists across restarts), so sweep any
+// left over from a previous session on startup when no editor tab is open to claim them.
+chrome.runtime.onStartup.addListener(async () => {
+  const pending = await getPendingShots();
+  if (!pending) return;
+  const alive = pending.editorTabId != null && (await tabAlive(pending.editorTabId));
+  if (!alive) await clearPendingShots();
 });

@@ -27,13 +27,15 @@
     .tab-panel.active { display: block; }
     .tab-panel h2:first-of-type { margin-top: 12px; }
     .ws-card, .acct-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin: 10px 0; }
-    /* Collapsible workspace cards: collapsed by default, expanded while editing. */
-    .ws-head { display: flex; align-items: center; gap: 8px; }
-    .ws-toggle { flex: 1; display: flex; align-items: center; gap: 8px; text-align: left; border: none; background: none; padding: 2px 0; font: inherit; color: FieldText; cursor: pointer; }
-    .ws-chev { color: var(--muted); width: 1em; flex: 0 0 auto; }
-    .ws-summary { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .ws-body { margin-top: 10px; }
-    .ws-card.collapsed .ws-body { display: none; }
+    /* Collapsible workspace + account cards: collapsed by default, expanded while editing. */
+    .ws-head, .acct-head { display: flex; align-items: center; gap: 8px; }
+    .ws-toggle, .acct-toggle { flex: 1; display: flex; align-items: center; gap: 8px; text-align: left; border: none; background: none; padding: 2px 0; font: inherit; color: FieldText; cursor: pointer; }
+    .ws-chev, .acct-chev { color: var(--muted); width: 1em; flex: 0 0 auto; }
+    .ws-summary, .acct-summary { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ws-body, .acct-body { margin-top: 10px; }
+    .ws-card.collapsed .ws-body, .acct-card.collapsed .acct-body { display: none; }
+    /* Two-step delete: the armed state makes the second click obviously destructive. */
+    button.danger.armed { background: var(--danger); border-color: var(--danger); color: #fff; }
     .ws-grid, .acct-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
     .ws-grid .full, .acct-grid .full { grid-column: 1 / -1; }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }

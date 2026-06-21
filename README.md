@@ -2,14 +2,9 @@
 
 **English** | [简体中文](README.zh-CN.md) | [日本語](README.ja.md)
 
-A Chrome extension (Manifest V3) for filing GitHub, GitLab, or YouTrack issues from a screenshot.
-Click the toolbar icon to capture the current tab, annotate the image, write a title and
-description, and submit. The screenshot is attached to the issue and rendered inline.
+**Capture a screenshot, annotate it, and file it as a GitHub, GitLab, or YouTrack issue — with the image embedded inline, without leaving the browser.** No Personal Access Token for GitHub, no backend, no telemetry. Just a toolbar icon and a fast path from "I see a bug" to "the issue is filed."
 
-The extension is written in TypeScript and is client-side only; it talks to no
-third-party servers. GitHub submission requires no personal access token — it uses your
-existing github.com browser session. YouTrack submission uses its REST API with a
-permanent token you provide.
+shot2issue is an open-source Chrome extension (Manifest V3), written in TypeScript and entirely client-side. You build it and load `build/` — that's it.
 
 <p align="center">
   <img src="src/icons/icon128.png" width="96" alt="shot2issue icon" />
@@ -17,7 +12,7 @@ permanent token you provide.
 
 ## Screenshots
 
-Toolbar popup — choose a capture source (each shows its shortcut when set):
+Toolbar popup — pick a capture source (each shows its shortcut when set):
 
 ![Popup](docs/screenshots/popup.png)
 
@@ -29,332 +24,145 @@ Settings — accounts and workspaces, organized into tabs:
 
 ![Settings](docs/screenshots/options.png)
 
-AI assistant — sign in with a ChatGPT subscription to generate titles:
+AI assistant — sign in with a ChatGPT subscription to write titles and bodies:
 
 ![AI assistant](docs/screenshots/ai.png)
 
+## Why shot2issue
+
+- **No GitHub token, ever.** Files GitHub issues using your existing github.com session — no Personal Access Token to create, scope, rotate, or store.
+- **From bug to issue in seconds.** Click the icon, mark up the screenshot, type a line, submit. The image lands inline in the issue, not as a stray attachment link.
+- **Capture anything.** The current tab, your whole screen, a specific window, another app, or an image pasted straight from the clipboard.
+- **Annotate without a separate tool.** Boxes, arrows, numbered callouts, freehand pen, text, and a mosaic to redact secrets — all on a canvas in the editor.
+- **Local-only by design.** No server, no analytics. Settings live in `chrome.storage.local` and never leave your browser unless you export them.
+
 ## Features
 
-- Capture the current tab, or — via the toolbar popup — your whole screen, a specific
-  window, or another application (`chrome.desktopCapture`). Each source can be bound to its
-  own keyboard shortcut, which is shown in the popup when set.
-- Multiple screenshots per issue: each capture adds a thumbnail; annotate each one, switch
-  between them, delete any, and they are all attached on submit. Re-clicking the extension
-  icon while the editor is open adds the new screenshot to it.
-- Canvas annotation: rectangle, numbered box (auto-incrementing badge), arrow, freehand
-  pen, wrapping text in a resizable region, and mosaic for redaction. Undo with
-  Ctrl/Cmd+Z; close the editor with Esc (pressed twice).
-- Save the annotated image: download as PNG or copy it straight to the clipboard.
-- Pre-configurable default title and body templates ({pageTitle}, {pageUrl}, {type}).
-- Optional AI assistant: sign in with an OpenAI Codex / ChatGPT-subscription account to
-  generate an issue title from the description, and view the available models and usage.
-- Smart dictation: type a description or dictate it (dictation is transcribed with your
-  subscription); the AI writes the issue title and body from it and the screenshots.
-- Multiple workspaces, each targeting a GitHub repository, a GitLab project, or a YouTrack
-  project. YouTrack/GitLab credentials live on reusable **Accounts** that workspaces share.
-- GitHub submission runs in a background tab without stealing focus; the editor can
-  optionally close and return you to the page you captured.
-- Optional keyboard shortcut to capture the current tab (off by default).
-- Interface available in English, Simplified Chinese, and Japanese (English by default).
-- No backend and no analytics. Settings are stored locally and can be exported.
+- **Capture from anywhere.** Grab the current tab, or — via the toolbar popup — your whole screen, a specific window, or another application (`chrome.desktopCapture`). You can also paste an image straight in: use **Paste from clipboard** in the popup, or Ctrl/Cmd+V inside the editor. Each capture source can have its own keyboard shortcut, shown in the popup when set.
+- **Multiple screenshots per issue.** Every capture adds a thumbnail; annotate each one, switch between them, and delete any. All of them are attached on submit. Re-clicking the icon (or pasting again) while the editor is open adds to the same issue.
+- **Full annotation toolkit.** Rectangle, numbered box (auto-incrementing badge), arrow, freehand pen, resizable auto-wrapping text, and a mosaic to redact sensitive content. Undo with Ctrl/Cmd+Z; press Esc twice to close the editor.
+- **Keep the image.** Download the annotated PNG or copy it straight to the clipboard.
+- **Three issue trackers.** GitHub (no token — uses your github.com session), GitLab (REST API + a PAT with `api` scope; self-hosted supported), and YouTrack (REST API + a permanent token).
+- **Workspaces and shared accounts.** Each **workspace** points at one repo/project. Reusable **Accounts** hold YouTrack/GitLab credentials and are shared across workspaces, so you configure a credential once. (GitHub needs no account.)
+- **Optional AI assistant.** Sign in with an OpenAI Codex / ChatGPT subscription (OAuth, no pay-per-use API key). **Summarize title** writes an issue title from your description plus the screenshots. **Smart dictation** lets you type or dictate (speech transcribed via your subscription) and the model writes the title and a Markdown body, referencing the numbered boxes in your screenshot. Prompts are editable, with restore-to-default; the model list is fetched live.
+- **Templates and placeholders.** Default title and body templates support `{pageTitle}`, `{pageUrl}`, and `{type}` so every issue starts pre-filled.
+- **Localized.** Interface in English, Simplified Chinese, and Japanese — auto-detected from your system on first run, switchable in Settings.
+- **Portable settings.** Export and import your configuration as JSON.
 
-## Requirements
+## Quickstart
 
-- Google Chrome (or a Chromium-based browser) with Manifest V3 support.
-- For GitHub targets: an active github.com session in the same browser, signed in to an
-  account with access to the target repository (including private repositories).
-- For YouTrack targets: the instance base URL, a project, and a permanent token.
+The extension is TypeScript and must be built before it can be loaded.
 
-## Installation
+```bash
+git clone https://github.com/wa-otomia/shot2issue
+cd shot2issue
+npm install
+npm run build      # compiles TypeScript and copies assets into build/
+```
 
-The extension is written in TypeScript and must be compiled before it can be loaded.
+Then load it in Chrome:
 
-1. Clone or download this repository.
-2. Run `npm install`, then `npm run build`. This compiles TypeScript and copies static
-   assets into the `build/` directory.
-3. Open `chrome://extensions`.
-4. Enable **Developer mode** (top right).
-5. Choose **Load unpacked** and select the **`build/`** directory (not the repository
-   root and not `src/`).
-6. The options page opens on first install. Add at least one workspace.
+1. Open `chrome://extensions`.
+2. Enable **Developer mode** (top right).
+3. Click **Load unpacked** and select the **`build/`** directory (not the repo root, not `src/`).
+4. The options page opens on first install — add at least one workspace.
 
-A packaged build (`dist/shot2issue-<version>.zip`, see [Building](#building)) can be
-loaded the same way or uploaded to the Chrome Web Store.
-
-To iterate while developing, run `npm run watch`, which recompiles on every change; then
-use the **Reload** button on the extension card in `chrome://extensions` to pick up the
-new output. Settings are preserved across reloads; removing the extension clears them.
+To iterate, run `npm run watch` to recompile on every change, then hit **Reload** on the extension card in `chrome://extensions`. Settings survive reloads; removing the extension clears them.
 
 ## Usage
 
-1. Open the page you want to capture and click the shot2issue toolbar icon. The visible
-   area is captured and the editor opens in a new tab.
-2. In the editor, choose a workspace and type, annotate the screenshot, and edit the
-   title and description. The title defaults to the page title followed by the selected
-   type; the body is prefilled with the page URL.
-3. Click **Submit issue**. The extension opens the target repository's new-issue page in
-   a background tab, uploads the screenshot, fills in the form, and submits. On success
-   it shows a link to the issue (and, if enabled, returns you to the captured page).
+1. Open the page you want to capture and click the shot2issue toolbar icon — or pick a capture source from the popup. The editor opens in a new tab.
+2. Choose a workspace and type, annotate the screenshot(s), and edit the title and description. The title defaults to the page title plus the selected type; the body is prefilled with the page URL. (Optionally let the AI assistant write them.)
+3. Click **Submit issue**. The screenshot is attached and rendered inline, and you get a link to the new issue.
 
-If submission fails, use **Download PNG** to save the annotated image and attach it
-manually, or **Submit without screenshot** to file the issue without the image.
+If something goes wrong, **Download PNG** saves the annotated image to attach manually, and **Submit without screenshot** files the issue without the image.
 
-## Configuration
+## Issue targets
 
-Open the options page from `chrome://extensions` (Details → Extension options) or from
-the **Settings** link in the editor. Settings are organized into tabs: **Workspaces**,
-**Accounts**, **AI**, and **General**.
+Each tracker is configured as one or more **workspaces** in Settings. YouTrack and GitLab credentials live on reusable **Accounts** that workspaces share.
 
-- **Accounts** — reusable credentials for a YouTrack or GitLab instance: a display name,
-  base URL, and a token (YouTrack permanent token, or a GitLab personal access token with
-  the `api` scope). Multiple workspaces on the same instance share one account. GitHub
-  needs no account (it uses your github.com web session). Accounts are stored locally and
-  included in settings backups.
-- **Workspaces** — each workspace is one issue target. For GitHub: a display name, owner
-  (user or organization), and repository name. For YouTrack/GitLab: a display name, an
-  account (picked from the Accounts tab), and the project (YouTrack short name/id, or
-  GitLab numeric id or `group/project` path). Legacy YouTrack workspaces that stored their
-  credentials inline are migrated to an account automatically.
-- **Types** — shown in the editor's Type dropdown and used in the default title.
-  Defaults: Change, Bug, Feature.
-- **Language** — English, Simplified Chinese, or Japanese.
-- **Default title & body** — templates that prefill new issues, with the placeholders
-  `{pageTitle}`, `{pageUrl}`, and `{type}`.
-- **AI assistant** — optionally sign in with an OpenAI Codex / ChatGPT account to generate
-  titles. See [AI assistant](#ai-assistant) below.
-- **Behavior** — whether to close the editor and switch back to the captured page after a
-  successful submission.
-- **Keyboard shortcut** — optionally trigger a capture with a keyboard shortcut. Off by
-  default; enable it here, then assign the key combination on Chrome's shortcuts page
-  (`chrome://extensions/shortcuts`), which the “Set shortcut” button opens.
-- **Backup / restore** — export settings to a JSON file and import them later. Settings
-  are stored only in this browser (`chrome.storage.local`).
+| Target | Auth | Notes |
+| --- | --- | --- |
+| **GitHub** | Your existing github.com session | No Personal Access Token. Set owner (user/org) and repository. |
+| **GitLab** | Account PAT with `api` scope | REST API. Self-hosted supported via the account's base URL. Project is the numeric id or `group/project` path. |
+| **YouTrack** | Account permanent token | REST API. Set the instance base URL and project short name/id. |
 
-## How submission works
+Settings are organized into tabs: **Workspaces**, **Accounts**, **AI**, **General**, and **Language**.
 
-### GitHub
+## How it works
 
-GitHub issue attachments (`user-attachments/assets`) have no official API: personal
-access tokens, OAuth, and GitHub Apps cannot upload them. Only the github.com web
-session can. The extension therefore reproduces what a person does manually, on the
-target repository's new-issue page:
+- **GitHub** — shot2issue files the issue through your existing github.com session, so the screenshot uploads as a genuine inline attachment and renders correctly even in private repositories. No token to create or store.
+- **GitLab / YouTrack** — shot2issue talks to the documented REST API with your token: it uploads each screenshot and creates the issue with the image embedded inline. The first submission to a new instance prompts Chrome for permission to access that origin (instance URLs aren't known in advance).
 
-1. Open `https://github.com/<owner>/<repo>/issues/new` in a background tab.
-2. Inject a script (via `chrome.scripting.executeScript` in the page's main world) that
-   fills in the title and description and pastes the screenshot into the body. GitHub's
-   own page code performs the upload, which is genuinely same-origin and therefore
-   passes its verified-fetch checks, and inserts the `![](url)` markdown.
-3. Wait until the upload has completed, then click **Create**.
-4. Read the resulting issue URL and close the background tab.
+## AI assistant (optional)
 
-Two constraints make this the only reliable approach:
+The AI assistant is off until you connect it. Sign in with an OpenAI Codex / ChatGPT-subscription account (OAuth) — it uses your subscription, not a pay-per-use API key.
 
-- A cross-origin request from the extension to GitHub's upload endpoint cannot forge a
-  same-origin context and is rejected (HTTP 422).
-- An attachment is associated correctly only when the composer that uploaded it is
-  submitted. Uploading in one place and referencing the URL from another (for example,
-  an issue created through the REST API) causes the image to return 404 in private
-  repositories.
+- **Summarize title** generates an issue title from the current type, page title, page URL, your description, and the screenshot.
+- **Smart dictation** opens a dialog where you type or dictate a description (recording is transcribed via your subscription). The model then writes a title and a Markdown body from your text, the screenshots, and the page metadata — referencing any numbered boxes in the image.
 
-The screenshot's data URL is decoded with `atob` rather than `fetch`, because
-github.com's content security policy blocks `fetch` of `data:` URLs.
-
-This path depends on the structure of GitHub's web UI and may need updating if that UI
-changes. The code uses several selectors, a paste-then-drop fallback, and explicit
-timeouts. The **Download PNG** and **Submit without screenshot** actions remain available
-as fallbacks.
-
-### YouTrack
-
-YouTrack provides a documented REST API for both issue creation and attachments, so this
-path uses the API directly with your permanent token: the extension creates the issue
-(`POST /api/issues`), then uploads the screenshot (`POST /api/issues/{id}/attachments`)
-and embeds it inline by file name. The first submission to a given instance prompts for
-permission to access that origin, since instance URLs are not known in advance.
-
-### GitLab
-
-GitLab also has a documented REST API. Using the account's personal access token
-(`PRIVATE-TOKEN` header, `api` scope), the extension uploads each screenshot to the project
-(`POST /api/v4/projects/:id/uploads`), then creates the issue
-(`POST /api/v4/projects/:id/issues`) with the returned markdown embedded in the description.
-The project is the numeric id or the URL-encoded `group/project` path; self-hosted instances
-work via the account's base URL. The first submission to an instance prompts for permission
-to access that origin.
-
-## AI assistant
-
-The optional AI assistant signs in with an OpenAI Codex / ChatGPT-subscription account
-(OAuth, PKCE) so it can generate an issue title from your description and show the
-available models and usage. It uses your subscription rather than a pay-per-use API key.
-
-Codex's OAuth client only registers a `http://localhost:1455` callback (the extension's own
-`chromiumapp.org` redirect is rejected with `authorize_hydra_invalid_request`), and an
-extension can't listen on localhost. So **Sign in with ChatGPT** opens the authorize page
-with that localhost redirect and then:
-
-1. **Automatic** — the extension watches the sign-in tab and, when it navigates to the
-   unreachable `http://localhost:1455/auth/callback?code=…`, reads the `?code=` straight
-   from the tab's URL (no manual step). This needs host permission for the localhost
-   callback, which is requested together with the OpenAI origins when you connect.
-2. **Manual (paste link)** — the fallback shown alongside: if you aren't captured
-   automatically, copy that “can't reach localhost” address and paste it back, and the
-   extension completes the PKCE token exchange itself.
-
-In the editor, **Summarize title** then generates a title from
-the current type, page title, page URL, description, and the screenshot. The model list is
-fetched dynamically from the Codex models endpoint (with a curated fallback). The system
-prompt is editable in Settings, with a **Restore default prompt** button that resets it to
-the current interface language's default.
-
-**Smart dictation.** The **Smart dictation** button opens a dialog where you type a
-description or dictate it (recording is transcribed with your ChatGPT subscription,
-`whisper-1`). The
-model then writes a title and a Markdown body from that text, the screenshots, and the page
-metadata (structured JSON output), referencing any numbered boxes in the screenshots. The
-dialog keeps its content between opens and can generate repeatedly. Note: the transcription
-endpoint is a Codex Desktop route that is undocumented and accepts only the ChatGPT session
-token (not an API key), so dictation is best-effort and may change (typing always works).
-Capture failures (including screen capture) are shown as a system notification. Like the
-title prompt, the complaint system prompt is editable in Settings,
-each with its own **Restore default prompt** button.
-
-> Note: the assistant talks to undocumented `chatgpt.com` endpoints that may change, and is
-> subject to OpenAI's terms for your account. Tokens are stored in `chrome.storage.local`
-> only and are never included in settings backups.
+Both prompts are editable in Settings, each with a **Restore default prompt** button, and the model list is fetched live. The assistant talks to OpenAI/ChatGPT endpoints and is subject to OpenAI's terms for your account. Its tokens are stored in `chrome.storage.local` only and are **never** included in settings exports.
 
 ## Permissions
 
 | Permission | Purpose |
 | --- | --- |
-| `activeTab` | Granted when the icon is clicked; used to capture the visible tab and read its title and URL. |
-| `storage` | Stores settings in `chrome.storage.local` and the pending screenshot in `chrome.storage.session`. |
-| `scripting` | Injects the submission script into the github.com tab, and the frame-grab script into the active tab for screen/window capture. |
-| `desktopCapture` | Shows the screen/window picker when you choose “Screen or window”. Only used for that capture source. |
+| `activeTab` | Granted when you click the icon; used to capture the visible tab and read its title and URL. |
+| `storage` | Stores settings and the pending screenshots in `chrome.storage.local`. |
+| `unlimitedStorage` | Lets full-screen / multi-image captures be staged without hitting the small session-storage quota. Staged images are cleared after submit and when the editor closes. |
+| `scripting` | Files the issue on github.com via your session, and runs the frame-grab script in the active tab for screen/window capture. |
+| `desktopCapture` | Shows the screen/window picker when you capture the screen, a window, or another app. Used only for that capture source. |
+| `clipboardRead` | Reads an image from the clipboard for **Paste from clipboard** and the editor's paste. |
+| `notifications` | Shows a system notification when a capture fails (including screen capture). |
 
-Host permissions are limited to `https://github.com/*` by default, the only origin the
-extension contacts for GitHub. The screenshot bytes are uploaded to GitHub's storage by
-GitHub's own page code, so the extension does not need permission for those storage hosts.
-
-YouTrack instance URLs are not known in advance, so they are declared as
-`optional_host_permissions` and requested at runtime: the first time you save or submit
-to an instance, Chrome asks permission to access that specific origin. The AI assistant
-similarly requests `https://auth.openai.com/*`, `https://chatgpt.com/*`, and
-`http://localhost:1455/*` (to auto-read the sign-in callback) when you connect it.
+Host permissions are limited to `https://github.com/*` by default — the only origin the extension contacts out of the box. YouTrack and GitLab instance URLs aren't known in advance, so they're requested at runtime: the first time you save or submit to an instance, Chrome asks permission for that specific origin. The AI assistant similarly requests `https://auth.openai.com/*`, `https://chatgpt.com/*`, and `http://localhost:1455/*` when you connect it.
 
 ## Privacy
 
-- Only the screenshot, title, description, and the current page URL are used. The
-  extension does not collect console output, network activity, or device information,
-  and includes no telemetry.
-- The AI assistant is off until you connect it. When you use **Summarize title**, the type,
-  description, page URL, and the current (annotated) screenshot are sent to OpenAI to
-  generate a title; **Smart dictation** additionally sends the recorded audio for transcription.
-  Its tokens are stored in `chrome.storage.local` only and are excluded from settings
-  backups.
-- Attachment visibility follows repository visibility. Attachments in private
-  repositories require sign-in to view (since 2023-05); attachments in public
-  repositories are visible anonymously. Choose the target repository accordingly.
-- The mosaic tool provides redaction: cover sensitive content before submitting. It
-  samples the original screenshot and pixelates the selected region.
-- No token or secret is stored; the extension relies on your existing github.com
-  session.
+- **Minimal data.** Only the screenshot, title, description, and the current page URL are used. shot2issue collects no console output, network activity, device information, or telemetry.
+- **No GitHub token.** GitHub uses your existing web session — no token or secret is created or stored.
+- **Tokens stay local.** YouTrack/GitLab tokens and the AI assistant's tokens are stored only in `chrome.storage.local`. AI tokens are excluded from settings exports.
+- **Attachment visibility follows the repo.** Attachments in private repositories require sign-in to view; attachments in public repositories are visible anonymously. Choose the target repository accordingly.
+- **Built-in redaction.** The mosaic tool pixelates a region of the original screenshot — cover sensitive content before you submit.
 
-## Project structure
+## Building a release archive
 
-`src/` holds the TypeScript sources and static assets. The build compiles them into
-`build/`, which is the **Load unpacked** target; `dist/` holds the packaged release zip.
-
-```
-shot2issue/
-├── src/                          # TypeScript sources + static assets
-│   ├── manifest.json             # MV3 manifest; github.com host perm + optional YouTrack origins
-│   ├── background.ts             # service worker: capture on icon click / shortcut, open editor
-│   ├── editor.ts / .html / .css  # main UI: selection, canvas annotation, submission
-│   ├── options.ts / .html        # settings: workspaces, types, language, shortcut, backup
-│   ├── lib/
-│   │   ├── storage.ts            # chrome.storage access (settings + pending screenshot)
-│   │   ├── i18n.ts               # interface strings (en / zh / ja)
-│   │   ├── github-attach.ts      # github.com sign-in detection
-│   │   ├── page-upload.ts        # GitHub: in-page submission via github.com's web form
-│   │   ├── youtrack.ts           # YouTrack: issue + attachment via REST API
-│   │   └── providers/
-│   │       ├── index.ts          # provider registry
-│   │       ├── types.ts          # Provider interface and shared types
-│   │       ├── github.ts         # GitHub provider
-│   │       └── youtrack.ts       # YouTrack provider
-│   └── icons/                    # 16 / 48 / 128 px icons
-├── scripts/copy-assets.mjs       # copy static assets (html, css, manifest, icons) into build/
-├── package.json                  # npm scripts: build, watch, typecheck
-├── tsconfig.json                 # strict NodeNext TypeScript configuration
-├── build/                        # compiled output; load unpacked points here (generated)
-├── dist/                         # packaged release zip (generated)
-├── Dockerfile                    # Docker build for the release archive
-├── .github/workflows/build.yml   # CI: Docker build, upload artifact, attach to releases
-├── LICENSE
-└── README.md
-```
-
-## Building
-
-A build is required before **Load unpacked**, since the sources are TypeScript. Compile
-locally with npm:
-
-```bash
-npm install && npm run build
-# Output: build/ (the Load unpacked target)
-```
-
-Or build the distributable archive with Docker, which produces the release zip without a
-local toolchain:
+You can also build the distributable zip with Docker, no local toolchain required:
 
 ```bash
 docker build --target export --output type=local,dest=dist .
 # Output: dist/shot2issue-<version>.zip
 ```
 
-Continuous integration ([`.github/workflows/build.yml`](.github/workflows/build.yml))
-runs the Docker build on every push to `main`, on pull requests, and on manual runs,
-uploading the archive as a workflow artifact. Pushing a `v*` tag also attaches the
-archive to a GitHub release:
+CI ([`.github/workflows/build.yml`](.github/workflows/build.yml)) runs the Docker build on every push to `main`, on pull requests, and on manual runs, uploading the archive as a workflow artifact. Pushing a `v*` tag also attaches the archive to a GitHub release.
 
-```bash
-git tag v1.0.0 && git push origin v1.0.0
+## Project structure
+
+`src/` holds the TypeScript sources and static assets. The build compiles them into `build/`, which is the **Load unpacked** target; `dist/` holds the packaged release zip.
+
 ```
-
-## Testing
-
-A Playwright smoke test ([`tests/smoke.mjs`](tests/smoke.mjs)) loads the built extension
-and checks the in-extension surfaces — provider field switching and i18n on the options
-page, and the editor's annotation tools (rectangle, pen, transparent text), undo, and
-Esc-to-close. It does not exercise live submission to GitHub or YouTrack, which needs real
-accounts and sessions.
-
-```bash
-npm run build
-npx playwright install chromium   # first run only
-xvfb-run -a npm test              # on Linux without a display; otherwise: npm test
+shot2issue/
+├── src/                  # TypeScript sources + static assets
+│   ├── manifest.json     # MV3 manifest
+│   ├── background.ts     # service worker: capture on icon/shortcut, open editor
+│   ├── editor.*          # main UI: capture, canvas annotation, submission
+│   ├── options.*         # settings: workspaces, accounts, AI, general, language
+│   └── lib/              # storage, i18n, and providers/ (GitHub / GitLab / YouTrack)
+├── scripts/              # asset-copy build step
+├── build/                # compiled output — the Load unpacked target (generated)
+├── dist/                 # packaged release zip (generated)
+└── Dockerfile            # Docker build for the release archive
 ```
-
-The README screenshots are produced the same way with `npm run screenshots`.
 
 ## Adding an issue backend
 
-Each issue tracker is a provider. To add one, implement the `Provider` interface from
-[`src/lib/providers/types.ts`](src/lib/providers/types.ts) in a new module under
-`src/lib/providers/`, then register it in
-[`src/lib/providers/index.ts`](src/lib/providers/index.ts). The provider declares its
-configuration fields, validates a workspace, requests any host permissions it needs, and
-implements `submit()`; the editor and options pages pick it up from the registry.
+Each tracker is a provider. To add one, implement the `Provider` interface from [`src/lib/providers/types.ts`](src/lib/providers/types.ts) in a new module under `src/lib/providers/`, then register it in [`src/lib/providers/index.ts`](src/lib/providers/index.ts). The provider declares its configuration fields, validates a workspace, requests any host permissions it needs, and implements `submit()`; the editor and options pages pick it up from the registry.
 
 ## Limitations
 
-- Captures the visible area only; full-page or scrolling capture is not supported.
-- Restricted pages such as `chrome://` and the Chrome Web Store cannot be captured; the
-  editor reports this.
+- Captures the visible area only — no full-page or scrolling capture.
+- Restricted pages such as `chrome://` and the Chrome Web Store cannot be captured; the editor tells you when.
 - Labels are not set automatically.
-- The submission flow depends on GitHub's current web UI and may require updates when
-  that UI changes.
 
 ## License
 

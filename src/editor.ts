@@ -2,8 +2,9 @@
 // canvas, lets the user pick a workspace/type, annotate, fill in a title/description, and
 // submit through the workspace's provider.
 //
-// The screenshot comes from chrome.storage.session, written by the service worker when
-// the toolbar icon was clicked (or the keyboard shortcut was used).
+// The screenshot comes from chrome.storage.local, written by the service worker when
+// the toolbar icon was clicked (or the keyboard shortcut was used). Images can also be
+// added directly here by pasting from the clipboard (Ctrl+V or the Paste button).
 
 import {
   getConfig,
@@ -14,6 +15,7 @@ import {
   getAiAuth,
   patchAiAuth,
   accountFor,
+  makeAttachmentId,
 } from './lib/storage.js';
 import { setLanguage, localizeDom, t } from './lib/i18n.js';
 import { getProvider } from './lib/providers/index.js';
@@ -45,6 +47,7 @@ const els = {
   clear: $('clear'),
   download: $('download'),
   copy: $('copy'),
+  paste: $('paste') as HTMLButtonElement,
   workspace: $('workspace') as HTMLSelectElement,
   type: $('type') as HTMLSelectElement,
   title: $('title') as HTMLInputElement,
@@ -90,11 +93,14 @@ function active(): Attachment | undefined {
 function primary(): Attachment | undefined {
   return attachments[0];
 }
-/** Persist the in-memory attachments back to session storage (fire-and-forget). */
+/** Persist the in-memory attachments back to local storage (fire-and-forget). */
 function persist(): void {
   if (!shots) return;
   shots = { ...shots, attachments };
-  void setPendingShots(shots);
+  setPendingShots(shots).catch((e) => {
+    // The in-memory edit still works and can be submitted; it just may not survive a reload.
+    console.warn('Could not persist staged screenshots:', e);
+  });
 }
 
 // ============================================================================
@@ -231,7 +237,7 @@ function renderThumbs(): void {
 
 /** Live-append screenshots captured while this editor is open (background writes them). */
 function watchForAppends(): void {
-  chrome.storage.session.onChanged.addListener((changes) => {
+  chrome.storage.local.onChanged.addListener((changes) => {
     const c = changes['pendingShots'];
     if (!c || !c.newValue) return;
     const incoming = c.newValue as PendingShots;
@@ -1064,6 +1070,85 @@ async function copyCanvas(): Promise<void> {
 }
 
 els.copy.addEventListener('click', () => void copyCanvas());
+
+// ---- Clipboard paste: add an image from the clipboard as a new attachment ----
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error || new Error('read failed'));
+    r.readAsDataURL(blob);
+  });
+}
+
+/** Add an image (data URL) as a new attachment, select it, and persist. */
+async function addImageAttachment(dataUrl: string, title = t('clipboardImage')): Promise<void> {
+  commitTextIfAny();
+  const att: Attachment = {
+    id: makeAttachmentId(),
+    dataUrl,
+    pageUrl: '',
+    pageTitle: title,
+    ops: [],
+    createdAt: Date.now(),
+  };
+  attachments.push(att);
+  if (!shots) {
+    // Editor opened empty (manual paste, no capture): start an envelope and record this tab
+    // so the background's onRemoved/onStartup cleanup clears the staged image when it closes.
+    shots = { attachments: [] };
+    try {
+      const me = await chrome.tabs.getCurrent();
+      if (me && me.id != null) shots.editorTabId = me.id;
+    } catch {
+      /* getCurrent unavailable */
+    }
+  } else {
+    shots = { ...shots, error: undefined }; // a successful paste clears any prior capture error
+  }
+  activeIndex = attachments.length - 1;
+  loadActive();
+  renderThumbs();
+  disableSubmit(false);
+  persist();
+  showToast(t('pasteAdded'));
+}
+
+// Ctrl/Cmd+V (or right-click → Paste): if the clipboard holds an image, add it. Text paste
+// into the title/description fields is untouched (those events carry no image item).
+document.addEventListener('paste', (e) => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const it of Array.from(items)) {
+    if (it.kind === 'file' && it.type.startsWith('image/')) {
+      const blob = it.getAsFile();
+      if (!blob) continue;
+      e.preventDefault();
+      void blobToDataUrl(blob)
+        .then((url) => addImageAttachment(url))
+        .catch((err) => showToast(t('pasteFailed', [err instanceof Error ? err.message : String(err)])));
+      return;
+    }
+  }
+});
+
+// Explicit "Paste" button (uses the async clipboard API; needs the clipboardRead permission).
+async function pasteFromClipboard(): Promise<void> {
+  try {
+    const items = await navigator.clipboard.read();
+    for (const it of items) {
+      const type = it.types.find((ty) => ty.startsWith('image/'));
+      if (type) {
+        await addImageAttachment(await blobToDataUrl(await it.getType(type)));
+        return;
+      }
+    }
+    showToast(t('pasteNoImage'));
+  } catch (e) {
+    showToast(t('pasteFailed', [e instanceof Error ? e.message : String(e)]));
+  }
+}
+els.paste.addEventListener('click', () => void pasteFromClipboard());
 
 // ============================================================================
 // 4) Submit (delegated to the workspace's provider)

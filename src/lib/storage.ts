@@ -2,11 +2,12 @@
 //
 // - Configuration (workspaces, types, language, behavior, last selection) lives in
 //   chrome.storage.local and persists across sessions.
-// - The screenshot awaiting edit lives in chrome.storage.session (in-memory, cleared
-//   when the browser restarts) so large images are not kept on disk.
+// - The screenshots awaiting edit live in chrome.storage.local (with the unlimitedStorage
+//   permission, since full-screen / multi-image captures exceed session's ~10MB quota); they
+//   are cleared after submit, when the editor tab closes, and on browser startup.
 // This module only reads and writes; it contains no network logic.
 
-import type { Config, Workspace, Account, PendingShot, PendingShots, Attachment, AiAuth, AiPendingAuth } from './types.js';
+import type { Config, Workspace, Account, PendingShot, PendingShots, Attachment, AiAuth, AiPendingAuth, EditorPrefs } from './types.js';
 import { detectLang } from './i18n.js';
 
 /** Default configuration, used on first install and to backfill missing fields. */
@@ -118,6 +119,26 @@ export async function patchConfig(patch: Partial<Config>): Promise<Config> {
   return next;
 }
 
+// Editor tool preferences (remembered color/stroke/thickness/font size). UI-only, kept under
+// their own key so they never appear in configuration exports.
+const EDITOR_PREFS_KEY = 'editorPrefs';
+export const DEFAULT_EDITOR_PREFS: EditorPrefs = {
+  color: '#ff3b30',
+  strokeColor: '#ffffff',
+  width: 4,
+  fontSize: 28,
+};
+export async function getEditorPrefs(): Promise<EditorPrefs> {
+  const raw = await chrome.storage.local.get(EDITOR_PREFS_KEY);
+  const stored = (raw[EDITOR_PREFS_KEY] ?? {}) as Partial<EditorPrefs>;
+  return { ...DEFAULT_EDITOR_PREFS, ...stored };
+}
+export async function patchEditorPrefs(patch: Partial<EditorPrefs>): Promise<EditorPrefs> {
+  const next = { ...(await getEditorPrefs()), ...patch };
+  await chrome.storage.local.set({ [EDITOR_PREFS_KEY]: next });
+  return next;
+}
+
 // The active Settings tab is UI-only and lives under its own key so it never appears in
 // configuration exports.
 const OPTIONS_TAB_KEY = 'optionsTab';
@@ -137,11 +158,16 @@ export async function rememberSelection({ workspaceId, type }: { workspaceId?: s
   return patchConfig(patch);
 }
 
-// ---- Pending screenshots (session storage) ---------------------------------
+// ---- Pending screenshots (local storage) -----------------------------------
 //
 // Written by the service worker when the icon/shortcut captures, read by the editor.
 // Multiple attachments are staged together and edited as one issue. A legacy single-shot
 // envelope (pendingShot) is migrated on read.
+//
+// Stored in chrome.storage.local (with the "unlimitedStorage" permission) rather than
+// chrome.storage.session: full-screen / multi-image captures easily exceed session's ~10MB
+// quota ("Session storage quota bytes exceeded"). They are cleared after submit and when the
+// editor tab closes, so they are not retained beyond the editing session.
 const PENDING_KEY = 'pendingShot'; // legacy single shot
 const PENDING_SHOTS_KEY = 'pendingShots'; // multi-attachment envelope
 
@@ -165,7 +191,7 @@ function shotToAttachment(shot: PendingShot): Attachment {
 
 /** Read the staged screenshots, migrating a legacy single shot if that's all there is. */
 export async function getPendingShots(): Promise<PendingShots | null> {
-  const raw = await chrome.storage.session.get([PENDING_SHOTS_KEY, PENDING_KEY]);
+  const raw = await chrome.storage.local.get([PENDING_SHOTS_KEY, PENDING_KEY]);
   const envelope = raw[PENDING_SHOTS_KEY] as PendingShots | undefined;
   if (envelope) return envelope;
   const legacy = raw[PENDING_KEY] as PendingShot | undefined;
@@ -182,7 +208,7 @@ export async function getPendingShots(): Promise<PendingShots | null> {
 
 /** Stage the full set of screenshots for editing. */
 export async function setPendingShots(p: PendingShots): Promise<void> {
-  await chrome.storage.session.set({ [PENDING_SHOTS_KEY]: p });
+  await chrome.storage.local.set({ [PENDING_SHOTS_KEY]: p });
 }
 
 /** Update a subset of the staged set (read-modify-write). */
@@ -203,7 +229,7 @@ export async function appendPendingShot(att: Attachment): Promise<PendingShots> 
 
 /** Clear the staged screenshots (both the new and legacy keys). */
 export async function clearPendingShots(): Promise<void> {
-  await chrome.storage.session.remove([PENDING_SHOTS_KEY, PENDING_KEY]);
+  await chrome.storage.local.remove([PENDING_SHOTS_KEY, PENDING_KEY]);
 }
 
 // ---- AI assistant credentials (local storage) ------------------------------

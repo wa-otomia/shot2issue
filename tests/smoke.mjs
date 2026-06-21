@@ -68,7 +68,8 @@ try {
           lastType: 'Bug',
         },
       }),
-      chrome.storage.session.set({
+      // Staged screenshots now live in local storage (was session) to avoid the quota limit.
+      chrome.storage.local.set({
         pendingShots: {
           attachments: [
             { id: 'a1', dataUrl, pageUrl: 'https://example.com/x', pageTitle: 'Example', ops: [], createdAt: 1 },
@@ -89,6 +90,11 @@ try {
 
   // Accounts tab: the seeded inline-YouTrack workspace was migrated to an Account.
   await options.click('[data-tab="accounts"]');
+  await options.waitForSelector('.acct-card');
+  // Account cards are collapsed by default; expand them to read/edit the credential fields.
+  check('options: account cards collapsed by default',
+    (await options.$$eval('.acct-card.collapsed', (els) => els.length)) >= 1);
+  for (const tog of await options.$$('.acct-card.collapsed [data-act="toggle"]')) await tog.click();
   await options.waitForSelector('.acct-card [data-k="baseUrl"]');
   check('options: legacy YouTrack workspace migrated to an account',
     (await options.$eval('.acct-card [data-k="baseUrl"]', (el) => el.value)) === 'https://example.youtrack.cloud' &&
@@ -97,6 +103,8 @@ try {
   check('options: accounts hold the credential fields (baseUrl + token)',
     (await options.$$eval('.acct-card [data-k="baseUrl"]', (els) => els.length)) >= 2 &&
       (await options.$$eval('.acct-card [data-k="token"]', (els) => els.length)) >= 2);
+  check('options: account delete lives in the expandable body',
+    (await options.$('.acct-card .acct-body [data-act="remove"]')) !== null);
 
   // Workspaces tab: GitHub card (owner/repo); account-based card shows account + project.
   await options.click('[data-tab="workspaces"]');
@@ -124,6 +132,16 @@ try {
   check('options: workspace card collapses on toggle',
     await options.$eval(card, (el) => el.classList.contains('collapsed')));
   await options.click(`${card} [data-act="toggle"]`); // re-expand
+
+  // Delete lives inside the expanded body and needs a second click to confirm.
+  check('options: workspace delete is inside the body (not the header)',
+    (await options.$(`${card} .ws-body [data-act="remove"]`)) !== null &&
+      (await options.$(`${card} .ws-head [data-act="remove"]`)) === null);
+  const wsCountBefore = await options.$$eval('.ws-card', (els) => els.length);
+  await options.click(`${card} [data-act="remove"]`); // first click only arms it
+  check('options: first delete click arms, does not remove',
+    (await options.$$eval('.ws-card', (els) => els.length)) === wsCountBefore &&
+      (await options.$eval(`${card} [data-act="remove"]`, (el) => el.classList.contains('armed'))) === true);
 
   // Language tab: its own tab, switching the language localizes the UI.
   check('options: Language has its own tab', (await options.$('[data-tab="language"]')) !== null);
@@ -276,6 +294,7 @@ try {
   await editor.waitForSelector('.toast.show', { timeout: 3000 }).catch(() => {});
   const copyToast = await editor.$eval('.toast', (el) => el.textContent || '').catch(() => '');
   check('editor: Copy PNG copies to clipboard', copyToast === 'Copied to clipboard');
+  check('editor: has a Paste button for clipboard images', !!(await editor.$('#paste')));
 
   // Delete the 2nd attachment via its thumbnail's remove button → one remains.
   await editor.click('#thumbStrip .thumb:nth-of-type(2) .thumb-del');
@@ -381,8 +400,8 @@ try {
   popup.on('pageerror', (e) => pageErrors.push(String(e)));
   await popup.goto(`chrome-extension://${extId}/popup.html`);
   await popup.waitForSelector('#optWeb');
-  check('popup: shows web + desktop capture options',
-    !!(await popup.$('#optWeb')) && !!(await popup.$('#optDesktop')));
+  check('popup: shows web + desktop + clipboard capture options',
+    !!(await popup.$('#optWeb')) && !!(await popup.$('#optDesktop')) && !!(await popup.$('#optPaste')));
   check('popup: option labels are localized',
     (await popup.$eval('#optWeb', (el) => (el.textContent || '').trim())).length > 0);
   check('popup: shortcut chip hidden when none is bound',
