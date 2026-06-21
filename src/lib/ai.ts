@@ -28,8 +28,18 @@ export const ORIGINATOR = 'codex_cli_rs';
 export const RESPONSES_URL = 'https://chatgpt.com/backend-api/codex/responses';
 /** Origins the assistant needs; requested as optional host permissions on a gesture. */
 export const AI_ORIGINS = ['https://auth.openai.com/*', 'https://chatgpt.com/*'];
-/** Offered when the live model list is unavailable; the user can still pick or edit. */
-export const DEFAULT_MODELS = ['gpt-5', 'gpt-5-codex', 'gpt-5-mini'];
+/**
+ * Models selectable with Codex when signed in with a ChatGPT account (mid-2026). Note the
+ * dotted slugs: the consumer web /backend-api/models endpoint returns dashed slugs like
+ * "gpt-5-5" that the Codex responses endpoint rejects, so this curated list is the source
+ * of truth. gpt-5.5 is the recommended default; gpt-5.2 / gpt-5.3-codex are deprecated.
+ */
+export const DEFAULT_MODELS = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'];
+
+/** Coerce a possibly-stale or web-form model slug to a valid Codex model. */
+export function normalizeModel(model?: string): string {
+  return model && DEFAULT_MODELS.includes(model) ? model : DEFAULT_MODELS[0];
+}
 
 // ---- base64url + random ----------------------------------------------------
 function bytesToBase64Url(bytes: Uint8Array): string {
@@ -395,19 +405,14 @@ function authHeaders(auth: AiAuth): Record<string, string> {
   return h;
 }
 
-/** Best-effort model list; falls back to {@link DEFAULT_MODELS} on any failure. */
-export async function fetchModels(auth: AiAuth): Promise<string[]> {
-  try {
-    const res = await fetch('https://chatgpt.com/backend-api/models?history_and_training_disabled=false', {
-      headers: { ...authHeaders(auth), Accept: 'application/json' },
-    });
-    if (!res.ok) return DEFAULT_MODELS.slice();
-    const data = (await res.json()) as { models?: Array<{ slug?: string }> };
-    const slugs = (data.models || []).map((m) => m.slug).filter((s): s is string => !!s);
-    return slugs.length ? slugs : DEFAULT_MODELS.slice();
-  } catch {
-    return DEFAULT_MODELS.slice();
-  }
+/**
+ * The list of Codex-account models. The consumer https://chatgpt.com/backend-api/models
+ * endpoint returns dashed consumer slugs (e.g. "gpt-5-5") that the Codex responses endpoint
+ * rejects with HTTP 400, so we return the curated dotted list. A dynamic Codex models
+ * endpoint (with per-model timestamps) is being wired in a follow-up.
+ */
+export async function fetchModels(_auth: AiAuth): Promise<string[]> {
+  return DEFAULT_MODELS.slice();
 }
 
 /**
@@ -421,7 +426,14 @@ export async function generateTitle(
   let auth = await getAiAuth();
   if (!auth) throw new Error('Not connected. Sign in to the AI assistant in Settings.');
   auth = await ensureFreshAuth(auth);
-  const model = opts?.model || auth.model || DEFAULT_MODELS[0];
+  const model = normalizeModel(opts?.model || auth.model);
+  // Self-heal a stale/invalid stored model or list (e.g. a web "gpt-5-5" slug) so the
+  // saved state and the request both use a valid Codex model.
+  const storedBad = normalizeModel(auth.model) !== auth.model || !auth.models || auth.models.some((m) => !DEFAULT_MODELS.includes(m));
+  if (storedBad) {
+    auth = { ...auth, model: normalizeModel(auth.model), models: DEFAULT_MODELS.slice() };
+    await setAiAuth(auth);
+  }
   const { instructions, input } = buildTitlePrompt(content);
   const res = await fetch(RESPONSES_URL, {
     method: 'POST',

@@ -15,6 +15,7 @@ import {
   ensureAiPermissions,
   ensureFreshAuth,
   fetchModels,
+  normalizeModel,
   DEFAULT_MODELS,
 } from './lib/ai.js';
 import type { Config, Workspace, AiAuth, AiQuota } from './lib/types.js';
@@ -225,11 +226,19 @@ function renderUsage(q?: AiQuota): string {
 }
 
 async function renderAi(): Promise<void> {
-  const auth = await getAiAuth();
+  let auth = await getAiAuth();
   const connected = !!auth;
   els.aiDisconnected.classList.toggle('hidden', connected);
   els.aiConnectedBox.classList.toggle('hidden', !connected);
   if (!auth) return;
+
+  // Heal a stale/invalid model or list (e.g. dashed web slugs from an older version) so the
+  // dropdown and the stored selection are valid Codex models — no re-login required.
+  const badList = !auth.models || !auth.models.length || auth.models.some((m) => !DEFAULT_MODELS.includes(m));
+  const badModel = !auth.model || !DEFAULT_MODELS.includes(auth.model);
+  if (badList || badModel) {
+    auth = (await patchAiAuth({ models: DEFAULT_MODELS.slice(), model: normalizeModel(auth.model) })) || auth;
+  }
 
   els.aiAccount.textContent = auth.email || auth.accountId || '—';
   els.aiPlan.textContent = auth.planType || '—';
@@ -243,7 +252,7 @@ async function renderAi(): Promise<void> {
     opt.textContent = m;
     els.aiModel.appendChild(opt);
   }
-  els.aiModel.value = auth.model || models[0];
+  els.aiModel.value = normalizeModel(auth.model);
 }
 
 els.aiConnect.addEventListener('click', async () => {

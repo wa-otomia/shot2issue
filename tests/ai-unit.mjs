@@ -13,6 +13,8 @@ import {
   buildTitlePrompt,
   cleanTitle,
   extractOutputText,
+  normalizeModel,
+  DEFAULT_MODELS,
   CLIENT_ID,
 } from '../build/lib/ai.js';
 
@@ -90,6 +92,12 @@ check('extract: json output_text', extractOutputText(JSON.stringify({ output_tex
 check('extract: json nested output', extractOutputText(JSON.stringify({ output: [{ content: [{ type: 'output_text', text: 'Nested' }] }] }), 'application/json') === 'Nested');
 const sse = 'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"Hello "}\n\nevent: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"there"}\n\ndata: [DONE]\n';
 check('extract: sse deltas concatenated', extractOutputText(sse, 'text/event-stream') === 'Hello there');
+
+// --- model slugs (dotted Codex models, not dashed consumer slugs) ---
+check('models: default list uses dotted Codex slugs', DEFAULT_MODELS.includes('gpt-5.5') && !DEFAULT_MODELS.includes('gpt-5-5'));
+check('models: normalize keeps a valid model', normalizeModel('gpt-5.4') === 'gpt-5.4');
+check('models: normalize coerces a bad web slug to the default', normalizeModel('gpt-5-5') === DEFAULT_MODELS[0]);
+check('models: normalize handles undefined', normalizeModel(undefined) === DEFAULT_MODELS[0]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

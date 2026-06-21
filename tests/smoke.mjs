@@ -225,7 +225,8 @@ try {
       aiAuth: {
         accessToken: 'tok', refreshToken: 'r', idToken: 'i',
         accountId: 'acc_test', planType: 'pro', email: 'dev@example.com',
-        models: ['gpt-5', 'gpt-5-codex'], model: 'gpt-5', connectedAt: 1,
+        // Intentionally the BROKEN state (dashed consumer slugs) to verify self-heal.
+        models: ['gpt-5-5', 'gpt-5-5-mini'], model: 'gpt-5-5', connectedAt: 1,
       },
     });
   });
@@ -241,7 +242,10 @@ try {
     (await options2.$eval('#aiAccount', (el) => el.textContent)) === 'dev@example.com' &&
       (await options2.$eval('#aiPlan', (el) => el.textContent)) === 'pro');
   const aiModels = await options2.$$eval('#aiModel option', (opts) => opts.map((o) => o.value));
-  check('options: AI model dropdown populated from auth', aiModels.includes('gpt-5') && aiModels.includes('gpt-5-codex'));
+  check('options: AI model list self-heals to valid Codex slugs',
+    aiModels.includes('gpt-5.5') && aiModels.includes('gpt-5.4') && !aiModels.includes('gpt-5-5'));
+  check('options: AI selected model healed to default',
+    (await options2.$eval('#aiModel', (el) => el.value)) === 'gpt-5.5');
 
   const editor2 = await context.newPage();
   editor2.on('pageerror', (e) => pageErrors.push(String(e)));

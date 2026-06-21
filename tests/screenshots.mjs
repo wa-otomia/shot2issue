@@ -44,7 +44,7 @@ try {
         },
         aiAuth: {
           accessToken: 'demo', planType: 'pro', email: 'you@example.com',
-          models: ['gpt-5', 'gpt-5-codex'], model: 'gpt-5', connectedAt: 1,
+          models: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'], model: 'gpt-5.5', connectedAt: 1,
         },
       }),
       chrome.storage.session.set({
