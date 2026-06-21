@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "shot2issue — Screenshot to GitHub Issue",
-  "version": "1.10.2",
+  "version": "1.10.3",
   "description": "Capture a tab or your screen/window, annotate it, and file it as a GitHub or YouTrack issue with the screenshot inline. Client-side only; optional AI title assistant.",
   "icons": {
     "16": "icons/icon16.png",
