@@ -108,9 +108,12 @@ async function captureWeb(tab: chrome.tabs.Tab): Promise<void> {
 
 // ---- capture: screen / window (desktopCapture + offscreen) ------------------
 function chooseDesktopMedia(tab: chrome.tabs.Tab): Promise<string> {
+  // Only screen + window: capturing an arbitrary tab via desktopCapture needs a different
+  // consumption path and fails in the offscreen document with "Error starting tab capture".
+  // The current tab is already covered by the "Web screenshot" option.
   return new Promise((resolve) => {
     try {
-      chrome.desktopCapture.chooseDesktopMedia(['screen', 'window', 'tab'], tab, (streamId) => resolve(streamId || ''));
+      chrome.desktopCapture.chooseDesktopMedia(['screen', 'window'], tab, (streamId) => resolve(streamId || ''));
     } catch {
       resolve('');
     }
