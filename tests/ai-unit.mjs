@@ -17,6 +17,9 @@ import {
   normalizeModel,
   isValidModelSlug,
   parseModelsResponse,
+  buildComplaintInput,
+  buildComplaintRequest,
+  parseComplaintOutput,
   DEFAULT_MODELS,
   DEFAULT_TITLE_PROMPT,
   CLIENT_ID,
@@ -133,6 +136,18 @@ check('models: parse returns [] on garbage', parseModelsResponse('not json').len
 const reqImg = buildResponsesRequest({ model: 'gpt-5.5', instructions: 'i', input: 'x', images: ['data:image/png;base64,AAAA'] });
 check('responses: image is added as input_image', reqImg.input[0].content.length === 2 && reqImg.input[0].content[1].type === 'input_image' && reqImg.input[0].content[1].image_url === 'data:image/png;base64,AAAA');
 check('responses: no image -> only text part', buildResponsesRequest({ model: 'm', instructions: 'i', input: 'x' }).input[0].content.length === 1);
+
+// --- voice complaint helpers ---
+const ci = buildComplaintInput({ transcript: 'the save button does nothing', type: 'Bug', pageTitle: 'Dash', pageUrl: 'https://x/y' });
+check('complaint: input carries transcript + type', ci.includes('the save button does nothing') && ci.includes('Bug'));
+const creq = buildComplaintRequest({ model: 'gpt-5.5', instructions: 'i', input: 'x', images: ['data:image/png;base64,AAAA'], schema: true });
+check('complaint: schema request asks for json_schema', creq.text?.format?.type === 'json_schema' && creq.text.format.schema.required.join(',') === 'title,body');
+check('complaint: schema request still sends image + typed message', Array.isArray(creq.input) && creq.input[0].content.some((p) => p.type === 'input_image'));
+check('complaint: no-schema request omits text.format', buildComplaintRequest({ model: 'm', instructions: 'i', input: 'x', schema: false }).text === undefined);
+check('complaint: parse strict JSON', JSON.stringify(parseComplaintOutput('{"title":"T","body":"B"}')) === JSON.stringify({ title: 'T', body: 'B' }));
+check('complaint: parse JSON embedded in text', parseComplaintOutput('here you go: {"title":"T2","body":"B2"} done').title === 'T2');
+const fb = parseComplaintOutput('Save button broken\nWhen I click save nothing happens.');
+check('complaint: parse falls back to first line = title', fb.title === 'Save button broken' && fb.body === 'When I click save nothing happens.');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -167,6 +167,8 @@ try {
   }));
   check('editor: AI title button disabled + greyed when not connected',
     aiBtnState.disabled === true && aiBtnState.opacity < 1);
+  check('editor: Complaint button disabled when not connected',
+    (await editor.$eval('#complaint', (el) => el.disabled)) === true);
 
   // Geometry of the (scaled-to-fit) canvas; click using fractions so points land on it.
   const box = await editor.$eval('#canvas', (c) => {
@@ -311,6 +313,8 @@ try {
   }, { timeout: 8000 }).catch(() => {});
   check('editor: AI title button enabled when connected',
     (await editor2.$eval('#aiTitle', (el) => el.disabled)) === false);
+  check('editor: Complaint button enabled when connected',
+    (await editor2.$eval('#complaint', (el) => el.disabled)) === false);
 
   // --- Popup: two capture sources; shortcut chips hidden until bound ---
   const popup = await context.newPage();

@@ -53,7 +53,10 @@
 
       <label for="title" data-i18n="fieldTitle"></label>
       <input type="text" id="title" data-i18n-placeholder="titlePlaceholder" />
-      <button id="aiTitle" class="ghost" data-i18n="aiTitle" data-i18n-title="aiTitleTitle" style="margin-top:6px;"></button>
+      <div class="row" style="margin-top:6px;gap:8px;display:flex;flex-wrap:wrap;">
+        <button id="aiTitle" class="ghost" data-i18n="aiTitle" data-i18n-title="aiTitleTitle"></button>
+        <button id="complaint" class="ghost" data-i18n="complaint" data-i18n-title="complaintTitle"></button>
+      </div>
 
       <label for="body"><span data-i18n="fieldBody"></span> <span class="hint" data-i18n="bodyHint"></span></label>
       <textarea id="body" data-i18n-placeholder="bodyPlaceholder"></textarea>

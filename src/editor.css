@@ -148,6 +148,7 @@ button.ghost {
   background: Field; color: FieldText; border: 1px solid var(--border);
 }
 button.ghost:disabled { opacity: .5; cursor: not-allowed; color: var(--muted); }
+button.ghost.recording { color: #fff; background: var(--danger); border-color: var(--danger); }
 
 /* Attachment thumbnail strip */
 .thumb-strip { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 0; }

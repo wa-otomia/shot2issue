@@ -171,6 +171,14 @@ const MESSAGES: Record<string, Record<string, string>> = {
     aiTitleNeedConnect: 'Connect the AI assistant in Settings to use this.',
     aiTitleNeedBody: 'Add a description first so the AI has something to work with.',
     aiTitleFailed: 'AI title failed: {0}',
+    // Voice complaint
+    complaint: 'Complaint (voice)',
+    complaintTitle: 'Record a complaint; AI writes the title and description from it and the screenshots',
+    complaintRecording: '■ Stop & generate',
+    complaintTranscribing: 'Transcribing…',
+    complaintGenerating: 'Writing issue…',
+    complaintFailed: 'Complaint failed: {0}',
+    complaintMicDenied: 'Microphone access was denied or unavailable.',
 
     // Background
     captureFailed: 'Screenshot failed: {0} (restricted pages such as chrome:// cannot be captured)',
@@ -344,6 +352,14 @@ const MESSAGES: Record<string, Record<string, string>> = {
     aiTitleNeedConnect: '请先在设置里连接 AI 助手。',
     aiTitleNeedBody: '请先填写描述，AI 才能据此生成。',
     aiTitleFailed: 'AI 生成标题失败：{0}',
+    // 语音抱怨
+    complaint: '抱怨（语音）',
+    complaintTitle: '录下你的抱怨，AI 据此结合截图撰写标题和正文',
+    complaintRecording: '■ 停止并生成',
+    complaintTranscribing: '识别中…',
+    complaintGenerating: '撰写中…',
+    complaintFailed: '抱怨失败：{0}',
+    complaintMicDenied: '麦克风访问被拒绝或不可用。',
 
     captureFailed: '截图失败：{0}（chrome:// 等受限页面无法截图）',
     captureDesktopFailed: '屏幕截图失败：{0}',
@@ -516,6 +532,14 @@ const MESSAGES: Record<string, Record<string, string>> = {
     aiTitleNeedConnect: '設定で AI アシスタントを接続してください。',
     aiTitleNeedBody: 'まず説明を入力してください。AI がそれを基に生成します。',
     aiTitleFailed: 'AI タイトル生成に失敗しました：{0}',
+    // 音声クレーム
+    complaint: 'クレーム（音声）',
+    complaintTitle: 'クレームを録音し、AI がスクリーンショットと併せてタイトルと本文を作成します',
+    complaintRecording: '■ 停止して生成',
+    complaintTranscribing: '文字起こし中…',
+    complaintGenerating: '作成中…',
+    complaintFailed: 'クレームに失敗しました：{0}',
+    complaintMicDenied: 'マイクへのアクセスが拒否されたか利用できません。',
 
     captureFailed: 'スクリーンショットに失敗しました：{0}（chrome:// などの制限付きページは撮影できません）',
     captureDesktopFailed: '画面キャプチャに失敗しました：{0}',

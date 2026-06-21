@@ -548,3 +548,174 @@ export async function generateTitle(
   if (quota) await setAiAuth({ ...auth, quota });
   return { title, quota, auth };
 }
+
+// ---- Voice "Complaint": transcribe + write title and body ------------------
+/** Subscription transcription endpoint (Codex Desktop's; OAuth-token only, no API key). */
+export const TRANSCRIBE_URL = 'https://chatgpt.com/backend-api/transcribe';
+export const TRANSCRIBE_MODEL = 'whisper-1';
+
+export const DEFAULT_COMPLAINT_PROMPT =
+  "You turn a user's spoken complaint and screenshots into a clear software issue. Write a " +
+  'concise, specific title and a well-structured Markdown body (what happened, where it ' +
+  'happened, steps if any, and expected vs. actual). Write in the same language as the ' +
+  'complaint. Return ONLY a JSON object with string fields "title" and "body".';
+
+/** Coerce the stored model to a valid one and persist any repair; returns [auth, model]. */
+async function healModelFor(auth: AiAuth, override?: string): Promise<{ auth: AiAuth; model: string }> {
+  const sane = (auth.models || []).filter(isValidModelSlug);
+  const allowed = sane.length ? sane : DEFAULT_MODELS;
+  const model = normalizeModel(override || auth.model, allowed);
+  if (model !== auth.model || sane.length !== (auth.models?.length ?? 0)) {
+    const next = { ...auth, model, models: allowed.slice() };
+    await setAiAuth(next);
+    return { auth: next, model };
+  }
+  return { auth, model };
+}
+
+/** Transcribe recorded audio using the ChatGPT subscription (no API key). */
+export async function transcribeAudio(blob: Blob, filename = 'audio.webm'): Promise<string> {
+  let auth = await getAiAuth();
+  if (!auth) throw new Error('Not connected. Sign in to the AI assistant in Settings.');
+  auth = await ensureFreshAuth(auth);
+  const fd = new FormData();
+  fd.append('file', blob, filename);
+  fd.append('model', TRANSCRIBE_MODEL);
+  const res = await fetch(TRANSCRIBE_URL, { method: 'POST', headers: authHeaders(auth), body: fd });
+  const text = await res.text();
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try {
+      const j = JSON.parse(text) as Record<string, unknown>;
+      const e = j.error as Record<string, unknown> | string | undefined;
+      msg = typeof e === 'string' ? e : ((e?.message as string) || (j.detail as string) || msg);
+    } catch {
+      /* keep status */
+    }
+    throw new Error(`Transcription failed: ${msg}`);
+  }
+  try {
+    const j = JSON.parse(text) as { text?: string; transcript?: string };
+    return (j.text || j.transcript || '').trim();
+  } catch {
+    return text.trim();
+  }
+}
+
+/** Build the user input text for a complaint. */
+export function buildComplaintInput(content: {
+  transcript: string;
+  type?: string;
+  pageTitle?: string;
+  pageUrl?: string;
+}): string {
+  const lines: string[] = [];
+  if (content.type) lines.push(`Type: ${content.type}`);
+  if (content.pageTitle) lines.push(`Page title: ${content.pageTitle}`);
+  if (content.pageUrl) lines.push(`Page URL: ${content.pageUrl}`);
+  lines.push(`\nSpoken complaint:\n${(content.transcript || '').trim()}`);
+  return lines.join('\n');
+}
+
+/** Build a responses request that asks for a structured {title, body} JSON object. */
+export function buildComplaintRequest(opts: {
+  model: string;
+  instructions: string;
+  input: string;
+  images?: string[];
+  schema?: boolean;
+}): Record<string, unknown> {
+  const req = buildResponsesRequest({ model: opts.model, instructions: opts.instructions, input: opts.input, images: opts.images });
+  if (opts.schema) {
+    req.text = {
+      format: {
+        type: 'json_schema',
+        name: 'issue',
+        strict: true,
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['title', 'body'],
+          properties: { title: { type: 'string' }, body: { type: 'string' } },
+        },
+      },
+    };
+  }
+  return req;
+}
+
+/** Parse the model's reply into {title, body}, tolerating non-JSON output. */
+export function parseComplaintOutput(text: string): { title: string; body: string } {
+  const tryParse = (s: string): { title?: unknown; body?: unknown } | null => {
+    try {
+      return JSON.parse(s) as { title?: unknown; body?: unknown };
+    } catch {
+      return null;
+    }
+  };
+  let obj = tryParse(text.trim());
+  if (!obj) {
+    const m = text.match(/\{[\s\S]*\}/); // first {...} block
+    if (m) obj = tryParse(m[0]);
+  }
+  if (obj && typeof obj.title === 'string' && typeof obj.body === 'string') {
+    return { title: cleanTitle(obj.title), body: obj.body.trim() };
+  }
+  // Fallback: first line = title, the rest = body.
+  const lines = text.trim().split('\n');
+  return { title: cleanTitle(lines[0] || ''), body: lines.slice(1).join('\n').trim() };
+}
+
+/**
+ * From a transcript (+ screenshots + metadata) write an issue title and body. Tries
+ * structured JSON output with images, degrading to plain output and/or text-only if the
+ * backend rejects either.
+ */
+export async function generateComplaint(
+  content: { transcript: string; type?: string; pageTitle?: string; pageUrl?: string; images?: string[] },
+  opts?: { model?: string; instructions?: string }
+): Promise<{ title: string; body: string; quota?: AiQuota; auth: AiAuth }> {
+  const base = await getAiAuth();
+  if (!base) throw new Error('Not connected. Sign in to the AI assistant in Settings.');
+  const fresh = await ensureFreshAuth(base);
+  const { auth, model } = await healModelFor(fresh, opts?.model);
+  const instructions = opts?.instructions || DEFAULT_COMPLAINT_PROMPT;
+  const input = buildComplaintInput(content);
+  const images = (content.images || []).filter(Boolean);
+
+  const post = (withImages: boolean, schema: boolean): Promise<Response> =>
+    fetch(RESPONSES_URL, {
+      method: 'POST',
+      headers: { ...authHeaders(auth), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      body: JSON.stringify(buildComplaintRequest({ model, instructions, input, images: withImages ? images : undefined, schema })),
+    });
+
+  // Preference order: images+schema → images → text-only. First OK wins.
+  const attempts: Array<[boolean, boolean]> = images.length ? [[true, true], [true, false], [false, false]] : [[false, true], [false, false]];
+  let res: Response | null = null;
+  let text = '';
+  let lastErr = '';
+  for (const [withImages, schema] of attempts) {
+    res = await post(withImages, schema);
+    text = await res.text();
+    if (res.ok) break;
+    lastErr = parseResponsesError(text, res.status);
+  }
+  if (!res || !res.ok) throw new Error(`Complaint generation failed: ${lastErr}`);
+
+  const quota = parseQuotaHeaders(res.headers, nowMs());
+  const out = parseComplaintOutput(extractOutputText(text, res.headers.get('content-type') || ''));
+  if (!out.title && !out.body) throw new Error('The model returned an empty result.');
+  if (quota) await setAiAuth({ ...auth, quota });
+  return { ...out, quota, auth };
+}
+
+function parseResponsesError(text: string, status: number): string {
+  try {
+    const j = JSON.parse(text) as Record<string, unknown>;
+    const e = j.error as Record<string, unknown> | string | undefined;
+    return typeof e === 'string' ? e : ((e?.message as string) || (j.detail as string) || `HTTP ${status}`);
+  } catch {
+    return `HTTP ${status}`;
+  }
+}

@@ -48,6 +48,8 @@ AI assistant — sign in with a ChatGPT subscription to generate titles:
 - Pre-configurable default title and body templates ({pageTitle}, {pageUrl}, {type}).
 - Optional AI assistant: sign in with an OpenAI Codex / ChatGPT-subscription account to
   generate an issue title from the description, and view the available models and usage.
+- Voice “Complaint”: record a spoken complaint; it is transcribed with your subscription
+  and the AI writes the issue title and body from the transcript and the screenshots.
 - Multiple workspaces, each targeting a GitHub repository or a YouTrack project.
 - GitHub submission runs in a background tab without stealing focus; the editor can
   optionally close and return you to the page you captured.
@@ -186,6 +188,14 @@ fetched dynamically from the Codex models endpoint (with a curated fallback). Th
 prompt is editable in Settings, with a **Restore default prompt** button that resets it to
 the current interface language's default.
 
+**Voice “Complaint”.** The **Complaint** button records from your microphone, transcribes
+the audio with your ChatGPT subscription (`whisper-1`), then asks the model to write a
+title and a Markdown body from the transcript, the screenshots, and the page metadata
+(structured JSON output). Note: the transcription endpoint is a Codex Desktop route that is
+undocumented and accepts only the ChatGPT session token (not an API key), so this path is
+best-effort and may change; if it fails, the transcript is kept in the description so the
+recording is not lost.
+
 > Note: the assistant talks to undocumented `chatgpt.com` endpoints that may change, and is
 > subject to OpenAI's terms for your account. Tokens are stored in `chrome.storage.local`
 > only and are never included in settings backups.
@@ -218,8 +228,9 @@ it.
   and includes no telemetry.
 - The AI assistant is off until you connect it. When you use **AI title**, the type,
   description, page URL, and the current (annotated) screenshot are sent to OpenAI to
-  generate a title. Its tokens are stored in `chrome.storage.local` only and are excluded
-  from settings backups.
+  generate a title; **Complaint** additionally sends the recorded audio for transcription.
+  Its tokens are stored in `chrome.storage.local` only and are excluded from settings
+  backups.
 - Attachment visibility follows repository visibility. Attachments in private
   repositories require sign-in to view (since 2023-05); attachments in public
   repositories are visible anonymously. Choose the target repository accordingly.

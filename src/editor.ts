@@ -15,7 +15,7 @@ import {
 } from './lib/storage.js';
 import { setLanguage, localizeDom, t } from './lib/i18n.js';
 import { getProvider } from './lib/providers/index.js';
-import { generateTitle } from './lib/ai.js';
+import { generateTitle, transcribeAudio, generateComplaint } from './lib/ai.js';
 import type { Config, Workspace, Op, Attachment, PendingShots, IssueResult } from './lib/types.js';
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -47,6 +47,7 @@ const els = {
   type: $('type') as HTMLSelectElement,
   title: $('title') as HTMLInputElement,
   aiTitle: $('aiTitle') as HTMLButtonElement,
+  complaint: $('complaint') as HTMLButtonElement,
   body: $('body') as HTMLTextAreaElement,
   submit: $('submit') as HTMLButtonElement,
   submitNoImage: $('submitNoImage') as HTMLButtonElement,
@@ -281,11 +282,94 @@ els.title.addEventListener('input', () => {
   titleDirty = true;
 });
 
-/** Enable the AI-title button only when the assistant is connected. */
+/** Enable the AI buttons only when the assistant is connected. */
 async function refreshAiButton(): Promise<void> {
   const auth = await getAiAuth();
   els.aiTitle.disabled = !auth;
   els.aiTitle.title = auth ? t('aiTitleTitle') : t('aiTitleNeedConnect');
+  if (!recording) {
+    els.complaint.disabled = !auth;
+    els.complaint.title = auth ? t('complaintTitle') : t('aiTitleNeedConnect');
+  }
+}
+
+// ---- Voice "Complaint": record → transcribe → AI writes title + body ----
+let recording = false;
+let mediaRecorder: MediaRecorder | null = null;
+let recordedChunks: Blob[] = [];
+
+els.complaint.addEventListener('click', async () => {
+  if (recording) {
+    stopRecording();
+    return;
+  }
+  // Start recording.
+  let stream: MediaStream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    setStatus(t('complaintMicDenied'), 'error');
+    return;
+  }
+  recordedChunks = [];
+  mediaRecorder = new MediaRecorder(stream);
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size) recordedChunks.push(e.data);
+  };
+  mediaRecorder.onstop = () => {
+    stream.getTracks().forEach((tr) => tr.stop());
+    void processComplaint(new Blob(recordedChunks, { type: mediaRecorder?.mimeType || 'audio/webm' }));
+  };
+  mediaRecorder.start();
+  recording = true;
+  els.complaint.classList.add('recording');
+  els.complaint.textContent = t('complaintRecording');
+});
+
+function stopRecording(): void {
+  recording = false;
+  try {
+    mediaRecorder?.stop();
+  } catch {
+    /* ignore */
+  }
+}
+
+async function processComplaint(blob: Blob): Promise<void> {
+  els.complaint.classList.remove('recording');
+  els.complaint.disabled = true;
+  let transcript = '';
+  try {
+    els.complaint.textContent = t('complaintTranscribing');
+    setStatus(t('complaintTranscribing'), 'info');
+    transcript = await transcribeAudio(blob);
+    if (!transcript) throw new Error('empty transcript');
+
+    els.complaint.textContent = t('complaintGenerating');
+    setStatus(t('complaintGenerating'), 'info');
+    const images = await aiImages();
+    const p = primary();
+    const { title, body } = await generateComplaint({
+      transcript,
+      type: els.type.value,
+      pageTitle: p?.pageTitle,
+      pageUrl: p?.pageUrl,
+      images: images.length ? images : undefined,
+    });
+    if (title) {
+      els.title.value = title;
+      titleDirty = true;
+    }
+    if (body) els.body.value = body;
+    setStatus('', 'info');
+  } catch (e) {
+    // Don't lose the transcription if only the writing step failed.
+    if (transcript) els.body.value = (els.body.value ? els.body.value + '\n\n' : '') + transcript;
+    setStatus(t('complaintFailed', [e instanceof Error ? e.message : String(e)]), 'error');
+  } finally {
+    els.complaint.textContent = t('complaint');
+    els.complaint.disabled = false;
+  }
 }
 
 els.aiTitle.addEventListener('click', async () => {
