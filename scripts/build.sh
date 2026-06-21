@@ -42,7 +42,6 @@ required=(
   "editor.html" "editor.js" "editor.css"
   "options.html" "options.js"
   "popup.html" "popup.js"
-  "offscreen.html" "offscreen.js"
   "lib/storage.js" "lib/i18n.js" "lib/github-attach.js" "lib/page-upload.js" "lib/youtrack.js" "lib/gitlab.js"
   "lib/providers/index.js" "lib/providers/github.js" "lib/providers/youtrack.js" "lib/providers/gitlab.js"
   "icons/icon16.png" "icons/icon48.png" "icons/icon128.png"

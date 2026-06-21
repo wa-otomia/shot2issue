@@ -167,7 +167,6 @@ Codex 的 OAuth client 只注册了 `http://localhost:1455` 回调（扩展自�
 | `storage` | 在 `chrome.storage.local` 中保存设置，在 `chrome.storage.session` 中暂存待编辑的截图。 |
 | `scripting` | 向后台的 github.com 标签页注入提交脚本。 |
 | `desktopCapture` | 选择「屏幕或窗口」时弹出选择器。仅用于该截图来源。 |
-| `offscreen` | 在 offscreen 文档中抓取一帧画面（service worker 没有 `getUserMedia`）。 |
 
 默认主机权限仅限 `https://github.com/*`，即 GitHub 提交时唯一访问的来源。截图的字节由 GitHub
 自己的页面代码上传至其存储，因此扩展无需声明那些存储主机的权限。

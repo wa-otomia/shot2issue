@@ -5,8 +5,9 @@
 // its own keyboard shortcut. A capture is staged in session storage and the editor is
 // opened; re-capturing while an editor is open APPENDS the new screenshot to it.
 //
-// Desktop capture needs getUserMedia, which the service worker lacks, so it runs in an
-// offscreen document.
+// Desktop capture needs getUserMedia, which the service worker lacks; the chosen desktop
+// stream is also bound to its target tab, so we grab a frame by injecting getUserMedia into
+// that tab (chrome.scripting) rather than using an offscreen document.
 
 import {
   getConfig,
@@ -112,15 +113,15 @@ async function captureWeb(tab: chrome.tabs.Tab): Promise<void> {
   }
 }
 
-// ---- capture: screen / window (desktopCapture + offscreen) ------------------
-function chooseDesktopMedia(): Promise<string> {
-  // Screen + window only. Do NOT pass a targetTab: a tab-bound stream "can only be used by
-  // the specified tab", so consuming it in the offscreen document fails with
-  // "Error starting tab capture". Omitting targetTab makes the streamId usable anywhere in
-  // the extension. (The current tab is already covered by the "Web screenshot" option.)
+// ---- capture: screen / window (desktopCapture, consumed in the target tab) --
+//
+// From a service worker, chooseDesktopMedia REQUIRES a targetTab, and the resulting stream
+// "can only be used by the specified tab" — it is NOT usable in an offscreen document. So we
+// pass the active tab and consume the stream by injecting getUserMedia into that same tab.
+function chooseDesktopMedia(tab: chrome.tabs.Tab): Promise<string> {
   return new Promise((resolve, reject) => {
     try {
-      chrome.desktopCapture.chooseDesktopMedia(['screen', 'window'], (streamId) => {
+      chrome.desktopCapture.chooseDesktopMedia(['screen', 'window'], tab, (streamId) => {
         const err = chrome.runtime.lastError;
         if (err) {
           reject(new Error(err.message || 'picker error'));
@@ -134,45 +135,66 @@ function chooseDesktopMedia(): Promise<string> {
   });
 }
 
-async function ensureOffscreen(): Promise<void> {
-  try {
-    await chrome.offscreen.createDocument({
-      url: 'offscreen.html',
-      reasons: [chrome.offscreen.Reason.USER_MEDIA],
-      justification: 'Capture a frame of the chosen screen or window for the screenshot.',
-    });
-  } catch (e) {
-    // A document already exists (e.g. a quick second capture) — reuse it.
-    if (!String(e).toLowerCase().includes('single offscreen')) throw e;
-  }
-}
-
-async function grabViaOffscreen(streamId: string): Promise<string> {
-  await ensureOffscreen();
-  try {
-    const res = (await chrome.runtime.sendMessage({ target: 'offscreen', type: 'grab-frame', streamId })) as
-      | { ok: boolean; dataUrl?: string; error?: string }
-      | undefined;
-    if (!res) throw new Error('the offscreen capture did not respond');
-    if (!res.ok || !res.dataUrl) throw new Error(res.error || 'capture failed');
-    return res.dataUrl;
-  } finally {
+/**
+ * Injected into the target tab: open the chosen desktop stream, grab one frame to a PNG
+ * data URL, and stop the tracks. Self-contained (no imports); runs in the tab the stream is
+ * bound to, which is the only context allowed to use it.
+ */
+function grabDesktopFrame(streamId: string): Promise<{ ok: boolean; dataUrl?: string; error?: string }> {
+  return (async () => {
     try {
-      await chrome.offscreen.closeDocument();
-    } catch {
-      /* already closed */
+      const constraints = {
+        audio: false,
+        video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: streamId } },
+      } as unknown as MediaStreamConstraints;
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      try {
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        await video.play();
+        for (let i = 0; i < 30 && (!video.videoWidth || !video.videoHeight); i++) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 1280;
+        canvas.height = video.videoHeight || 720;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('no 2d context');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        return { ok: true, dataUrl: canvas.toDataURL('image/png') };
+      } finally {
+        stream.getTracks().forEach((t) => t.stop());
+      }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
-  }
+  })();
 }
 
 async function captureDesktop(tab: chrome.tabs.Tab): Promise<void> {
   const config = await getConfig();
   setLanguage(config.lang);
+  if (tab.id == null) {
+    notify(t('captureDesktopFailed', ['no active tab']));
+    return;
+  }
+  let streamId: string;
   try {
-    const streamId = await chooseDesktopMedia();
-    if (!streamId) return; // the user cancelled the picker — do nothing, no error
-    const dataUrl = await grabViaOffscreen(streamId);
-    await stageAndOpen(tab, makeAttachment(dataUrl, tab, 'desktop'));
+    streamId = await chooseDesktopMedia(tab);
+  } catch (e) {
+    notify(t('captureDesktopFailed', [e instanceof Error && e.message ? e.message : String(e)]));
+    return;
+  }
+  if (!streamId) return; // the user cancelled the picker — no error
+  try {
+    const [inj] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: grabDesktopFrame,
+      args: [streamId],
+    });
+    const res = inj?.result as { ok: boolean; dataUrl?: string; error?: string } | undefined;
+    if (!res || !res.ok || !res.dataUrl) throw new Error(res?.error || 'capture failed');
+    await stageAndOpen(tab, makeAttachment(res.dataUrl, tab, 'desktop'));
   } catch (e) {
     notify(t('captureDesktopFailed', [e instanceof Error && e.message ? e.message : String(e)]));
   }

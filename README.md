@@ -231,7 +231,6 @@ each with its own **Restore default prompt** button.
 | `storage` | Stores settings in `chrome.storage.local` and the pending screenshot in `chrome.storage.session`. |
 | `scripting` | Injects the submission script into the background github.com tab. |
 | `desktopCapture` | Shows the screen/window picker when you choose “Screen or window”. Only used for that capture source. |
-| `offscreen` | Runs the one-frame screen grab in an offscreen document (the service worker has no `getUserMedia`). |
 
 Host permissions are limited to `https://github.com/*` by default, the only origin the
 extension contacts for GitHub. The screenshot bytes are uploaded to GitHub's storage by
