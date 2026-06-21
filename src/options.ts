@@ -74,6 +74,7 @@ const els = {
   aiSignOut: $('aiSignOut') as HTMLButtonElement,
   aiStatus: $('aiStatus'),
   aiReasoning: $('aiReasoning') as HTMLSelectElement,
+  dictationLang: $('dictationLang') as HTMLSelectElement,
   aiTitlePrompt: $('aiTitlePrompt') as HTMLTextAreaElement,
   aiPromptRestore: $('aiPromptRestore') as HTMLButtonElement,
   aiComplaintPrompt: $('aiComplaintPrompt') as HTMLTextAreaElement,
@@ -444,6 +445,38 @@ els.newVocab.addEventListener('keydown', (e) => {
   }
 });
 
+// ---- Dictation language (whisper language hint; 'auto' lets the model detect) ----
+// Major Whisper-supported languages (code → native name); 'auto' covers anything else.
+const DICTATION_LANGS: Array<[string, string]> = [
+  ['en', 'English'], ['zh', '中文'], ['ja', '日本語'], ['ko', '한국어'], ['es', 'Español'], ['fr', 'Français'],
+  ['de', 'Deutsch'], ['ru', 'Русский'], ['pt', 'Português'], ['it', 'Italiano'], ['nl', 'Nederlands'],
+  ['tr', 'Türkçe'], ['pl', 'Polski'], ['uk', 'Українська'], ['ar', 'العربية'], ['hi', 'हिन्दी'],
+  ['id', 'Bahasa Indonesia'], ['vi', 'Tiếng Việt'], ['th', 'ไทย'], ['sv', 'Svenska'], ['da', 'Dansk'],
+  ['nb', 'Norsk'], ['fi', 'Suomi'], ['cs', 'Čeština'], ['el', 'Ελληνικά'], ['he', 'עברית'], ['ro', 'Română'],
+  ['hu', 'Magyar'], ['ms', 'Bahasa Melayu'], ['ca', 'Català'], ['fa', 'فارسی'], ['sk', 'Slovenčina'],
+  ['hr', 'Hrvatski'], ['bg', 'Български'], ['sr', 'Српски'], ['lt', 'Lietuvių'], ['lv', 'Latviešu'],
+  ['et', 'Eesti'], ['sl', 'Slovenščina'], ['ta', 'தமிழ்'], ['te', 'తెలుగు'], ['ur', 'اردو'], ['bn', 'বাংলা'],
+  ['mr', 'मराठी'], ['fil', 'Filipino'], ['af', 'Afrikaans'], ['sw', 'Kiswahili'], ['is', 'Íslenska'],
+  ['cy', 'Cymraeg'], ['hy', 'Հայերեն'], ['az', 'Azərbaycan'], ['kk', 'Қазақ'], ['gl', 'Galego'], ['eu', 'Euskara'],
+];
+function renderDictationLangs(): void {
+  els.dictationLang.innerHTML = '';
+  const auto = document.createElement('option');
+  auto.value = 'auto';
+  auto.textContent = t('dictationAuto');
+  els.dictationLang.appendChild(auto);
+  for (const [code, name] of DICTATION_LANGS) {
+    const o = document.createElement('option');
+    o.value = code;
+    o.textContent = `${name} (${code})`;
+    els.dictationLang.appendChild(o);
+  }
+  els.dictationLang.value = draft.dictationLang || 'auto';
+}
+els.dictationLang.addEventListener('change', () => {
+  draft.dictationLang = els.dictationLang.value;
+});
+
 // ---- Language (applies immediately) ----
 els.lang.addEventListener('change', () => {
   draft.lang = SUPPORTED_LANGS.includes(els.lang.value) ? els.lang.value : 'en';
@@ -452,6 +485,7 @@ els.lang.addEventListener('change', () => {
   renderAccounts();
   renderWorkspaces(); // re-render dynamically built content in the new language
   renderTypes();
+  renderDictationLangs(); // the "Auto-detect" label follows the UI language
   void renderAi();
   // If a prompt is not customized, show the new language's default.
   if (!draft.aiTitlePrompt) els.aiTitlePrompt.value = t('aiTitlePromptDefault');
@@ -748,6 +782,8 @@ els.importFile.addEventListener('change', async () => {
       aiComplaintPrompt: typeof obj.aiComplaintPrompt === 'string' ? obj.aiComplaintPrompt : draft.aiComplaintPrompt,
       aiVocabulary: Array.isArray(obj.aiVocabulary) ? (obj.aiVocabulary as string[]) : draft.aiVocabulary,
       aiReasoning: typeof obj.aiReasoning === 'string' ? obj.aiReasoning : draft.aiReasoning,
+      dictationLang: typeof obj.dictationLang === 'string' ? obj.dictationLang : draft.dictationLang,
+      autoDictate: typeof obj.autoDictate === 'boolean' ? obj.autoDictate : draft.autoDictate,
       closeAfterSubmit: typeof obj.closeAfterSubmit === 'boolean' ? obj.closeAfterSubmit : draft.closeAfterSubmit,
       shortcutEnabled: typeof obj.shortcutEnabled === 'boolean' ? obj.shortcutEnabled : draft.shortcutEnabled,
       lastWorkspaceId: typeof obj.lastWorkspaceId === 'string' ? obj.lastWorkspaceId : '',
@@ -761,6 +797,7 @@ els.importFile.addEventListener('change', async () => {
     renderWorkspaces();
     renderTypes();
     renderVocab();
+    renderDictationLangs();
     await setConfig(draft);
     status(t('imported'), 'ok');
   } catch (e) {
@@ -791,6 +828,7 @@ async function init(): Promise<void> {
   renderWorkspaces();
   renderTypes();
   renderVocab();
+  renderDictationLangs();
   void renderAi();
   showTab(await getOptionsTab());
 }

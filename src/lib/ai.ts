@@ -669,7 +669,7 @@ async function healModelFor(auth: AiAuth, override?: string): Promise<{ auth: Ai
 }
 
 /** Transcribe recorded audio using the ChatGPT subscription (no API key). */
-export async function transcribeAudio(blob: Blob, opts?: { filename?: string; prompt?: string }): Promise<string> {
+export async function transcribeAudio(blob: Blob, opts?: { filename?: string; prompt?: string; language?: string }): Promise<string> {
   let auth = await getAiAuth();
   if (!auth) throw new Error('Not connected. Sign in to the AI assistant in Settings.');
   auth = await ensureFreshAuth(auth);
@@ -678,6 +678,8 @@ export async function transcribeAudio(blob: Blob, opts?: { filename?: string; pr
   fd.append('model', TRANSCRIBE_MODEL);
   // A dictionary of names/jargon biases the recognizer toward correct spellings.
   if (opts?.prompt && opts.prompt.trim()) fd.append('prompt', opts.prompt.trim());
+  // An explicit language (ISO-639-1) improves accuracy; 'auto' lets the model detect it.
+  if (opts?.language && opts.language !== 'auto') fd.append('language', opts.language);
   const res = await fetch(TRANSCRIBE_URL, { method: 'POST', headers: authHeaders(auth), body: fd });
   const text = await res.text();
   if (!res.ok) {

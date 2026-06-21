@@ -162,6 +162,9 @@ try {
   check('options: AI shows disconnected view by default',
     (await options.$eval('#aiConnectedBox', (el) => el.classList.contains('hidden'))) === true &&
       (await options.$eval('#aiConnect', (el) => el.offsetParent !== null)) === true);
+  check('options: dictation-language picker covers many languages (default auto)',
+    (await options.$eval('#dictationLang', (el) => el.value)) === 'auto' &&
+      (await options.$$eval('#dictationLang option', (o) => o.length)) > 20);
 
   // Title prompt: prefilled with the (localized) default; Restore refills it.
   const promptDefault = await options.$eval('#aiTitlePrompt', (el) => el.value);
@@ -412,7 +415,12 @@ try {
   await editor2.waitForSelector('#complaintModal:not(.hidden)', { timeout: 3000 });
   check('editor: complaint modal has text box, record, generate',
     !!(await editor2.$('#complaintText')) && !!(await editor2.$('#complaintRecord')) && !!(await editor2.$('#complaintGenerate')));
+  check('editor: auto-dictate checkbox present', !!(await editor2.$('#autoDictate')));
+  check('editor: generate disabled while the dictation box is empty',
+    (await editor2.$eval('#complaintGenerate', (el) => el.disabled)) === true);
   await editor2.fill('#complaintText', 'box 1 is broken');
+  check('editor: generate enabled after typing',
+    (await editor2.$eval('#complaintGenerate', (el) => el.disabled)) === false);
   await editor2.click('#complaintClose');
   await editor2.waitForFunction(() => document.getElementById('complaintModal').classList.contains('hidden'), { timeout: 2000 });
   await editor2.click('#complaint');

@@ -73,6 +73,7 @@ const els = {
   complaintGenerate: $('complaintGenerate') as HTMLButtonElement,
   complaintStatus: $('complaintStatus'),
   aiReasoning: $('aiReasoning') as HTMLSelectElement,
+  autoDictate: $('autoDictate') as HTMLInputElement,
   aiBubble: $('aiBubble'),
   aiBubbleStatus: $('aiBubbleStatus'),
   aiBubbleThink: $('aiBubbleThink'),
@@ -87,6 +88,17 @@ const els = {
 };
 
 els.openOptions.addEventListener('click', () => chrome.runtime.openOptionsPage());
+
+// Interacting with anything in the right column commits any pending canvas edit first (flush an
+// in-progress text box, deselect the active annotation) so nothing is left half-edited.
+$('formCol').addEventListener(
+  'mousedown',
+  () => {
+    commitTextIfAny();
+    deselect();
+  },
+  true
+);
 
 // ---- State ----
 let config!: Config;
@@ -157,6 +169,7 @@ async function init(): Promise<void> {
   els.strokeWidth.value = String(prefs.strokeWidth);
   els.width.value = String(prefs.width);
   els.fontSize.value = String(prefs.fontSize);
+  els.autoDictate.checked = !!config.autoDictate;
   applyToolControls();
   // Move toolbar button titles to data-tip so they render as styled hover tooltips.
   document.querySelectorAll('#toolbar .tool[title], #toolbar .act[title]').forEach((el) => {
@@ -383,6 +396,10 @@ els.aiReasoning.addEventListener('change', () => {
   config.aiReasoning = els.aiReasoning.value; // reasoning effort is shared with Settings
   void patchConfig({ aiReasoning: config.aiReasoning });
 });
+els.autoDictate.addEventListener('change', () => {
+  config.autoDictate = els.autoDictate.checked; // remembered: auto-start dictation on open
+  void patchConfig({ autoDictate: config.autoDictate });
+});
 
 // ---- Complaint modal: type or dictate → transcribe → AI writes title + body ----
 // The modal content is NOT cleared between opens (within the page), and Generate can be run
@@ -398,7 +415,14 @@ function openComplaintModal(): void {
   els.complaintModal.classList.remove('hidden');
   clampPanelIntoView(els.complaintModal); // a prior drag may have left it off the (now smaller) viewport
   setComplaintStatus('');
+  updateComplaintGenerate();
   setTimeout(() => els.complaintText.focus(), 0);
+  if (config.autoDictate && !recording) void startDictation(); // auto-start recording when enabled
+}
+
+/** Disable the Generate button while the dictation box is empty (nothing to generate from). */
+function updateComplaintGenerate(): void {
+  els.complaintGenerate.disabled = !els.complaintText.value.trim();
 }
 
 /** Keep a fixed-position panel inside the viewport (only if it was dragged to absolute left/top). */
@@ -476,11 +500,13 @@ if (complaintInner && typeof ResizeObserver !== 'undefined') {
 }
 
 // Record → transcribe → append into the text box (you can dictate several times + edit).
-els.complaintRecord.addEventListener('click', async () => {
-  if (recording) {
-    stopRecording();
-    return;
-  }
+els.complaintRecord.addEventListener('click', () => {
+  if (recording) stopRecording();
+  else void startDictation();
+});
+
+async function startDictation(): Promise<void> {
+  if (recording) return;
   let stream: MediaStream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -501,7 +527,7 @@ els.complaintRecord.addEventListener('click', async () => {
   recording = true;
   els.complaintRecord.classList.add('recording');
   els.complaintRecord.textContent = t('complaintRecordStop');
-});
+}
 
 function stopRecording(): void {
   recording = false;
@@ -533,8 +559,9 @@ async function transcribeIntoBox(blob: Blob): Promise<void> {
   try {
     setComplaintStatus('');
     const prompt = (config.aiVocabulary || []).join(', '); // dictionary terms bias recognition
-    const transcript = (await transcribeAudio(blob, { prompt })).trim();
+    const transcript = (await transcribeAudio(blob, { prompt, language: config.dictationLang })).trim();
     if (transcript) insertAtCursor(els.complaintText, transcript); // at the caret, never clearing
+    updateComplaintGenerate();
     bubbleDone();
   } catch (e) {
     bubbleFail(t('complaintFailed', [errMsg(e)]));
@@ -545,8 +572,10 @@ async function transcribeIntoBox(blob: Blob): Promise<void> {
 
 els.complaintClear.addEventListener('click', () => {
   els.complaintText.value = '';
+  updateComplaintGenerate();
   els.complaintText.focus();
 });
+els.complaintText.addEventListener('input', updateComplaintGenerate);
 
 // Generate the issue title + body from the text box content + the screenshots. Repeatable.
 // ---- Streaming AI generation: a status bubble that points at the active button ----

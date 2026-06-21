@@ -219,6 +219,8 @@ button.ai-busy::before { content: "■"; font-size: 9px; margin-right: 6px; vert
 .ai-actions-head { font-weight: 600; font-size: 13px; color: var(--muted); margin: 16px 0 6px; }
 .ai-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; margin-top: 0; }
 .ai-actions .ai-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.auto-dictate { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.auto-dictate input { margin: 0; }
 .ai-actions select#aiReasoning { width: auto; max-width: 130px; }
 
 /* Floating crop confirm buttons (positioned next to the crop box in editor.ts) */

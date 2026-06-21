@@ -50,6 +50,10 @@ export interface Config {
   aiVocabulary: string[];
   /** Reasoning effort for AI generation: 'off' | 'low' | 'medium' | 'high'. */
   aiReasoning: string;
+  /** Auto-start dictation (recording) when the Smart-dictation dialog opens. */
+  autoDictate: boolean;
+  /** Dictation/transcription language hint (ISO-639-1, or 'auto' to let the model detect). */
+  dictationLang: string;
   closeAfterSubmit: boolean;
   shortcutEnabled: boolean;
   lastWorkspaceId: string;

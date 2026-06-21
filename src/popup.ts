@@ -50,29 +50,31 @@ function trigger(type: 'capture-web'): void {
   window.close();
 }
 
+// Bind clicks SYNCHRONOUSLY so the very first click always works. (Previously these were bound
+// after `await getConfig()`, so a click during that async gap hit nothing — hence "click twice".)
+$('optWeb').addEventListener('click', () => trigger('capture-web'));
+$('optPaste').addEventListener('click', () => void pasteFromClipboard($('optPaste')));
+$('openSettings').addEventListener('click', () => {
+  chrome.runtime.openOptionsPage();
+  window.close();
+});
+$('setShortcuts').addEventListener('click', () => {
+  void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+  window.close();
+});
+localizeDom(document); // localize immediately (default language); re-localized once config loads
+
 async function init(): Promise<void> {
   const config = await getConfig();
   setLanguage(config.lang);
   localizeDom(document);
-
-  // Show the bound shortcut next to each option, if the user has set one.
+  // Show the bound shortcut next to the tab-capture option, if the user has set one.
   try {
     const cmds = await chrome.commands.getAll();
     showShortcut('scWeb', cmds.find((c) => c.name === 'capture')?.shortcut);
   } catch {
     /* commands API unavailable; show no shortcuts */
   }
-
-  $('optWeb').addEventListener('click', () => trigger('capture-web'));
-  $('optPaste').addEventListener('click', () => void pasteFromClipboard($('optPaste')));
-  $('openSettings').addEventListener('click', () => {
-    chrome.runtime.openOptionsPage();
-    window.close();
-  });
-  $('setShortcuts').addEventListener('click', () => {
-    void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
-    window.close();
-  });
 }
 
 void init();

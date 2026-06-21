@@ -33,6 +33,10 @@ const DEFAULT_CONFIG: Config = {
   aiVocabulary: [],
   // Reasoning effort for AI generation ('off' | 'low' | 'medium' | 'high'). Off by default.
   aiReasoning: 'off',
+  // Auto-start dictation when the Smart-dictation dialog opens.
+  autoDictate: false,
+  // Dictation language hint ('auto' = let the model detect it).
+  dictationLang: 'auto',
   // Close the editor and switch back to the captured tab after a successful submit.
   closeAfterSubmit: true,
   // Allow a keyboard shortcut (configured at chrome://extensions/shortcuts) to capture. Off by default.
