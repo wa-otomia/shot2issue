@@ -18,6 +18,8 @@ const els = {
   newType: $('newType') as HTMLInputElement,
   addType: $('addType'),
   lang: $('lang') as HTMLSelectElement,
+  titleTemplate: $('titleTemplate') as HTMLInputElement,
+  bodyTemplate: $('bodyTemplate') as HTMLTextAreaElement,
   closeAfterSubmit: $('closeAfterSubmit') as HTMLInputElement,
   shortcutEnabled: $('shortcutEnabled') as HTMLInputElement,
   configureShortcut: $('configureShortcut'),
@@ -173,6 +175,14 @@ els.lang.addEventListener('change', () => {
   renderTypes();
 });
 
+// ---- Default templates ----
+els.titleTemplate.addEventListener('input', () => {
+  draft.titleTemplate = els.titleTemplate.value;
+});
+els.bodyTemplate.addEventListener('input', () => {
+  draft.bodyTemplate = els.bodyTemplate.value;
+});
+
 // ---- Behavior ----
 els.closeAfterSubmit.addEventListener('change', () => {
   draft.closeAfterSubmit = els.closeAfterSubmit.checked;
@@ -258,6 +268,8 @@ els.importFile.addEventListener('change', async () => {
       }),
       types: Array.isArray(obj.types) && obj.types.length ? obj.types : draft.types,
       lang: typeof obj.lang === 'string' && SUPPORTED_LANGS.includes(obj.lang) ? obj.lang : draft.lang,
+      titleTemplate: typeof obj.titleTemplate === 'string' ? obj.titleTemplate : draft.titleTemplate,
+      bodyTemplate: typeof obj.bodyTemplate === 'string' ? obj.bodyTemplate : draft.bodyTemplate,
       closeAfterSubmit: typeof obj.closeAfterSubmit === 'boolean' ? obj.closeAfterSubmit : draft.closeAfterSubmit,
       shortcutEnabled: typeof obj.shortcutEnabled === 'boolean' ? obj.shortcutEnabled : draft.shortcutEnabled,
       lastWorkspaceId: typeof obj.lastWorkspaceId === 'string' ? obj.lastWorkspaceId : '',
@@ -279,6 +291,8 @@ els.importFile.addEventListener('change', async () => {
 
 function applyDraftToControls(): void {
   els.lang.value = draft.lang;
+  els.titleTemplate.value = draft.titleTemplate;
+  els.bodyTemplate.value = draft.bodyTemplate;
   els.closeAfterSubmit.checked = !!draft.closeAfterSubmit;
   els.shortcutEnabled.checked = !!draft.shortcutEnabled;
 }

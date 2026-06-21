@@ -28,8 +28,11 @@ Settings — configure GitHub and YouTrack workspaces:
 ## Features
 
 - One click to capture the visible area of the current tab.
-- Canvas annotation: rectangle, arrow, text, and mosaic (for redacting sensitive
-  content before submitting). Undo with Ctrl/Cmd+Z; close the editor with Esc.
+- Canvas annotation: rectangle, numbered box (auto-incrementing badge), arrow, freehand
+  pen, wrapping text in a resizable region, and mosaic for redaction. Undo with
+  Ctrl/Cmd+Z; close the editor with Esc (pressed twice).
+- Save the annotated image: download as PNG or copy it straight to the clipboard.
+- Pre-configurable default title and body templates ({pageTitle}, {pageUrl}, {type}).
 - Multiple workspaces, each targeting a GitHub repository or a YouTrack project.
 - GitHub submission runs in a background tab without stealing focus; the editor can
   optionally close and return you to the page you captured.
@@ -87,9 +90,11 @@ the **Settings** link in the editor.
   (user or organization), and repository name. For YouTrack: a display name, base URL,
   project (short name or id), and a permanent token (created in YouTrack → Profile →
   Account Security → Tokens). Tokens are stored locally in this browser.
-- **Types** — shown in the editor's Type dropdown and used as the default title suffix.
+- **Types** — shown in the editor's Type dropdown and used in the default title.
   Defaults: Change, Bug, Feature.
 - **Language** — English, Simplified Chinese, or Japanese.
+- **Default title & body** — templates that prefill new issues, with the placeholders
+  `{pageTitle}`, `{pageUrl}`, and `{type}`.
 - **Behavior** — whether to close the editor and switch back to the captured page after a
   successful submission.
 - **Keyboard shortcut** — optionally trigger a capture with a keyboard shortcut. Off by

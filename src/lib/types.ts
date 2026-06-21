@@ -15,6 +15,10 @@ export interface Config {
   workspaces: Workspace[];
   types: string[];
   lang: string;
+  /** Default issue title template; placeholders {pageTitle}, {pageUrl}, {type}. */
+  titleTemplate: string;
+  /** Default issue body template; same placeholders. */
+  bodyTemplate: string;
   closeAfterSubmit: boolean;
   shortcutEnabled: boolean;
   lastWorkspaceId: string;

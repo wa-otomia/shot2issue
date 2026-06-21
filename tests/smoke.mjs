@@ -43,6 +43,8 @@ try {
   if (!sw) sw = await context.waitForEvent('serviceworker', { timeout: 10000 });
   const extId = sw.url().split('/')[2];
   check('extension service worker registered', !!extId);
+  // Allow clipboard writes for the Copy PNG check below.
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: `chrome-extension://${extId}` }).catch(() => {});
 
   // Generate a realistic sample screenshot in the service worker (OffscreenCanvas).
   const dataUrl = await makeSampleDataUrlSW(sw);
@@ -58,6 +60,8 @@ try {
           ],
           types: ['Change', 'Bug', 'Feature'],
           lang: 'en',
+          titleTemplate: '[{type}] {pageTitle}',
+          bodyTemplate: 'URL: {pageUrl}',
           closeAfterSubmit: false,
           shortcutEnabled: false,
           lastWorkspaceId: 'w1',
@@ -95,6 +99,11 @@ try {
     (document.querySelector('[data-i18n="workspacesHeading"]')?.textContent || '').includes('工作空间'));
   check('options: language switch localizes headings to Chinese', true);
 
+  // The default-title/body templates are configurable and reflect the saved config.
+  check('options: title/body template fields reflect config',
+    (await options.$eval('#titleTemplate', (el) => el.value)) === '[{type}] {pageTitle}' &&
+      (await options.$eval('#bodyTemplate', (el) => el.value)) === 'URL: {pageUrl}');
+
   // --- Editor page: renders staged screenshot, Esc closes the tab ---
   const editor = await context.newPage();
   editor.on('pageerror', (e) => pageErrors.push(String(e)));
@@ -112,6 +121,12 @@ try {
   const wsLabels = await editor.$$eval('#workspace option', (opts) => opts.map((o) => o.textContent || ''));
   check('editor: workspace options tagged with backend',
     wsLabels.some((s) => /\(GitHub\)/.test(s)) && wsLabels.some((s) => /\(YouTrack\)/.test(s)));
+
+  // The title/body fields are prefilled from the configured templates.
+  check('editor: title prefilled from template',
+    (await editor.$eval('#title', (el) => el.value)) === '[Bug] Example');
+  check('editor: body prefilled from template',
+    (await editor.$eval('#body', (el) => el.value)) === 'URL: https://example.com/x');
 
   // Geometry of the (scaled-to-fit) canvas; click using fractions so points land on it.
   const box = await editor.$eval('#canvas', (c) => {
@@ -175,6 +190,13 @@ try {
   await editor.keyboard.type('Second');
   await editor.keyboard.press('Control+Enter');
   check('editor: clicking elsewhere commits text without errors', true);
+
+  // Copy PNG to the clipboard (clipboard permission granted above).
+  await editor.bringToFront();
+  await editor.click('#copy');
+  await editor.waitForSelector('.toast.show', { timeout: 3000 }).catch(() => {});
+  const copyToast = await editor.$eval('.toast', (el) => el.textContent || '').catch(() => '');
+  check('editor: Copy PNG copies to clipboard', copyToast === 'Copied to clipboard');
 
   // Esc requires two presses. Move focus off the text input first (a non-text tool button).
   await editor.click('.tool[data-tool="rect"]');

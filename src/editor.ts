@@ -52,6 +52,7 @@ const els = {
   undo: $('undo'),
   clear: $('clear'),
   download: $('download'),
+  copy: $('copy'),
   workspace: $('workspace') as HTMLSelectElement,
   type: $('type') as HTMLSelectElement,
   title: $('title') as HTMLInputElement,
@@ -153,15 +154,23 @@ function populateSelects(): void {
   if (pending && pending.type && config.types.includes(pending.type)) els.type.value = pending.type;
 }
 
+/** Substitute {pageTitle}, {pageUrl}, {type} (unknown placeholders are left as-is). */
+function applyTemplate(tpl: string): string {
+  const vars: Record<string, string> = {
+    pageTitle: (pending && pending.pageTitle) || '',
+    pageUrl: (pending && pending.pageUrl) || '',
+    type: els.type.value || '',
+  };
+  return tpl.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
+}
+
 function defaultTitle(): string {
-  const ty = els.type.value || '';
-  return [(pending && pending.pageTitle) || '', ty].filter(Boolean).join(' ').trim();
+  return applyTemplate(config.titleTemplate).replace(/[ \t]+/g, ' ').trim();
 }
 
 function setupDefaults(): void {
   els.title.value = defaultTitle();
-  const pageUrl = (pending && pending.pageUrl) || '';
-  els.body.value = pageUrl ? t('bodyDefaultPage', [pageUrl]) + '\n\n' : '';
+  els.body.value = applyTemplate(config.bodyTemplate);
 }
 
 els.title.addEventListener('input', () => {
@@ -575,6 +584,18 @@ els.download.addEventListener('click', () => {
   a.href = canvasToDataUrl();
   a.download = `shot-${Date.now()}.png`;
   a.click();
+});
+
+els.copy.addEventListener('click', async () => {
+  commitTextIfAny();
+  try {
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) throw new Error('no image');
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    showToast(t('copied'));
+  } catch (e) {
+    showToast(t('copyFailed', [e instanceof Error ? e.message : String(e)]));
+  }
 });
 
 // ============================================================================

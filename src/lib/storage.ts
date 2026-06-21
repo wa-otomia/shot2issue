@@ -17,6 +17,9 @@ const DEFAULT_CONFIG: Config = {
   types: ['Change', 'Bug', 'Feature'],
   // UI language: 'en' | 'zh' | 'ja'. English is the default.
   lang: 'en',
+  // Default issue title / body templates. Placeholders: {pageTitle}, {pageUrl}, {type}.
+  titleTemplate: '{pageTitle} {type}',
+  bodyTemplate: 'Page: {pageUrl}',
   // Close the editor and switch back to the captured tab after a successful submit.
   closeAfterSubmit: true,
   // Allow a keyboard shortcut (configured at chrome://extensions/shortcuts) to capture. Off by default.
