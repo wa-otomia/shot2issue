@@ -172,7 +172,9 @@ cannot listen on, so two sign-in paths are offered:
 
 Clicking **Sign in with ChatGPT** tries the automatic path first and falls back to the
 manual path automatically. In the editor, **AI title** then generates a title from the
-current type, page title, page URL, and description.
+current type, page title, page URL, and description. The system prompt used for this is
+editable in Settings, with a **Restore default prompt** button that resets it to the
+current interface language's default.
 
 > Note: the assistant talks to undocumented `chatgpt.com` endpoints that may change, and is
 > subject to OpenAI's terms for your account. Tokens are stored in `chrome.storage.local`

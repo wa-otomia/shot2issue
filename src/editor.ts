@@ -197,12 +197,15 @@ els.aiTitle.addEventListener('click', async () => {
   const label = els.aiTitle.textContent;
   els.aiTitle.textContent = t('aiTitleGenerating');
   try {
-    const { title } = await generateTitle({
-      type: els.type.value,
-      pageTitle: pending?.pageTitle,
-      pageUrl: pending?.pageUrl,
-      body: els.body.value,
-    });
+    const { title } = await generateTitle(
+      {
+        type: els.type.value,
+        pageTitle: pending?.pageTitle,
+        pageUrl: pending?.pageUrl,
+        body: els.body.value,
+      },
+      { instructions: config.aiTitlePrompt || t('aiTitlePromptDefault') }
+    );
     els.title.value = title;
     titleDirty = true;
     setStatus('', 'info');

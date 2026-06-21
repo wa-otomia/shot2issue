@@ -170,17 +170,25 @@ export function parseQuotaHeaders(headers: Headers, now: number): AiQuota | unde
 }
 
 // ---- Title prompt + output extraction --------------------------------------
-/** Build the instructions + input for the title-generation request. */
-export function buildTitlePrompt(content: {
-  type?: string;
-  pageTitle?: string;
-  pageUrl?: string;
-  body?: string;
-}): { instructions: string; input: string } {
-  const instructions =
-    'You write concise, specific issue titles. Read the report below and return ONLY the ' +
-    'title: a single line, no surrounding quotes, no trailing punctuation, at most about ' +
-    '80 characters. Write the title in the same language as the description.';
+/** Built-in English default prompt; the UI passes a localized/configured one via i18n. */
+export const DEFAULT_TITLE_PROMPT =
+  'You write concise, specific issue titles. Read the report below and return ONLY the ' +
+  'title: a single line, no surrounding quotes, no trailing punctuation, at most about ' +
+  '80 characters. Write the title in the same language as the description.';
+
+/**
+ * Build the instructions + input for the title-generation request. `instructions` is the
+ * configurable system prompt (defaults to the built-in English one).
+ */
+export function buildTitlePrompt(
+  content: {
+    type?: string;
+    pageTitle?: string;
+    pageUrl?: string;
+    body?: string;
+  },
+  instructions: string = DEFAULT_TITLE_PROMPT
+): { instructions: string; input: string } {
   const lines: string[] = [];
   if (content.type) lines.push(`Type: ${content.type}`);
   if (content.pageTitle) lines.push(`Page title: ${content.pageTitle}`);
@@ -441,7 +449,7 @@ export async function fetchModels(_auth: AiAuth): Promise<string[]> {
  */
 export async function generateTitle(
   content: { type?: string; pageTitle?: string; pageUrl?: string; body?: string },
-  opts?: { model?: string }
+  opts?: { model?: string; instructions?: string }
 ): Promise<{ title: string; quota?: AiQuota; auth: AiAuth }> {
   let auth = await getAiAuth();
   if (!auth) throw new Error('Not connected. Sign in to the AI assistant in Settings.');
@@ -454,7 +462,7 @@ export async function generateTitle(
     auth = { ...auth, model: normalizeModel(auth.model), models: DEFAULT_MODELS.slice() };
     await setAiAuth(auth);
   }
-  const { instructions, input } = buildTitlePrompt(content);
+  const { instructions, input } = buildTitlePrompt(content, opts?.instructions);
   const res = await fetch(RESPONSES_URL, {
     method: 'POST',
     headers: { ...authHeaders(auth), 'Content-Type': 'application/json', Accept: 'text/event-stream' },

@@ -143,7 +143,7 @@ Codex 标准的 OAuth 使用 http://localhost:1455 回调，而浏览器扩展�
 1. **自动** —— 使用 chrome.identity.launchWebAuthFlow，配合扩展自身的 https://<id>.chromiumapp.org/ 重定向。仅当 OpenAI 为公共 Codex client 接受该重定向 URI 时才有效。
 2. **手动（粘贴链接）** —— 作为回退方式使用。扩展会打开授权页面并使用 Codex 的 localhost 重定向；登录后，浏览器会停留在一个「无法访问 localhost」的页面，其地址中包含 ?code=…。复制该完整地址并粘贴回来，扩展便会自行完成 PKCE token 交换。
 
-点击「使用 ChatGPT 登录」会先尝试自动方式，并在失败时自动回退到手动方式。随后在编辑页中，「AI 标题」会根据当前的类型、页面标题、页面 URL 和描述生成标题。
+点击「使用 ChatGPT 登录」会先尝试自动方式，并在失败时自动回退到手动方式。随后在编辑页中，「AI 标题」会根据当前的类型、页面标题、页面 URL 和描述生成标题。生成所用的系统提示词可在设置中编辑，并提供「恢复默认提示词」按钮，将其重置为当前界面语言的默认提示词。
 
 > 注意：该助手会与未公开文档的 chatgpt.com 端点通信，这些端点可能发生变化，并受 OpenAI 针对你账号的条款约束。token 仅保存在 chrome.storage.local 中，绝不会包含在设置备份里。
 

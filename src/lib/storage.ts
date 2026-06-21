@@ -20,6 +20,8 @@ const DEFAULT_CONFIG: Config = {
   // Default issue title / body templates. Placeholders: {pageTitle}, {pageUrl}, {type}.
   titleTemplate: '{pageTitle} {type}',
   bodyTemplate: 'Page: {pageUrl}',
+  // AI title prompt; '' means use the current UI language's default (i18n aiTitlePromptDefault).
+  aiTitlePrompt: '',
   // Close the editor and switch back to the captured tab after a successful submit.
   closeAfterSubmit: true,
   // Allow a keyboard shortcut (configured at chrome://extensions/shortcuts) to capture. Off by default.

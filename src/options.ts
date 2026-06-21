@@ -54,6 +54,8 @@ const els = {
   aiRefresh: $('aiRefresh') as HTMLButtonElement,
   aiSignOut: $('aiSignOut') as HTMLButtonElement,
   aiStatus: $('aiStatus'),
+  aiTitlePrompt: $('aiTitlePrompt') as HTMLTextAreaElement,
+  aiPromptRestore: $('aiPromptRestore') as HTMLButtonElement,
 };
 
 let draft: Config;
@@ -200,6 +202,8 @@ els.lang.addEventListener('change', () => {
   renderWorkspaces(); // re-render dynamically built content in the new language
   renderTypes();
   void renderAi();
+  // If the prompt is not customized, show the new language's default.
+  if (!draft.aiTitlePrompt) els.aiTitlePrompt.value = t('aiTitlePromptDefault');
 });
 
 // ---- Default templates ----
@@ -344,6 +348,16 @@ els.aiSignOut.addEventListener('click', async () => {
   aiStatus(t('aiSignedOut'));
 });
 
+// Title prompt: editing stores an explicit override; Restore clears it back to '' so the
+// prompt follows the current UI language's default again.
+els.aiTitlePrompt.addEventListener('input', () => {
+  draft.aiTitlePrompt = els.aiTitlePrompt.value;
+});
+els.aiPromptRestore.addEventListener('click', () => {
+  draft.aiTitlePrompt = '';
+  els.aiTitlePrompt.value = t('aiTitlePromptDefault');
+});
+
 // ---- Behavior ----
 els.closeAfterSubmit.addEventListener('change', () => {
   draft.closeAfterSubmit = els.closeAfterSubmit.checked;
@@ -431,6 +445,7 @@ els.importFile.addEventListener('change', async () => {
       lang: typeof obj.lang === 'string' && SUPPORTED_LANGS.includes(obj.lang) ? obj.lang : draft.lang,
       titleTemplate: typeof obj.titleTemplate === 'string' ? obj.titleTemplate : draft.titleTemplate,
       bodyTemplate: typeof obj.bodyTemplate === 'string' ? obj.bodyTemplate : draft.bodyTemplate,
+      aiTitlePrompt: typeof obj.aiTitlePrompt === 'string' ? obj.aiTitlePrompt : draft.aiTitlePrompt,
       closeAfterSubmit: typeof obj.closeAfterSubmit === 'boolean' ? obj.closeAfterSubmit : draft.closeAfterSubmit,
       shortcutEnabled: typeof obj.shortcutEnabled === 'boolean' ? obj.shortcutEnabled : draft.shortcutEnabled,
       lastWorkspaceId: typeof obj.lastWorkspaceId === 'string' ? obj.lastWorkspaceId : '',
@@ -454,6 +469,8 @@ function applyDraftToControls(): void {
   els.lang.value = draft.lang;
   els.titleTemplate.value = draft.titleTemplate;
   els.bodyTemplate.value = draft.bodyTemplate;
+  // Show the effective prompt: the custom override, or the current language's default.
+  els.aiTitlePrompt.value = draft.aiTitlePrompt || t('aiTitlePromptDefault');
   els.closeAfterSubmit.checked = !!draft.closeAfterSubmit;
   els.shortcutEnabled.checked = !!draft.shortcutEnabled;
 }

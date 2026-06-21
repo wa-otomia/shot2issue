@@ -109,6 +109,15 @@ try {
     (await options.$eval('#aiConnectedBox', (el) => el.classList.contains('hidden'))) === true &&
       (await options.$eval('#aiConnect', (el) => el.offsetParent !== null)) === true);
 
+  // Title prompt: prefilled with the (localized) default; Restore refills it.
+  const promptDefault = await options.$eval('#aiTitlePrompt', (el) => el.value);
+  check('options: AI title prompt prefilled with a default', promptDefault.trim().length > 20);
+  await options.fill('#aiTitlePrompt', 'my custom prompt');
+  await options.click('#aiPromptRestore');
+  check('options: Restore default prompt refills the prompt',
+    (await options.$eval('#aiTitlePrompt', (el) => el.value)) === promptDefault &&
+      promptDefault !== 'my custom prompt');
+
   // --- Editor page: renders staged screenshot, Esc closes the tab ---
   const editor = await context.newPage();
   editor.on('pageerror', (e) => pageErrors.push(String(e)));

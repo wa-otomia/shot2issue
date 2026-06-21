@@ -19,6 +19,8 @@ export interface Config {
   titleTemplate: string;
   /** Default issue body template; same placeholders. */
   bodyTemplate: string;
+  /** AI title-generation system prompt. Empty means "use the current language's default". */
+  aiTitlePrompt: string;
   closeAfterSubmit: boolean;
   shortcutEnabled: boolean;
   lastWorkspaceId: string;

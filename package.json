@@ -1,6 +1,6 @@
 {
   "name": "shot2issue",
-  "version": "1.7.3",
+  "version": "1.7.4",
   "description": "Capture the current tab and file it as a GitHub or YouTrack issue, with the screenshot inline.",
   "private": true,
   "type": "module",

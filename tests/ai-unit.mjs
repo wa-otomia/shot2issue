@@ -16,6 +16,7 @@ import {
   extractOutputText,
   normalizeModel,
   DEFAULT_MODELS,
+  DEFAULT_TITLE_PROMPT,
   CLIENT_ID,
 } from '../build/lib/ai.js';
 
@@ -81,6 +82,8 @@ check('quota: none -> undefined', parseQuotaHeaders(new Headers({ 'content-type'
 const prompt = buildTitlePrompt({ type: 'Bug', pageTitle: 'Dash', pageUrl: 'https://x/y', body: 'Save button overlaps footer' });
 check('prompt: instructions mention title', /title/i.test(prompt.instructions));
 check('prompt: input carries body + type', prompt.input.includes('Save button overlaps footer') && prompt.input.includes('Bug'));
+check('prompt: custom instructions are used when provided', buildTitlePrompt({ body: 'x' }, 'CUSTOM PROMPT').instructions === 'CUSTOM PROMPT');
+check('prompt: defaults to built-in when not provided', buildTitlePrompt({ body: 'x' }).instructions === DEFAULT_TITLE_PROMPT);
 
 // --- responses request shape (Codex backend requires input to be a typed message list) ---
 const reqBody = buildResponsesRequest({ model: 'gpt-5.5', instructions: 'sys', input: 'hello world' });
