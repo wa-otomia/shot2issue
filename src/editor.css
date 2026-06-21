@@ -96,6 +96,7 @@ header .spacer { flex: 1; }
 #textInput {
   position: absolute;
   display: none;
+  box-sizing: border-box;
   margin: 0;
   padding: 0;
   border: 0;
@@ -105,9 +106,9 @@ header .spacer { flex: 1; }
   font-family: system-ui, sans-serif;
   font-weight: bold;
   line-height: 1.2;
-  white-space: pre;
-  overflow: hidden;
-  resize: none;
+  white-space: pre-wrap;
+  overflow: auto;
+  resize: both; /* drag the corner handle to adjust the text region */
   z-index: 5;
   caret-color: currentColor;
 }

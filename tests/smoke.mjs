@@ -151,21 +151,30 @@ try {
   await editor.mouse.up();
   check('editor: pen tool drew without errors', true);
 
-  // Text tool: a transparent textarea sized to the current thickness appears.
+  // Text tool: DRAG a region; a resizable transparent textarea fills it.
   await editor.click('.tool[data-tool="text"]');
-  const tp = at(0.55, 0.3);
-  await editor.mouse.click(tp.x, tp.y);
+  const t1 = at(0.5, 0.3), t2 = at(0.78, 0.42);
+  await editor.mouse.move(t1.x, t1.y);
+  await editor.mouse.down();
+  await editor.mouse.move(t2.x, t2.y, { steps: 6 });
+  await editor.mouse.up();
   await editor.waitForSelector('#textInput', { state: 'visible' });
   const ti = await editor.$eval('#textInput', (el) => {
     const cs = getComputedStyle(el);
-    return { tag: el.tagName, bg: cs.backgroundColor, fontSize: parseFloat(cs.fontSize) };
+    return { tag: el.tagName, bg: cs.backgroundColor, fontSize: parseFloat(cs.fontSize), resize: cs.resize, width: el.offsetWidth };
   });
   check('editor: text input is a transparent textarea',
     ti.tag === 'TEXTAREA' && (ti.bg === 'rgba(0, 0, 0, 0)' || ti.bg === 'transparent'));
   check('editor: text input font size tracks thickness (>14px)', ti.fontSize > 14);
-  await editor.keyboard.type('Bug here');
+  check('editor: text region is resizable and sized to the drag', ti.resize === 'both' && ti.width > 120);
+  await editor.keyboard.type('First note');
+
+  // Clicking a new spot must COMMIT the current text (not lose it) and open a new box.
+  await editor.mouse.click(at(0.3, 0.62).x, at(0.3, 0.62).y);
+  await editor.waitForTimeout(100);
+  await editor.keyboard.type('Second');
   await editor.keyboard.press('Control+Enter');
-  check('editor: text commit ran without errors', true);
+  check('editor: clicking elsewhere commits text without errors', true);
 
   // Esc requires two presses. Move focus off the text input first (a non-text tool button).
   await editor.click('.tool[data-tool="rect"]');

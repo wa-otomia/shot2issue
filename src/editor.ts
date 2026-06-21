@@ -35,6 +35,7 @@ interface Op {
   size?: number;
   x?: number;
   y?: number;
+  w?: number; // text wrap width (canvas pixels)
   text?: string;
 }
 
@@ -283,7 +284,10 @@ canvas.addEventListener('mousedown', (e) => {
   if (!baseImage.src) return;
   const p = toCanvasXY(e);
   if (currentTool === 'text') {
-    openTextInput(p, e);
+    // Commit any in-progress text first — otherwise starting a new box wipes it — then
+    // drag a rectangular region that becomes the (resizable) text box.
+    commitTextIfAny();
+    drawing = { tool: 'textbox', color: els.color.value, width: Number(els.width.value), x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     return;
   }
   if (currentTool === 'pen') {
@@ -320,6 +324,23 @@ canvas.addEventListener('mousemove', (e) => {
 
 window.addEventListener('mouseup', () => {
   if (!drawing) return;
+  if (drawing.tool === 'textbox') {
+    // Open the text editor over the dragged region; a plain click → a default-size box.
+    const bx = Math.min(drawing.x0 ?? 0, drawing.x1 ?? 0);
+    const by = Math.min(drawing.y0 ?? 0, drawing.y1 ?? 0);
+    let bw = Math.abs((drawing.x1 ?? 0) - (drawing.x0 ?? 0));
+    let bh = Math.abs((drawing.y1 ?? 0) - (drawing.y0 ?? 0));
+    const size = Math.max(14, (drawing.width || 4) * 5);
+    if (bw < 8 || bh < 8) {
+      bw = 240;
+      bh = Math.round(size * 1.6);
+    }
+    const color = drawing.color;
+    drawing = null;
+    redraw();
+    openTextBox(bx, by, bw, bh, size, color);
+    return;
+  }
   if (drawing.tool === 'pen') {
     if ((drawing.points?.length ?? 0) > 1) ops.push(drawing);
   } else {
@@ -330,36 +351,33 @@ window.addEventListener('mouseup', () => {
   redraw();
 });
 
-// Text tool: float a transparent textarea over the canvas so you type directly on the
-// image. The font size tracks the current width (WYSIWYG); the on-screen size accounts
-// for the canvas being scaled to fit. Enter inserts a newline; Ctrl/Cmd+Enter or clicking
-// away commits; Esc cancels.
-function openTextInput(p: { x: number; y: number }, evt: MouseEvent): void {
-  const wrapRect = canvasWrap.getBoundingClientRect();
-  const size = Math.max(14, Number(els.width.value) * 5); // backing-pixel size (as rendered)
-  const scale = canvas.width ? canvas.getBoundingClientRect().width / canvas.width : 1;
-  textInput.style.left = evt.clientX - wrapRect.left + 'px';
-  textInput.style.top = evt.clientY - wrapRect.top + 'px';
+// Text tool: drag a rectangular region, then type into a transparent textarea that fills
+// it. The region (hence the wrap width) can be adjusted by dragging the textarea's resize
+// handle. Font size tracks the current width; the on-screen size accounts for the canvas
+// being scaled to fit. Enter inserts a newline; Ctrl/Cmd+Enter or clicking away commits;
+// Esc cancels.
+function openTextBox(bx: number, by: number, bw: number, bh: number, size: number, color: string): void {
+  const cRect = canvas.getBoundingClientRect();
+  const wRect = canvasWrap.getBoundingClientRect();
+  const scale = canvas.width ? cRect.width / canvas.width : 1;
+  textInput.style.left = cRect.left - wRect.left + bx * scale + 'px';
+  textInput.style.top = cRect.top - wRect.top + by * scale + 'px';
+  textInput.style.width = bw * scale + 'px';
+  textInput.style.height = bh * scale + 'px';
   textInput.style.fontSize = size * scale + 'px';
-  textInput.style.color = els.color.value;
+  textInput.style.color = color;
   textInput.style.display = 'block';
   textInput.value = '';
-  pendingTextOp = { tool: 'text', color: els.color.value, size, x: p.x, y: p.y };
-  autoSizeTextInput();
+  pendingTextOp = { tool: 'text', color, size, x: bx, y: by, w: bw };
   setTimeout(() => textInput.focus(), 0);
-}
-
-/** Grow the transparent textarea to fit its content (wrap is off, so it matches render). */
-function autoSizeTextInput(): void {
-  textInput.style.width = '2px';
-  textInput.style.width = Math.max(textInput.scrollWidth + 4, 12) + 'px';
-  textInput.style.height = 'auto';
-  textInput.style.height = textInput.scrollHeight + 'px';
 }
 
 function commitTextIfAny(): void {
   if (textInput.style.display !== 'none' && textInput.value.trim() && pendingTextOp) {
-    ops.push({ ...pendingTextOp, text: textInput.value.replace(/\n+$/, '') });
+    // Honor any manual resize: derive the wrap width from the textarea's current width.
+    const scale = canvas.width ? canvas.getBoundingClientRect().width / canvas.width : 1;
+    const w = scale ? textInput.offsetWidth / scale : pendingTextOp.w;
+    ops.push({ ...pendingTextOp, w, text: textInput.value.replace(/\n+$/, '') });
   }
   textInput.style.display = 'none';
   textInput.blur(); // drop focus so a later Esc closes the editor instead of being swallowed
@@ -380,7 +398,6 @@ textInput.addEventListener('keydown', (e) => {
     pendingTextOp = null;
   }
 });
-textInput.addEventListener('input', autoSizeTextInput);
 textInput.addEventListener('blur', commitTextIfAny);
 
 /** Redraw the whole canvas: base image + committed ops + the in-progress preview. */
@@ -412,13 +429,20 @@ function drawOp(op: Op): void {
     drawPen(op);
   } else if (op.tool === 'mosaic') {
     drawMosaic(op);
+  } else if (op.tool === 'textbox') {
+    // In-progress region preview (never committed).
+    const x = Math.min(op.x0 ?? 0, op.x1 ?? 0);
+    const y = Math.min(op.y0 ?? 0, op.y1 ?? 0);
+    ctx.setLineDash([6, 4]);
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x, y, Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)));
   } else if (op.tool === 'text') {
     const size = op.size || 20;
     ctx.font = `bold ${size}px system-ui, sans-serif`;
     ctx.textBaseline = 'top';
     ctx.lineWidth = Math.max(2, size / 8);
     const lineHeight = size * 1.2;
-    (op.text || '').split('\n').forEach((line, i) => {
+    wrapText(op.text || '', op.w).forEach((line, i) => {
       const ly = (op.y ?? 0) + i * lineHeight;
       ctx.strokeStyle = 'rgba(255,255,255,0.9)';
       ctx.strokeText(line, op.x ?? 0, ly);
@@ -427,6 +451,39 @@ function drawOp(op: Op): void {
     });
   }
   ctx.restore();
+}
+
+/**
+ * Wrap text to a maximum width (canvas pixels), honoring explicit newlines. Long single
+ * tokens (e.g. CJK runs) are broken per character. Assumes ctx.font is already set.
+ */
+function wrapText(text: string, maxW?: number): string[] {
+  const paragraphs = text.split('\n');
+  if (!maxW || maxW <= 0) return paragraphs;
+  const out: string[] = [];
+  for (const para of paragraphs) {
+    if (para === '') {
+      out.push('');
+      continue;
+    }
+    let line = '';
+    for (const token of para.split(/(\s+)/)) {
+      if (line === '') line = token;
+      else if (ctx.measureText(line + token).width <= maxW) line += token;
+      else {
+        out.push(line.replace(/\s+$/, ''));
+        line = token.replace(/^\s+/, '');
+      }
+      while (ctx.measureText(line).width > maxW && line.length > 1) {
+        let i = line.length;
+        while (i > 1 && ctx.measureText(line.slice(0, i)).width > maxW) i--;
+        out.push(line.slice(0, i));
+        line = line.slice(i);
+      }
+    }
+    out.push(line);
+  }
+  return out;
 }
 
 /** Stroke a freehand pen path. */

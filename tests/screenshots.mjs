@@ -80,13 +80,17 @@ try {
   await editor.click('.tool[data-tool="pen"]');
   await drag(at(0.3, 0.3), at(0.5, 0.305));
   // Text label.
+  // Text in a dragged region (wraps within the box).
   await editor.click('.tool[data-tool="text"]');
-  const tp = at(0.55, 0.45);
-  await editor.mouse.click(tp.x, tp.y);
+  const tb1 = at(0.52, 0.56), tb2 = at(0.85, 0.67);
+  await editor.mouse.move(tb1.x, tb1.y);
+  await editor.mouse.down();
+  await editor.mouse.move(tb2.x, tb2.y, { steps: 6 });
+  await editor.mouse.up();
   await editor.waitForSelector('#textInput', { state: 'visible' });
-  await editor.focus('#textInput'); // ensure focus before typing (avoid dropping the first char)
+  await editor.focus('#textInput');
   await editor.waitForTimeout(150);
-  await editor.keyboard.type('Misaligned');
+  await editor.keyboard.type('Button misaligned on small screens');
   await editor.keyboard.press('Control+Enter');
 
   // A descriptive title.
