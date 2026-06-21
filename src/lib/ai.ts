@@ -559,12 +559,12 @@ export const TRANSCRIBE_URL = 'https://chatgpt.com/backend-api/transcribe';
 export const TRANSCRIBE_MODEL = 'whisper-1';
 
 export const DEFAULT_COMPLAINT_PROMPT =
-  "You turn a user's complaint and screenshots into a clear software issue. Write a concise, " +
-  'specific title and a well-structured Markdown body (what happened, where it happened, ' +
-  'steps if any, and expected vs. actual). If a screenshot has numbered boxes (circled ' +
-  'numbers), refer to them by number in the description, e.g. "in screenshot 1, box #1 …". ' +
-  'Write in the same language as the complaint. Return ONLY a JSON object with string fields ' +
-  '"title" and "body".';
+  "You turn a user's report (typed or dictated) and screenshots into a clear software issue. " +
+  'Write a concise, specific title and a well-structured Markdown body (what happened, where ' +
+  'it happened, steps if any, and expected vs. actual). If a screenshot has numbered boxes ' +
+  '(circled numbers), refer to them by number in the description, e.g. "in screenshot 1, ' +
+  'box #1 …". Write in the same language as the report. Return ONLY a JSON object with string ' +
+  'fields "title" and "body".';
 
 /** Coerce the stored model to a valid one and persist any repair; returns [auth, model]. */
 async function healModelFor(auth: AiAuth, override?: string): Promise<{ auth: AiAuth; model: string }> {

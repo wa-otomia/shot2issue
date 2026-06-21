@@ -48,8 +48,8 @@ AI assistant — sign in with a ChatGPT subscription to generate titles:
 - Pre-configurable default title and body templates ({pageTitle}, {pageUrl}, {type}).
 - Optional AI assistant: sign in with an OpenAI Codex / ChatGPT-subscription account to
   generate an issue title from the description, and view the available models and usage.
-- Voice “Complaint”: record a spoken complaint; it is transcribed with your subscription
-  and the AI writes the issue title and body from the transcript and the screenshots.
+- Smart dictation: type a description or dictate it (dictation is transcribed with your
+  subscription); the AI writes the issue title and body from it and the screenshots.
 - Multiple workspaces, each targeting a GitHub repository or a YouTrack project.
 - GitHub submission runs in a background tab without stealing focus; the editor can
   optionally close and return you to the page you captured.
@@ -182,14 +182,15 @@ cannot listen on, so two sign-in paths are offered:
    back, and the extension completes the PKCE token exchange itself.
 
 Clicking **Sign in with ChatGPT** tries the automatic path first and falls back to the
-manual path automatically. In the editor, **AI title** then generates a title from the
-current type, page title, page URL, description, and the screenshot. The model list is
+manual path automatically. In the editor, **Summarize title** then generates a title from
+the current type, page title, page URL, description, and the screenshot. The model list is
 fetched dynamically from the Codex models endpoint (with a curated fallback). The system
 prompt is editable in Settings, with a **Restore default prompt** button that resets it to
 the current interface language's default.
 
-**“Complaint”.** The **Complaint** button opens a dialog where you type a complaint or
-dictate it (recording is transcribed with your ChatGPT subscription, `whisper-1`). The
+**Smart dictation.** The **Smart dictation** button opens a dialog where you type a
+description or dictate it (recording is transcribed with your ChatGPT subscription,
+`whisper-1`). The
 model then writes a title and a Markdown body from that text, the screenshots, and the page
 metadata (structured JSON output), referencing any numbered boxes in the screenshots. The
 dialog keeps its content between opens and can generate repeatedly. Note: the transcription
@@ -229,9 +230,9 @@ it.
 - Only the screenshot, title, description, and the current page URL are used. The
   extension does not collect console output, network activity, or device information,
   and includes no telemetry.
-- The AI assistant is off until you connect it. When you use **AI title**, the type,
+- The AI assistant is off until you connect it. When you use **Summarize title**, the type,
   description, page URL, and the current (annotated) screenshot are sent to OpenAI to
-  generate a title; **Complaint** additionally sends the recorded audio for transcription.
+  generate a title; **Smart dictation** additionally sends the recorded audio for transcription.
   Its tokens are stored in `chrome.storage.local` only and are excluded from settings
   backups.
 - Attachment visibility follows repository visibility. Attachments in private

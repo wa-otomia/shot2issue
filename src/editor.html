@@ -57,6 +57,13 @@
       <label for="body"><span data-i18n="fieldBody"></span> <span class="hint" data-i18n="bodyHint"></span></label>
       <textarea id="body" data-i18n-placeholder="bodyPlaceholder"></textarea>
 
+      <!-- AI actions, just above the submit buttons -->
+      <div class="ai-actions" id="aiActions">
+        <select id="aiModel" class="hidden" data-i18n-title="aiModel"></select>
+        <button id="aiTitle" class="ghost" data-i18n="aiTitle" data-i18n-title="aiTitleTitle"></button>
+        <button id="complaint" class="ghost" data-i18n="complaint" data-i18n-title="complaintTitle"></button>
+      </div>
+
       <div class="actions">
         <button class="primary" id="submit" data-i18n="submit"></button>
         <button class="ghost" id="submitNoImage" data-i18n="submitNoImage" data-i18n-title="submitNoImageTitle"></button>
@@ -64,13 +71,6 @@
 
       <div id="status" class="info"></div>
       <div id="result"></div>
-
-      <!-- AI actions, kept below the form -->
-      <div class="ai-actions" id="aiActions">
-        <select id="aiModel" class="hidden" data-i18n-title="aiModel"></select>
-        <button id="aiTitle" class="ghost" data-i18n="aiTitle" data-i18n-title="aiTitleTitle"></button>
-        <button id="complaint" class="ghost" data-i18n="complaint" data-i18n-title="complaintTitle"></button>
-      </div>
     </div>
   </div>
 
