@@ -358,6 +358,10 @@ try {
   await editor2.waitForSelector('#complaintModal:not(.hidden)', { timeout: 3000 });
   check('editor: complaint modal keeps its content on reopen',
     (await editor2.$eval('#complaintText', (el) => el.value)) === 'box 1 is broken');
+  // Clear button empties the box.
+  await editor2.click('#complaintClear');
+  check('editor: complaint Clear empties the text box',
+    (await editor2.$eval('#complaintText', (el) => el.value)) === '');
   await editor2.click('#complaintClose');
 
   // --- Popup: two capture sources; shortcut chips hidden until bound ---

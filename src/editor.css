@@ -86,7 +86,7 @@ header .spacer { flex: 1; }
 #canvas {
   display: block;
   max-width: 100%;
-  max-height: calc(100vh - 150px); /* fit within the window below the header + toolbar */
+  max-height: calc(100vh - 210px); /* fit below the header + toolbar + thumbnail strip */
   width: auto;
   height: auto;
   cursor: crosshair;
@@ -150,10 +150,10 @@ button.ghost {
 button.ghost:disabled { opacity: .5; cursor: not-allowed; color: var(--muted); }
 button.ghost.recording { color: #fff; background: var(--danger); border-color: var(--danger); }
 
-/* Complaint modal */
-.modal-overlay { position: fixed; inset: 0; background: #0007; display: flex; align-items: center; justify-content: center; z-index: 50; }
+/* Dictation panel — floats in the bottom-right so it does NOT cover the editing canvas */
+.modal-overlay { position: fixed; right: 16px; bottom: 16px; z-index: 50; }
 .modal-overlay.hidden { display: none; }
-.modal { width: min(560px, 92vw); background: Canvas; color: CanvasText; border: 1px solid var(--border); border-radius: 10px; padding: 16px; box-shadow: 0 12px 40px #0006; }
+.modal { width: min(460px, 92vw); max-height: calc(100vh - 90px); overflow: auto; background: Canvas; color: CanvasText; border: 1px solid var(--border); border-radius: 10px; padding: 16px; box-shadow: 0 16px 48px #0009; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; margin-bottom: 10px; }
 .modal-close { border: none; background: none; cursor: pointer; font-size: 16px; color: var(--muted); padding: 2px 6px; }
 .modal textarea { width: 100%; min-height: 120px; resize: vertical; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: Field; color: FieldText; font: inherit; box-sizing: border-box; }
@@ -165,7 +165,8 @@ button.ghost.recording { color: #fff; background: var(--danger); border-color: v
 
 /* AI actions row (below the form) */
 .ai-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
-.ai-actions select { width: auto; max-width: 200px; padding: 7px 8px; border-radius: 6px; border: 1px solid var(--border); background: Field; color: FieldText; font: inherit; }
+/* Match the .ghost button height (same vertical padding + border + box model). */
+.ai-actions select { width: auto; max-width: 200px; padding: 9px 8px; border-radius: 6px; border: 1px solid var(--border); background: Field; color: FieldText; font: inherit; }
 
 /* Attachment thumbnail strip */
 .thumb-strip { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 0; }

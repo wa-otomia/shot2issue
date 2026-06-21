@@ -55,6 +55,7 @@ const els = {
   complaintClose: $('complaintClose') as HTMLButtonElement,
   complaintText: $('complaintText') as HTMLTextAreaElement,
   complaintRecord: $('complaintRecord') as HTMLButtonElement,
+  complaintClear: $('complaintClear') as HTMLButtonElement,
   complaintGenerate: $('complaintGenerate') as HTMLButtonElement,
   complaintStatus: $('complaintStatus'),
   body: $('body') as HTMLTextAreaElement,
@@ -388,15 +389,25 @@ function stopRecording(): void {
   }
 }
 
+/** Insert text at the textarea's caret (replacing any selection); keeps existing content. */
+function insertAtCursor(ta: HTMLTextAreaElement, text: string): void {
+  const start = ta.selectionStart ?? ta.value.length;
+  const end = ta.selectionEnd ?? ta.value.length;
+  const before = ta.value.slice(0, start);
+  const after = ta.value.slice(end);
+  const sep = before && !/\s$/.test(before) ? ' ' : ''; // space off the previous word if needed
+  ta.value = before + sep + text + after;
+  const pos = (before + sep + text).length;
+  ta.focus();
+  ta.setSelectionRange(pos, pos);
+}
+
 async function transcribeIntoBox(blob: Blob): Promise<void> {
   els.complaintRecord.disabled = true;
   try {
     setComplaintStatus(t('complaintTranscribing'));
     const transcript = (await transcribeAudio(blob)).trim();
-    if (transcript) {
-      const cur = els.complaintText.value;
-      els.complaintText.value = cur ? cur.replace(/\s*$/, '') + '\n' + transcript : transcript;
-    }
+    if (transcript) insertAtCursor(els.complaintText, transcript); // at the caret, never clearing
     setComplaintStatus('');
   } catch (e) {
     setComplaintStatus(t('complaintFailed', [e instanceof Error ? e.message : String(e)]), 'error');
@@ -404,6 +415,11 @@ async function transcribeIntoBox(blob: Blob): Promise<void> {
     els.complaintRecord.disabled = false;
   }
 }
+
+els.complaintClear.addEventListener('click', () => {
+  els.complaintText.value = '';
+  els.complaintText.focus();
+});
 
 // Generate the issue title + body from the text box content + the screenshots. Repeatable.
 els.complaintGenerate.addEventListener('click', async () => {
@@ -432,7 +448,8 @@ els.complaintGenerate.addEventListener('click', async () => {
       titleDirty = true;
     }
     if (body) els.body.value = body;
-    setComplaintStatus(t('complaintDone'), 'ok'); // keep the modal open for another run
+    closeComplaintModal(); // done — close (content is kept for next time)
+    showToast(t('complaintDone'));
   } catch (e) {
     setComplaintStatus(t('complaintFailed', [e instanceof Error ? e.message : String(e)]), 'error');
   } finally {
