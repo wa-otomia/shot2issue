@@ -77,6 +77,7 @@ try {
           ],
           type: 'Bug',
           workspaceId: 'w1',
+          sourceTabId: 424242,
         },
       }),
     ]);
@@ -340,6 +341,17 @@ try {
   check('editor: deleting an attachment leaves one thumbnail',
     (await editor.$$eval('#thumbStrip .thumb', (els) => els.length)) === 1);
 
+  // Make closeEditorTab's "return to the captured tab" observable across the close: spy on the
+  // tab activation, recording the id into storage. The editor tab itself is still really removed.
+  await editor.evaluate(() => {
+    chrome.tabs.update = async (id) => {
+      await chrome.storage.local.set({ __escReturn: id });
+      return { id, windowId: 1 };
+    };
+    chrome.windows = chrome.windows || {};
+    chrome.windows.update = async () => ({});
+  });
+
   // Esc requires two presses. Move focus off the text input first (a non-text tool button).
   await editor.click('.tool[data-tool="rect"]');
   await editor.keyboard.press('Escape');
@@ -351,6 +363,8 @@ try {
   // The second keypress may reject if the page closes mid-call — that itself means it worked.
   await editor.keyboard.press('Escape').catch(() => {});
   check('editor: second Esc closes the tab', await closed);
+  const escReturn = await options.evaluate(() => new Promise((r) => chrome.storage.local.get('__escReturn', (d) => r(d.__escReturn))));
+  check('editor: double-Esc returns focus to the captured source tab', escReturn === 424242);
 
   // --- AI assistant connected view (seed credentials, then re-open both pages) ---
   await sw.evaluate(() => {

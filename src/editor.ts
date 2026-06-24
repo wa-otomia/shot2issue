@@ -927,15 +927,28 @@ els.cropApply.addEventListener('click', () => applyCrop());
 els.cropCancel.addEventListener('click', () => cancelCrop());
 
 // Page-level shortcuts:
-//   Esc (twice) → close this editor tab (the first press shows a confirmation toast)
+//   Esc (twice) → return to the captured tab and close this editor (the first press shows a toast)
 //   Ctrl/Cmd+Z  → undo the last annotation (native undo still works inside text fields)
-function closeEditorTab(): void {
-  chrome.tabs
-    .getCurrent()
-    .then((tab) => {
-      if (tab && tab.id != null) void chrome.tabs.remove(tab.id);
-    })
-    .catch(() => {});
+
+/** Re-activate the tab the screenshot was captured from (and focus its window), if still open. */
+async function focusSourceTab(): Promise<void> {
+  if (!shots || shots.sourceTabId == null) return;
+  try {
+    const tab = await chrome.tabs.update(shots.sourceTabId, { active: true });
+    if (tab && tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });
+  } catch {
+    /* the original tab may have been closed */
+  }
+}
+
+async function closeEditorTab(): Promise<void> {
+  await focusSourceTab(); // return the user to where they were before closing the editor
+  try {
+    const me = await chrome.tabs.getCurrent();
+    if (me && me.id != null) await chrome.tabs.remove(me.id);
+  } catch {
+    /* ignore */
+  }
 }
 
 let escArmed = false;
@@ -972,7 +985,7 @@ window.addEventListener('keydown', (e) => {
     if (escArmed) {
       window.clearTimeout(escTimer);
       escArmed = false;
-      closeEditorTab();
+      void closeEditorTab();
     } else {
       escArmed = true;
       showToast(t('escAgainToClose'));
@@ -1957,11 +1970,7 @@ async function submit({ withImage }: { withImage: boolean }): Promise<void> {
     if (config.closeAfterSubmit && shots && shots.sourceTabId != null) {
       setStatus(num ? t('statusReturning', [num]) : t('statusCreatedNoNumber'), 'ok');
       await sleep(900);
-      try {
-        await chrome.tabs.update(shots.sourceTabId, { active: true });
-      } catch {
-        /* the source tab may be gone */
-      }
+      await focusSourceTab();
       try {
         const me = await chrome.tabs.getCurrent();
         if (me && me.id != null) await chrome.tabs.remove(me.id);
