@@ -451,6 +451,45 @@ export function refreshTokens(refreshToken: string): Promise<AiAuth> {
   });
 }
 
+/** Refresh unconditionally via the refresh token, persist the result, and return the new auth. */
+async function forceRefresh(auth: AiAuth): Promise<AiAuth> {
+  if (!auth.refreshToken) throw new Error('No refresh token');
+  const refreshed = await refreshTokens(auth.refreshToken);
+  const merged: AiAuth = {
+    ...auth,
+    accessToken: refreshed.accessToken,
+    refreshToken: refreshed.refreshToken || auth.refreshToken,
+    idToken: refreshed.idToken || auth.idToken,
+    expiresAt: refreshed.expiresAt,
+  };
+  await setAiAuth(merged);
+  return merged;
+}
+
+/**
+ * POST with the user's auth, and if the server rejects the token (401/403) — which happens when
+ * it's revoked, expired earlier than our local estimate, or had no expiry recorded — refresh once
+ * via the refresh token and retry with the new access token. `build(a)` constructs the request
+ * for a given auth so the retry carries the refreshed Bearer token. Returns the final response and
+ * the (possibly refreshed) auth, so the caller keeps using the live token for any follow-up writes.
+ */
+async function fetchWithRefresh(
+  auth: AiAuth,
+  url: string,
+  build: (a: AiAuth) => RequestInit
+): Promise<{ res: Response; auth: AiAuth }> {
+  let cur = auth;
+  let res = await fetch(url, build(cur));
+  if ((res.status === 401 || res.status === 403) && cur.refreshToken) {
+    const refreshed = await forceRefresh(cur).catch(() => null);
+    if (refreshed) {
+      cur = refreshed;
+      res = await fetch(url, build(cur));
+    }
+  }
+  return { res, auth: cur };
+}
+
 // `Date.now` is fine in the extension runtime (only workflow scripts forbid it).
 function nowMs(): number {
   return Date.now();
@@ -551,21 +590,15 @@ async function finalizeAuth(auth: AiAuth): Promise<void> {
 
 /** Refresh the access token if it is missing or about to expire; returns current auth. */
 export async function ensureFreshAuth(auth: AiAuth): Promise<AiAuth> {
+  // Proactive refresh shortly before the local expiry estimate. This is best-effort only — the
+  // request paths also refresh reactively on a 401/403 (see fetchWithRefresh), which covers a
+  // missing/incorrect expiresAt and server-side revocation.
   const fresh = auth.expiresAt ? auth.expiresAt - nowMs() > 60_000 : true;
   if (fresh || !auth.refreshToken) return auth;
   try {
-    const refreshed = await refreshTokens(auth.refreshToken);
-    const merged: AiAuth = {
-      ...auth,
-      accessToken: refreshed.accessToken,
-      refreshToken: refreshed.refreshToken || auth.refreshToken,
-      idToken: refreshed.idToken || auth.idToken,
-      expiresAt: refreshed.expiresAt,
-    };
-    await setAiAuth(merged);
-    return merged;
+    return await forceRefresh(auth);
   } catch {
-    return auth; // let the downstream call fail and prompt re-auth
+    return auth; // let the downstream call fail (or recover via the reactive 401 refresh)
   }
 }
 
@@ -619,17 +652,22 @@ export async function generateTitle(
   const { instructions, input } = buildTitlePrompt(content, opts?.instructions);
   const images = (content.images || []).filter(Boolean);
 
-  const post = (withImages: boolean): Promise<Response> =>
-    fetch(RESPONSES_URL, {
-      method: 'POST',
-      headers: { ...authHeaders(auth), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-      body: JSON.stringify(buildResponsesRequest({ model, instructions, input, images: withImages ? images : undefined, reasoningEffort: opts?.reasoningEffort })),
-      signal: opts?.signal,
-    });
+  const reqInit = (a: AiAuth, withImages: boolean): RequestInit => ({
+    method: 'POST',
+    headers: { ...authHeaders(a), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify(buildResponsesRequest({ model, instructions, input, images: withImages ? images : undefined, reasoningEffort: opts?.reasoningEffort })),
+    signal: opts?.signal,
+  });
 
   // Send the screenshot for visual context; if the backend rejects image input, retry text-only.
-  let res = await post(images.length > 0);
-  if (!res.ok && images.length) res = await post(false);
+  // fetchWithRefresh transparently refreshes the token and retries on a 401/403.
+  let out = await fetchWithRefresh(auth, RESPONSES_URL, (a) => reqInit(a, images.length > 0));
+  auth = out.auth;
+  if (!out.res.ok && images.length) {
+    out = await fetchWithRefresh(auth, RESPONSES_URL, (a) => reqInit(a, false));
+    auth = out.auth;
+  }
+  const res = out.res;
   if (!res.ok) throw new Error(`Title generation failed: ${parseResponsesError(await res.text(), res.status)}`);
 
   const cb = opts?.onText || opts?.onReasoning ? { onText: opts.onText, onReasoning: opts.onReasoning } : null;
@@ -680,7 +718,7 @@ export async function transcribeAudio(blob: Blob, opts?: { filename?: string; pr
   if (opts?.prompt && opts.prompt.trim()) fd.append('prompt', opts.prompt.trim());
   // An explicit language (ISO-639-1) improves accuracy; 'auto' lets the model detect it.
   if (opts?.language && opts.language !== 'auto') fd.append('language', opts.language);
-  const res = await fetch(TRANSCRIBE_URL, { method: 'POST', headers: authHeaders(auth), body: fd });
+  const { res } = await fetchWithRefresh(auth, TRANSCRIBE_URL, (a) => ({ method: 'POST', headers: authHeaders(a), body: fd }));
   const text = await res.text();
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
@@ -809,28 +847,31 @@ export async function generateComplaint(
   const base = await getAiAuth();
   if (!base) throw new Error('Not connected. Sign in to the AI assistant in Settings.');
   const fresh = await ensureFreshAuth(base);
-  const { auth, model } = await healModelFor(fresh, opts?.model);
+  const healed = await healModelFor(fresh, opts?.model);
+  let auth = healed.auth;
+  const model = healed.model;
   const instructions = opts?.instructions || DEFAULT_COMPLAINT_PROMPT;
   const input = buildComplaintInput(content);
   const images = (content.images || []).filter(Boolean);
 
-  const post = (withImages: boolean, schema: boolean): Promise<Response> =>
-    fetch(RESPONSES_URL, {
-      method: 'POST',
-      headers: { ...authHeaders(auth), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-      body: JSON.stringify(buildComplaintRequest({ model, instructions, input, images: withImages ? images : undefined, schema, reasoningEffort: opts?.reasoningEffort })),
-      signal: opts?.signal,
-    });
+  const reqInit = (a: AiAuth, withImages: boolean, schema: boolean): RequestInit => ({
+    method: 'POST',
+    headers: { ...authHeaders(a), 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify(buildComplaintRequest({ model, instructions, input, images: withImages ? images : undefined, schema, reasoningEffort: opts?.reasoningEffort })),
+    signal: opts?.signal,
+  });
 
   // Preference order: images+schema → images → text-only. First OK wins; only the winning
   // attempt's body is streamed (failed attempts are read for their error message).
+  // fetchWithRefresh transparently refreshes the token and retries on a 401/403.
   const attempts: Array<[boolean, boolean]> = images.length ? [[true, true], [true, false], [false, false]] : [[false, true], [false, false]];
   let res: Response | null = null;
   let lastErr = '';
   for (const [withImages, schema] of attempts) {
-    const r = await post(withImages, schema);
-    if (r.ok) { res = r; break; }
-    lastErr = parseResponsesError(await r.text(), r.status);
+    const r = await fetchWithRefresh(auth, RESPONSES_URL, (a) => reqInit(a, withImages, schema));
+    auth = r.auth;
+    if (r.res.ok) { res = r.res; break; }
+    lastErr = parseResponsesError(await r.res.text(), r.res.status);
   }
   if (!res) throw new Error(`Complaint generation failed: ${lastErr}`);
 
