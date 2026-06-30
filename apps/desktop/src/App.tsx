@@ -21,7 +21,7 @@ export default function App() {
   // services/editor_stage.rs). The main window no longer hosts the captured
   // shot, so there's no in-app capture->annotate listener here.
 
-  // Match curvault: hold the main-window close in Rust, animate <body>, exit.
+  // Hold the main-window close in Rust, animate <body>, then exit.
   useEffect(() => {
     const un = listen("app://close", () => {
       document.body.classList.add("app-closing");

@@ -1,16 +1,16 @@
-/* Capture-overlay styling, in the curvault design language (cyan accent
- * #36c5ff over a navy dim). Loaded only by the overlay window (main.tsx routes
+/* Capture-overlay styling in the shot2issue palette (brand blue #1f6feb over a
+ * neutral dim). Loaded only by the overlay window (main.tsx routes
  * the "overlay" label here). The page background is transparent so the
  * frameless always-on-top window shows the frozen frame edge-to-edge; on the
  * Wayland degrade path the same classes render inside a normal decorated
  * window against the static <img>. */
 
 :root {
-  --ov-accent: #36c5ff;
-  --ov-dim: rgba(6, 11, 26, 0.45);
-  --ov-pill-bg: rgba(20, 28, 60, 0.85);
-  --ov-pill-border: rgba(54, 197, 255, 0.35);
-  --ov-text: #e6ecf7;
+  --ov-accent: #1f6feb;
+  --ov-dim: rgba(1, 4, 9, 0.45);
+  --ov-pill-bg: rgba(22, 27, 34, 0.92);
+  --ov-pill-border: rgba(31, 111, 235, 0.45);
+  --ov-text: #e6edf3;
 }
 
 /* Transparent page background + crosshair cursor across the whole overlay. */
@@ -79,7 +79,7 @@
 .overlay-winhi {
   position: absolute;
   border: 2px solid var(--ov-accent);
-  background: rgba(54, 197, 255, 0.12);
+  background: rgba(31, 111, 235, 0.14);
   box-shadow: 0 0 0 100000px var(--ov-dim);
   pointer-events: none;
 }

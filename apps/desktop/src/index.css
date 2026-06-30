@@ -8,30 +8,31 @@
   --sidebar-width: 240px;
   --titlebar-height: 30px;
 
-  /* Curvault palette: deep navy base + brand cyan-blue gradient. */
-  --bg:           #060b1a;
-  --bg-elev:      #0e1530;
-  --bg-elev-2:    #131c3c;
-  --bg-input:     #131c3c;
-  --bg-overlay:   rgba(20, 28, 60, 0.6);
+  /* shot2issue palette: GitHub-dark neutrals + brand blue accent (#1f6feb,
+   * the same blue as the app icon and the issue host). Flat — no glow. */
+  --bg:           #0d1117;
+  --bg-elev:      #161b22;
+  --bg-elev-2:    #1c2128;
+  --bg-input:     #010409;
+  --bg-overlay:   rgba(177, 186, 196, 0.08);
 
-  --border:       #1f2a52;
-  --border-hi:    #2d3d72;
+  --border:       #30363d;
+  --border-hi:    #444c56;
 
-  --text:         #e6ecf7;
-  --text-dim:     #8395b8;
-  --text-mute:    #4f5d7a;
+  --text:         #e6edf3;
+  --text-dim:     #8b949e;
+  --text-mute:    #6e7681;
 
-  --accent:       #36c5ff;          /* brand cyan */
-  --accent-2:     #1b4fd6;          /* brand deep blue */
-  --accent-hover: #5cd2ff;
-  --accent-bg:    rgba(54, 197, 255, 0.12);
+  --accent:       #1f6feb;          /* brand blue */
+  --accent-2:     #388bfd;
+  --accent-hover: #388bfd;
+  --accent-bg:    rgba(31, 111, 235, 0.15);
 
-  --ok:    #4caf7a;
-  --warn:  #d4a13c;
-  --error: #e35f5f;
+  --ok:    #3fb950;
+  --warn:  #d29922;
+  --error: #f85149;
 
-  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-card: 0 1px 3px rgba(1, 4, 9, 0.4);
 }
 
 * {
@@ -40,13 +41,7 @@
 
 body {
   margin: 0;
-  /* Single source of truth for the chrome opacity. Vibrancy from the
-   * platform (macOS hudWindow / Windows mica / Windows acrylic)
-   * contributes the remaining ~10 % of every pixel except where a
-   * .card overlays it. Sidebar and main-frame add only brand-coloured
-   * gradients on top — no extra solid fills — so the chrome reads as
-   * a uniform 90 % tint with the desktop blur subtly bleeding through. */
-  background: rgba(6, 11, 26, 0.80);
+  background: var(--bg);
   color: var(--text);
   font-feature-settings: "ss01", "cv11";
 }
@@ -58,11 +53,6 @@ html, body {
   height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
-}
-
-@supports not (backdrop-filter: blur(1px)) {
-  /* No backdrop-filter -> no vibrancy. Drop to solid for legibility. */
-  body { background: var(--bg); }
 }
 
 #root {
@@ -86,11 +76,7 @@ html, body {
   background: transparent;
   user-select: none;
   -webkit-user-select: none;
-  border-bottom: 1px solid rgba(54, 197, 255, 0.06);
-}
-
-.titlebar .brand-mini {
-  opacity: 0.7;
+  border-bottom: 1px solid var(--border);
 }
 
 .app-body {
@@ -114,7 +100,8 @@ button {
 }
 
 button:hover {
-  border-color: var(--accent);
+  border-color: var(--border-hi);
+  background: var(--bg-elev);
 }
 
 button:disabled {
@@ -123,19 +110,15 @@ button:disabled {
 }
 
 button.primary {
-  background: linear-gradient(180deg,
-    rgba(54, 197, 255, 0.18) 0%,
-    rgba(27, 79, 214, 0.28) 100%);
-  border-color: rgba(54, 197, 255, 0.45);
-  color: var(--text);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
   font-weight: 600;
 }
 
 button.primary:hover {
-  background: linear-gradient(180deg,
-    rgba(54, 197, 255, 0.28) 0%,
-    rgba(27, 79, 214, 0.38) 100%);
-  border-color: var(--accent);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 button.danger {
@@ -153,12 +136,13 @@ input, select, textarea {
   border-radius: 6px;
   font-size: 14px;
   font-family: inherit;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
 }
 
 code, pre {
@@ -179,62 +163,30 @@ pre {
 
 .sidebar {
   width: var(--sidebar-width);
-  /* Just the brand gradients — body already provides the base opacity.
-   * Sidebar reads slightly cooler than main-frame thanks to the deeper
-   * bottom-left blue gradient. */
-  background:
-    radial-gradient(ellipse at 80% 5%, rgba(54,197,255,0.10) 0%, transparent 50%),
-    radial-gradient(ellipse at 10% 115%, rgba(27,79,214,0.28) 0%, transparent 55%);
+  background: #010409;
   position: relative;
-  border-right: 1px solid rgba(54, 197, 255, 0.10);
+  border-right: 1px solid var(--border);
   padding: 1rem 0.75rem 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.sidebar::before {
-  /* dotted texture overlay matching the sticker design */
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image: radial-gradient(circle, rgba(70,200,255,0.10) 1px, transparent 1.5px);
-  background-size: 14px 14px;
-  background-position: 0 0;
-  opacity: 0.55;
-  pointer-events: none;
-}
-
-.sidebar > * {
-  position: relative;
-  z-index: 1;
-}
-
 .sidebar .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-weight: 700;
-  font-size: 20px;
-  color: #ffffff;
-  padding: 0.4rem 0.5rem 1.1rem;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 18px;
+  color: var(--text);
+  padding: 0.3rem 0.4rem 1rem;
   margin-bottom: 0.5rem;
-  border-bottom: 1px solid rgba(54,197,255,0.12);
-}
-
-.sidebar .brand-logo {
-  flex: 0 0 36px;
-  filter: drop-shadow(0 0 6px rgba(54,197,255,0.4));
+  border-bottom: 1px solid var(--border);
 }
 
 .sidebar .brand-name {
   flex: 1;
-  letter-spacing: 0.3px;
-}
-
-.sidebar .brand-nfc {
-  flex: 0 0 20px;
-  opacity: 0.85;
+  letter-spacing: 0.2px;
 }
 
 .sidebar-nav {
@@ -244,41 +196,35 @@ pre {
   flex: 1;
 }
 
-.sidebar-waves {
-  position: absolute;
-  left: -10%;
-  right: -10%;
-  bottom: 4%;
-  width: 120%;
-  height: 38%;
-  pointer-events: none;
-  opacity: 0.85;
-  z-index: 0;
-}
-
 .nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   background: transparent;
   border: 1px solid transparent;
   text-align: left;
-  padding: 0.55rem 0.75rem;
+  padding: 0.5rem 0.7rem;
   border-radius: 6px;
   cursor: pointer;
-  color: var(--text);
+  color: var(--text-dim);
   font-size: 14px;
   font-weight: 500;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, color 0.15s;
+}
+
+.nav-item .nav-icon {
+  flex: 0 0 auto;
+  opacity: 0.9;
 }
 
 .nav-item:hover {
   background: var(--bg-overlay);
-  border-color: var(--border-hi);
+  color: var(--text);
 }
 
 .nav-item.active {
-  background: linear-gradient(135deg, rgba(54,197,255,0.20) 0%, rgba(27,79,214,0.25) 100%);
-  border-color: rgba(54,197,255,0.35);
-  color: var(--text);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+  background: var(--accent-bg);
+  color: var(--accent-2);
 }
 
 /* -------- main frame -------- */
@@ -288,10 +234,7 @@ pre {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  /* Brand-blue glow on top of the body tint — no solid fill of its own
-   * (body already provides the 90 % opacity). */
-  background:
-    radial-gradient(ellipse at 80% 0%, rgba(54,197,255,0.10) 0%, transparent 55%);
+  background: var(--bg);
 }
 
 .content {
@@ -302,14 +245,8 @@ pre {
   position: relative; /* anchor for .loading-overlay */
 }
 
-/* Consistent spacing for top-level page chrome.
- *
- * Every view follows the same skeleton — an optional <h2> or a header row
- * that mixes <h2> with action buttons, then one or more <.card>s. We only
- * target direct children of .content so nested .row inside a .card stays
- * compact, while top-level headers always get breathing room before the
- * first card.
- */
+/* Consistent spacing for top-level page chrome. Every view follows the same
+ * skeleton — an optional <h2> or a header row, then one or more <.card>s. */
 .content > h2 {
   margin: 0 0 1rem;
   font-size: 20px;
@@ -322,10 +259,8 @@ pre {
 }
 
 .statusbar {
-  border-top: 1px solid rgba(54, 197, 255, 0.08);
-  background: rgba(14, 21, 48, 0.55);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
   padding: 0.3rem 1rem;
   font-size: 12px;
   color: var(--text-dim);
@@ -350,18 +285,11 @@ pre {
 /* -------- cards & layout -------- */
 
 .card {
-  /* Cards are content-bearing so they stay mostly opaque for
-   * readability, but we still allow a hint of vibrancy through. */
-  background: linear-gradient(180deg,
-    rgba(14, 21, 48, 0.85) 0%,
-    rgba(11, 16, 38, 0.78) 100%);
+  background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 1rem 1.25rem;
   margin-bottom: 1rem;
-  box-shadow: var(--shadow-card);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
 }
 
 .card h3 {
@@ -420,18 +348,12 @@ th {
 /* -------- loading overlay -------- */
 
 .loading-overlay {
-  /* Fixed positioning so a scrolling page can't slip out from under it.
-   * Anchored to the area right of the sidebar and below the titlebar so
-   * the navigation stays interactive — clicking another nav item while
-   * a load is running unmounts the overlay along with the view. */
   position: fixed;
   top: var(--titlebar-height);
   left: var(--sidebar-width);
   right: 0;
   bottom: 0;
-  background: rgba(6, 11, 26, 0.55);
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
+  background: rgba(1, 4, 9, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -451,38 +373,20 @@ th {
   gap: 0.9rem;
 }
 
+/* Simple ring spinner (replaces the old concentric-arc mark). */
 .loading-spinner {
-  filter: drop-shadow(0 0 14px rgba(54,197,255,0.35));
-}
-
-.loading-spinner .loading-ring-outer,
-.loading-spinner .loading-ring-inner,
-.loading-spinner .loading-dot {
-  /* Anchor the rotation to the centre of the SVG viewport (viewBox is
-   * 0 0 120 120, so 50% = 60 user units). fill-box would pin to each
-   * path's own bounding box centre, which for the open-C arcs is off
-   * canvas — the rings then orbit instead of spinning. */
-  transform-box: view-box;
-  transform-origin: 50% 50%;
-}
-
-.loading-spinner .loading-ring-outer {
-  animation: s2i-spin 1.6s linear infinite;
-}
-
-.loading-spinner .loading-ring-inner {
-  animation: s2i-spin-reverse 1.0s linear infinite;
-}
-
-.loading-spinner .loading-dot {
-  animation: s2i-pulse 1.3s ease-in-out infinite;
+  width: 34px;
+  height: 34px;
+  border: 3px solid var(--border-hi);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: s2i-spin 0.8s linear infinite;
 }
 
 .loading-label {
   font-size: 13px;
   color: var(--text);
   letter-spacing: 0.3px;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
 }
 
 @keyframes s2i-spin {
@@ -490,14 +394,9 @@ th {
   to   { transform: rotate(360deg); }
 }
 
-@keyframes s2i-spin-reverse {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(-360deg); }
-}
-
 @keyframes s2i-pulse {
   0%, 100% { transform: scale(1); opacity: 1; }
-  50%      { transform: scale(0.45); opacity: 0.45; }
+  50%      { transform: scale(0.55); opacity: 0.5; }
 }
 
 @keyframes s2i-fade-in {
@@ -510,8 +409,8 @@ th {
   to   { opacity: 0; }
 }
 
-/* Page transition: every direct child of .content (i.e. the active
- * view) fades in on mount. The loading overlay is excluded so its own
+/* Page transition: every direct child of .content (i.e. the active view)
+ * fades in on mount. The loading overlay is excluded so its own
  * fade-in / fade-out lifecycle stays predictable. */
 .content > *:not(.loading-overlay) {
   animation: s2i-page-in 0.22s ease-out;
@@ -525,12 +424,8 @@ th {
 /* -------- log panel -------- */
 
 .logpanel {
-  border-top: 1px solid rgba(54, 197, 255, 0.08);
-  background: linear-gradient(180deg,
-    rgba(14, 21, 48, 0.55) 0%,
-    rgba(6, 11, 26, 0.55) 100%);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
   display: flex;
   flex-direction: column;
   transition: max-height 0.2s ease;
@@ -609,18 +504,18 @@ th {
   overflow: auto;
 }
 
-/* -------- updater window (frameless, rounded, draggable) -------- */
+/* -------- updater / about window (frameless, rounded, draggable) -------- */
 
-/* The updater window is transparent + frameless; this opaque rounded panel
- * is the visible surface. Body is forced transparent (set in main.tsx) so the
- * corners outside the radius show through. */
+/* The updater/about window is transparent + frameless; this opaque rounded
+ * panel is the visible surface. Body is forced transparent (set in the view)
+ * so the corners outside the radius show through. */
 .updater-root {
   position: relative;
   overflow: hidden;
   min-height: 100vh;
   border-radius: 16px;
   background: var(--bg);
-  border: 1px solid rgba(120, 160, 255, 0.12);
+  border: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -631,11 +526,8 @@ th {
   cursor: default;
 }
 
-/* Dismiss animation: shrink + fade + blur out on an accelerating curve so it
- * snaps shut fast, then the window is actually closed (the JS waits for this).
- * The frameless popups animate their panel; the MAIN window animates <body>
- * so its tinted background fades too (animating #root left the dark tint
- * behind as a "black blob"). */
+/* Dismiss animation: shrink + fade out so it snaps shut fast, then the window
+ * is actually closed (the JS waits for this). */
 .updater-root.closing,
 body.app-closing {
   animation: popupClose 0.2s cubic-bezier(0.6, 0, 1, 1) forwards;
@@ -643,8 +535,8 @@ body.app-closing {
   pointer-events: none;
 }
 @keyframes popupClose {
-  from { opacity: 1; transform: scale(1);    filter: blur(0); }
-  to   { opacity: 0; transform: scale(0.9);  filter: blur(10px); }
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(0.9); }
 }
 
 .updater-content {
@@ -662,7 +554,7 @@ body.app-closing {
   margin: 0.2rem 0 0;
   font-size: 22px;
   font-weight: 700;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
 }
 
 /* Fixed-height stage keeps the window from reflowing as states change. */
@@ -683,8 +575,6 @@ body.app-closing {
   text-align: center;
 }
 
-/* Each state change replays this fade so content eases in instead of
- * snapping. Keyed by state in React so progress ticks don't re-trigger it. */
 .updater-fade {
   animation: updaterFade 0.32s ease;
 }
@@ -699,7 +589,7 @@ body.app-closing {
   font-size: 13px;
   color: var(--text-dim);
   line-height: 1.5;
-  font-variant-numeric: tabular-nums; /* stop digits from shifting width */
+  font-variant-numeric: tabular-nums;
 }
 .updater-version {
   margin-top: 1rem;
@@ -707,8 +597,7 @@ body.app-closing {
   font-size: 11px;
 }
 
-/* The About window is wider than the updater, so its content column is too —
- * keeps the tagline and meta line from wrapping. */
+/* The About window is wider than the updater, so its content column is too. */
 .about-content { max-width: 460px; }
 
 .about-meta {
@@ -780,7 +669,7 @@ body.app-closing {
   top: 0;
   bottom: 0;
   left: 0;
-  background: linear-gradient(90deg, #36c5ff, #1b4fd6);
+  background: var(--accent);
   border-radius: 3px;
   transition: width 0.2s ease;
 }
@@ -789,7 +678,7 @@ body.app-closing {
   top: 0;
   bottom: 0;
   width: 38%;
-  background: linear-gradient(90deg, rgba(54,197,255,0) 0%, #36c5ff 50%, rgba(27,79,214,0) 100%);
+  background: var(--accent);
   border-radius: 3px;
   animation: updaterSlide 1.15s ease-in-out infinite;
 }
@@ -799,9 +688,9 @@ body.app-closing {
 }
 
 /* ============================================================
- * shot2issue capture surfaces (additive — not present in curvault).
- * The capture HUD is a frameless, transparent, fullscreen overlay
- * window; the annotate stage hosts the reused canvas editor.
+ * shot2issue capture surfaces. The capture HUD is a frameless,
+ * transparent, fullscreen overlay window; the annotate stage hosts
+ * the reused canvas editor.
  * ============================================================ */
 
 /* ---- Capture HUD (overlay window) ---- */
@@ -824,13 +713,13 @@ body.app-closing {
 .hud-scrim {
   position: absolute;
   inset: 0;
-  background: rgba(6, 11, 26, 0.42);
+  background: rgba(1, 4, 9, 0.45);
   pointer-events: none;
 }
 .hud-selection {
   position: absolute;
   border: 1.5px solid var(--accent);
-  box-shadow: 0 0 0 100vmax rgba(6, 11, 26, 0.55);
+  box-shadow: 0 0 0 100vmax rgba(1, 4, 9, 0.55);
   background: transparent;
   pointer-events: none;
 }
@@ -846,8 +735,7 @@ body.app-closing {
   position: absolute;
   border: 2px solid var(--accent);
   border-radius: 6px;
-  box-shadow: 0 0 0 100vmax rgba(6, 11, 26, 0.55),
-    0 0 18px rgba(54, 197, 255, 0.55);
+  box-shadow: 0 0 0 100vmax rgba(1, 4, 9, 0.55);
   pointer-events: none;
 }
 .hud-readout {
@@ -899,7 +787,6 @@ body.app-closing {
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: var(--shadow-card);
 }
 .annotate-toolbar .sep {
   width: 1px;
@@ -951,8 +838,8 @@ body.app-closing {
 
 /* ============================================================
  * Annotation editor (the `editor` window). React port of the
- * extension's editor.css, restyled to the curvault palette.
- * All classes are s2i-* prefixed to avoid clashing with chrome.
+ * extension's editor.css. All classes are s2i-* prefixed to avoid
+ * clashing with chrome.
  * ============================================================ */
 .s2i-editor {
   display: flex;
@@ -966,7 +853,7 @@ body.app-closing {
   align-items: center;
   gap: 10px;
   padding: 8px 16px;
-  border-bottom: 1px solid rgba(54, 197, 255, 0.08);
+  border-bottom: 1px solid var(--border);
 }
 .s2i-editor-head h1 {
   font-size: 15px;
@@ -1004,7 +891,7 @@ body.app-closing {
 }
 .s2i-tool svg, .s2i-act svg { width: 18px; height: 18px; display: block; }
 .s2i-tool:hover, .s2i-act:hover { background: var(--bg-overlay); border-color: transparent; }
-.s2i-tool.active { background: var(--accent); border-color: var(--accent); color: #04121f; }
+.s2i-tool.active { background: var(--accent); border-color: var(--accent); color: #ffffff; }
 .s2i-sep { width: 1px; height: 26px; background: var(--border-hi); }
 .s2i-ctl-group { display: inline-flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .s2i-swatch { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-dim); cursor: pointer; }
@@ -1092,7 +979,7 @@ button.ai-busy:hover { background: var(--error); border-color: var(--error); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* Dictation modal (centered) */
-.s2i-modal-overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(6, 11, 26, 0.55); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.s2i-modal-overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(1, 4, 9, 0.6); }
 .s2i-modal { width: min(520px, 92vw); background: var(--bg-elev); color: var(--text); border: 1px solid var(--border-hi); border-radius: 12px; padding: 16px; box-shadow: 0 16px 48px rgba(0,0,0,0.6); }
 .s2i-modal-head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; margin-bottom: 10px; }
 .s2i-modal-close { border: none; background: none; cursor: pointer; font-size: 16px; color: var(--text-dim); padding: 2px 6px; }
@@ -1147,7 +1034,7 @@ button.ghost.recording { color: #fff; background: var(--error); border-color: va
 .s2i-set-grid .field { margin-bottom: 0; }
 .s2i-set-error { color: var(--error); font-size: 13px; margin: 6px 0 0; }
 .s2i-set-ok { color: var(--ok); font-size: 13px; }
-.s2i-save-bar { position: sticky; bottom: 0; background: rgba(6, 11, 26, 0.9); padding: 12px 0; border-top: 1px solid var(--border); margin-top: 12px; display: flex; gap: 10px; align-items: center; }
+.s2i-save-bar { position: sticky; bottom: 0; background: var(--bg); padding: 12px 0; border-top: 1px solid var(--border); margin-top: 12px; display: flex; gap: 10px; align-items: center; }
 .s2i-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
 .s2i-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; }
 .s2i-chip button { border: none; background: none; padding: 0 2px; color: var(--error); cursor: pointer; }

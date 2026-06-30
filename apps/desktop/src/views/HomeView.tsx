@@ -1,4 +1,4 @@
-// The home / landing screen, curvault-styled. Capture is Rust-driven: the global hotkey OR the
+// The home / landing screen. Capture is Rust-driven: the global hotkey OR the
 // "Capture now" button calls trigger_capture, which grabs the monitor under the cursor and opens
 // the crop overlay (or, on native Wayland, an in-app crop window). A captured + cropped shot
 // opens the dedicated `editor` window. This view shows the bound hotkey, a primary capture

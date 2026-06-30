@@ -1,30 +1,17 @@
-// The C-curve mark. Same geometry as the app icon. Reused verbatim from
-// curvault as the shot2issue identity mark (same brand family).
+// The shot2issue camera mark — same geometry as the app icon
+// (src-tauri/icon-src/icon.svg): a GitHub-blue rounded square with a white
+// camera. Flat, no gradients, so it matches the chrome.
 export default function BrandLogo({ size = 120 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 120 120" aria-hidden="true">
-      <defs>
-        <linearGradient id="brandLogoArc" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#36c5ff" />
-          <stop offset="1" stopColor="#1b4fd6" />
-        </linearGradient>
-      </defs>
-      <path
-        d="M 86.87 33.13 A 38 38 0 1 0 86.87 86.87"
-        fill="none"
-        stroke="url(#brandLogoArc)"
-        strokeWidth="9"
-        strokeLinecap="round"
-      />
-      <path
-        d="M 76.97 43.03 A 24 24 0 1 0 76.97 76.97"
-        fill="none"
-        stroke="#fff"
-        strokeWidth="6"
-        strokeLinecap="round"
-        opacity=".9"
-      />
-      <circle cx="60" cy="60" r="6.5" fill="#fff" />
+    <svg width={size} height={size} viewBox="0 0 1024 1024" aria-hidden="true">
+      <rect x="80" y="80" width="864" height="864" rx="208" fill="#1f6feb" />
+      <g fill="#ffffff">
+        <rect x="408" y="298" width="208" height="126" rx="34" />
+        <rect x="200" y="368" width="624" height="452" rx="76" />
+      </g>
+      <circle cx="512" cy="596" r="132" fill="#1f6feb" />
+      <circle cx="512" cy="596" r="86" fill="#ffffff" />
+      <circle cx="512" cy="596" r="46" fill="#1f6feb" />
     </svg>
   );
 }

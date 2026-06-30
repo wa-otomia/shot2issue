@@ -17,7 +17,7 @@ import {
   type AiAuth,
   type Config,
 } from "@shot2issue/core";
-import { getHotkey, setCaptureHotkey } from "../lib/api";
+import { getDefaultAccelerator, getHotkey, setCaptureHotkey } from "../lib/api";
 import AccountsPanel from "../settings/AccountsPanel";
 import WorkspacesPanel from "../settings/WorkspacesPanel";
 import AiPanel from "../settings/AiPanel";
@@ -37,6 +37,17 @@ function accelFromEvent(e: KeyboardEvent): string | null {
   if (key === " ") token = "Space";
   parts.push(token);
   return parts.join("+");
+}
+
+// OS-reserved capture chords we reject up front with a friendly message instead
+// of letting backend registration fail: macOS Cmd+Shift+3/4/5/6 (screenshot /
+// recording), Windows Win+Shift+S (Snip).
+function isSystemReserved(e: KeyboardEvent): boolean {
+  const mac = navigator.platform.toUpperCase().includes("MAC");
+  const k = e.key.toLowerCase();
+  if (mac && e.metaKey && e.shiftKey && ["3", "4", "5", "6"].includes(k)) return true;
+  if (!mac && e.metaKey && e.shiftKey && k === "s") return true;
+  return false;
 }
 
 export default function SettingsView() {
@@ -61,6 +72,11 @@ export default function SettingsView() {
     if (!recording) return;
     const onKey = async (e: KeyboardEvent): Promise<void> => {
       e.preventDefault();
+      if (isSystemReserved(e)) {
+        setRecording(false);
+        setHotkeyErr(t("hotkeyReservedSystem"));
+        return;
+      }
       const accel = accelFromEvent(e);
       if (!accel) return; // modifier-only; wait for a real key
       setRecording(false);
@@ -68,13 +84,27 @@ export default function SettingsView() {
         await setCaptureHotkey(accel);
         setHotkey(accel);
         setHotkeyErr("");
-      } catch (err) {
-        setHotkeyErr(err instanceof Error ? err.message : String(err));
+      } catch {
+        // Backend rejects on Wayland / parse failure / chord-in-use; show a
+        // friendly, localized hint rather than the raw error string.
+        setHotkeyErr(t("hotkeyRegisterFailed"));
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [recording]);
+
+  const resetHotkey = async (): Promise<void> => {
+    setHotkeyErr("");
+    setRecording(false);
+    try {
+      const def = await getDefaultAccelerator();
+      await setCaptureHotkey(def);
+      setHotkey(def);
+    } catch {
+      setHotkeyErr(t("hotkeyRegisterFailed"));
+    }
+  };
 
   const onConfig = (patch: Partial<Config>): void => {
     setDraft((c) => (c ? { ...c, ...patch } : c));
@@ -118,16 +148,19 @@ export default function SettingsView() {
           <div className="card">
             <h3>{t("shortcutHeading")}</h3>
             <div className="field">
-              <label>Global capture hotkey</label>
-              <button
-                className={`hotkey-pill${recording ? " recording" : ""}`}
-                onClick={() => {
-                  setHotkeyErr("");
-                  setRecording((r) => !r);
-                }}
-              >
-                {recording ? "Press keys…" : hotkey || "Not set"}
-              </button>
+              <label>{t("hotkeyLabel")}</label>
+              <div className="row" style={{ gap: 8 }}>
+                <button
+                  className={`hotkey-pill${recording ? " recording" : ""}`}
+                  onClick={() => {
+                    setHotkeyErr("");
+                    setRecording((r) => !r);
+                  }}
+                >
+                  {recording ? t("hotkeyRecording") : hotkey || t("hotkeyNotSet")}
+                </button>
+                <button onClick={() => void resetHotkey()}>{t("hotkeyReset")}</button>
+              </div>
               {hotkeyErr && <p className="s2i-set-error">{hotkeyErr}</p>}
             </div>
           </div>
