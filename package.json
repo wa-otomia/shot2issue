@@ -1,21 +1,22 @@
 {
-  "name": "shot2issue",
-  "version": "1.18.4",
-  "description": "Capture the current tab and file it as a GitHub or YouTrack issue, with the screenshot inline.",
+  "name": "shot2issue-monorepo",
+  "version": "0.0.0",
   "private": true,
   "type": "module",
   "license": "MIT",
+  "description": "Monorepo: shot2issue Chrome extension (apps/extension) + shot2issue desktop Tauri app (apps/desktop), sharing packages/core.",
+  "workspaces": [
+    "packages/core",
+    "apps/extension",
+    "apps/desktop"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "watch": "tsc -p tsconfig.json --watch",
-    "test": "node tests/ai-unit.mjs && node tests/youtrack-unit.mjs && node tests/ai-refresh.mjs && node tests/smoke.mjs",
-    "test:unit": "node tests/ai-unit.mjs && node tests/youtrack-unit.mjs && node tests/ai-refresh.mjs",
-    "screenshots": "node tests/screenshots.mjs"
-  },
-  "devDependencies": {
-    "@playwright/test": "^1.61.0",
-    "@types/chrome": "^0.0.270",
-    "typescript": "^5.5.4"
+    "build:ext": "npm run build --workspace apps/extension",
+    "typecheck:ext": "npm run typecheck --workspace apps/extension",
+    "test:ext": "npm run test --workspace apps/extension",
+    "test:unit:ext": "npm run test:unit --workspace apps/extension",
+    "package:ext": "bash apps/extension/scripts/build.sh",
+    "dev:desktop": "npm run dev --workspace apps/desktop",
+    "build:desktop": "npm run build --workspace apps/desktop"
   }
 }

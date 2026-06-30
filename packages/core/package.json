@@ -1,0 +1,10 @@
+{
+  "name": "@shot2issue/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared core for shot2issue: canvas annotation engine, issue providers, AI/OAuth helpers (extracted from apps/extension). Extraction in progress.",
+  "scripts": {
+    "placeholder": "echo \"packages/core extraction pending\""
+  }
+}

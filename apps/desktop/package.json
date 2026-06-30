@@ -1,0 +1,10 @@
+{
+  "name": "@shot2issue/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "shot2issue desktop app (Tauri 2). Scaffolding in progress.",
+  "scripts": {
+    "placeholder": "echo \"apps/desktop scaffolding pending — see repo root README\""
+  }
+}

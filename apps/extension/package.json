@@ -1,0 +1,21 @@
+{
+  "name": "shot2issue",
+  "version": "1.18.4",
+  "description": "Capture the current tab and file it as a GitHub or YouTrack issue, with the screenshot inline.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "watch": "tsc -p tsconfig.json --watch",
+    "test": "node tests/ai-unit.mjs && node tests/youtrack-unit.mjs && node tests/ai-refresh.mjs && node tests/smoke.mjs",
+    "test:unit": "node tests/ai-unit.mjs && node tests/youtrack-unit.mjs && node tests/ai-refresh.mjs",
+    "screenshots": "node tests/screenshots.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.0",
+    "@types/chrome": "^0.0.270",
+    "typescript": "^5.5.4"
+  }
+}

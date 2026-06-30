@@ -3,9 +3,22 @@ build/
 dist/
 *.zip
 
+# Root workspace lockfile is not committed — each app keeps its own authoritative lock
+# (apps/extension/package-lock.json is what the Docker build uses).
+/package-lock.json
+
 # System / editor files
 .DS_Store
 *.log
 node_modules/
 .vscode/
 .idea/
+
+# Rust / Tauri (apps/desktop)
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/schemas/
+.vite/
+out/
+release/
+.env
+.env.local

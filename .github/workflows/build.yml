@@ -1,12 +1,19 @@
 name: build
 
 # Build the extension package with Docker on pushes to main, pull requests, version
-# tags, and manual runs.
+# tags, and manual runs. Scoped to changes under apps/extension/ so unrelated
+# desktop-app changes don't rebuild the extension.
 on:
   push:
     branches: [main]
     tags: ['v*']
+    paths:
+      - 'apps/extension/**'
+      - '.github/workflows/build.yml'
   pull_request:
+    paths:
+      - 'apps/extension/**'
+      - '.github/workflows/build.yml'
   workflow_dispatch:
 
 permissions:
@@ -22,23 +29,24 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Build with Docker and export the artifact (zip) to ./dist.
+      # Build with Docker and export the artifact (zip) to apps/extension/dist.
+      # The build context is apps/extension (it holds the Dockerfile + .dockerignore);
       # --target export selects the scratch stage; --output writes it to the host.
       - name: Build extension package (Docker)
-        run: docker build --target export --output type=local,dest=dist .
+        run: docker build --target export --output type=local,dest=apps/extension/dist apps/extension
 
       - name: List artifacts
-        run: ls -lh dist
+        run: ls -lh apps/extension/dist
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: shot2issue-extension
-          path: dist/*.zip
+          path: apps/extension/dist/*.zip
           if-no-files-found: error
 
       - name: Attach to Release (on tag)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.zip
+          files: apps/extension/dist/*.zip
