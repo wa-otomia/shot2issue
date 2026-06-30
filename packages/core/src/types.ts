@@ -1,0 +1,182 @@
+// Shared data types.
+
+/** Provider id of an account-credentialed backend ('youtrack' | 'gitlab' | …). */
+export type AccountKind = string;
+
+/**
+ * A reusable set of credentials for one backend instance. Multiple workspaces (different
+ * projects on the same instance) share one Account. Stored at the top level of Config and
+ * included in settings exports; account-based workspaces reference it by `accountId`.
+ */
+export interface Account {
+  id: string;
+  /** Provider id this account authenticates ('youtrack' | 'gitlab'). */
+  kind: AccountKind;
+  /** User-facing label (defaults to the host of baseUrl). */
+  name: string;
+  baseUrl: string;
+  token: string;
+}
+
+/** A configured issue target. All fields are strings; backend-specific fields vary by kind. */
+export interface Workspace {
+  id: string;
+  /** Provider id ('github', 'youtrack', 'gitlab'); a missing value is treated as 'github'. */
+  kind: string;
+  name: string;
+  /**
+   * Account-based providers (youtrack, gitlab) store `accountId` + `project` here; the
+   * baseUrl/token live on the Account, not inline. GitHub stores `owner` + `repo`.
+   */
+  [key: string]: string;
+}
+
+/** Persisted configuration (chrome.storage.local). */
+export interface Config {
+  workspaces: Workspace[];
+  /** Shared backend credentials referenced by account-based workspaces. */
+  accounts: Account[];
+  types: string[];
+  lang: string;
+  /** Default issue title template; placeholders {pageTitle}, {pageUrl}, {type}. */
+  titleTemplate: string;
+  /** Default issue body template; same placeholders. */
+  bodyTemplate: string;
+  /** AI title-generation system prompt. Empty means "use the current language's default". */
+  aiTitlePrompt: string;
+  /** AI voice-complaint system prompt. Empty means "use the current language's default". */
+  aiComplaintPrompt: string;
+  /** Voice-input dictionary: terms sent as a transcription prompt to bias speech recognition. */
+  aiVocabulary: string[];
+  /** Reasoning effort for AI generation: 'off' | 'low' | 'medium' | 'high'. */
+  aiReasoning: string;
+  /** Auto-start dictation (recording) when the Smart-dictation dialog opens. */
+  autoDictate: boolean;
+  /** Dictation/transcription language hint (ISO-639-1, or 'auto' to let the model detect). */
+  dictationLang: string;
+  closeAfterSubmit: boolean;
+  shortcutEnabled: boolean;
+  lastWorkspaceId: string;
+  lastType: string;
+}
+
+/** One annotation operation. Rectangle/arrow/mosaic use x0..y1; text uses x/y/size/text. */
+export interface Op {
+  tool: string;
+  color: string;
+  strokeColor?: string; // contrasting halo/outline color drawn under lines and behind text
+  strokeWidth?: number; // outline/halo thickness (0 = no outline); undefined → default
+  width?: number;
+  x0?: number;
+  y0?: number;
+  x1?: number;
+  y1?: number;
+  points?: Array<{ x: number; y: number }>; // freehand pen path
+  num?: number; // numbered-box badge value
+  size?: number;
+  x?: number;
+  y?: number;
+  w?: number; // text wrap width (canvas pixels)
+  text?: string;
+}
+
+/** Remembered editor tool settings (persisted, applied to newly drawn annotations). */
+export interface EditorPrefs {
+  color: string; // primary fill/line color
+  strokeColor: string; // contrasting halo/outline color
+  strokeWidth: number; // outline/halo thickness (0 = no outline)
+  width: number; // line thickness (non-text tools)
+  fontSize: number; // text size (independent of width)
+  tool: string; // last-used drawing tool (never 'crop' — that mode is transient)
+}
+
+/** One captured image plus its own annotation ops, as an entry in the editor's strip. */
+export interface Attachment {
+  id: string;
+  dataUrl: string;
+  pageUrl?: string;
+  pageTitle?: string;
+  sourceTabId?: number;
+  sourceWindowId?: number;
+  /** Capture source id (e.g. 'tab' or 'clipboard'); optional. */
+  sourceId?: string;
+  ops: Op[];
+  createdAt: number;
+}
+
+/**
+ * The set of screenshots staged for editing (chrome.storage.local). Multiple attachments
+ * are annotated together and submitted as one issue. `error` is set if capture failed.
+ */
+export interface PendingShots {
+  attachments: Attachment[];
+  type?: string;
+  workspaceId?: string;
+  sourceTabId?: number;
+  sourceWindowId?: number;
+  /** Tab id of the open editor, so re-captures append to it instead of opening another. */
+  editorTabId?: number;
+  error?: string;
+}
+
+/** Legacy single-screenshot envelope; kept only to migrate old sessions to PendingShots. */
+export interface PendingShot {
+  dataUrl?: string;
+  pageUrl?: string;
+  pageTitle?: string;
+  type?: string;
+  workspaceId?: string;
+  sourceTabId?: number;
+  sourceWindowId?: number;
+  error?: string;
+}
+
+/** Result of creating an issue. */
+export interface IssueResult {
+  url: string;
+  number: string;
+}
+
+/**
+ * Stored credentials and metadata for the optional AI assistant (OpenAI Codex /
+ * ChatGPT-subscription OAuth). Kept in chrome.storage.local under its own key, separate
+ * from Config, so configuration backups never include these secrets.
+ */
+export interface AiAuth {
+  accessToken: string;
+  refreshToken?: string;
+  idToken?: string;
+  /** ChatGPT account id (from the id_token); sent as the ChatGPT-Account-Id header. */
+  accountId?: string;
+  /** Subscription tier, e.g. 'plus' | 'pro' | 'free' (from the id_token). */
+  planType?: string;
+  email?: string;
+  /** Access-token expiry (epoch ms), used to refresh proactively. */
+  expiresAt?: number;
+  /** Models the user may call; populated best-effort, falls back to a default list. */
+  models?: string[];
+  /** Model chosen for title generation. */
+  model?: string;
+  /** Last seen usage/quota, captured from x-codex-* response headers. */
+  quota?: AiQuota;
+  connectedAt: number;
+}
+
+/** Best-effort usage snapshot parsed from the backend's x-codex-* response headers. */
+export interface AiQuota {
+  /** Raw x-codex-* headers, for display and forward-compatibility. */
+  raw: Record<string, string>;
+  /** Convenience: percent used in the rolling 5-hour window, if present. */
+  primaryUsedPercent?: number;
+  /** Convenience: percent used in the weekly window, if present. */
+  secondaryUsedPercent?: number;
+  checkedAt: number;
+}
+
+/** PKCE + state held between starting an OAuth flow and completing it (session storage). */
+export interface AiPendingAuth {
+  verifier: string;
+  state: string;
+  redirectUri: string;
+  createdAt: number;
+}
