@@ -1,0 +1,30 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "editor-window",
+  "description": "Capabilities for the annotate/editor window. Custom app commands (get_pending_shots, open_editor_with, ...) are allowed by default; this grants the core window controls + event listening the editor view needs.",
+  "windows": ["editor"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-close",
+    "core:window:allow-set-focus",
+    "core:event:allow-listen",
+    "dialog:default",
+    "store:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://github.com/" },
+        { "url": "https://api.github.com/" },
+        { "url": "https://uploads.github.com/" },
+        { "url": "https://*.githubusercontent.com/" },
+        { "url": "https://gitlab.com/" },
+        { "url": "https://*/api/v4/" },
+        { "url": "https://*.youtrack.cloud/" },
+        { "url": "https://*/youtrack/api/" }
+      ]
+    }
+  ]
+}

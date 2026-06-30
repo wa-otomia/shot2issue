@@ -30,7 +30,13 @@ pub fn install(app: &tauri::AppHandle) -> tauri::Result<()> {
         .menu(&menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "tray-capture" => {
-                crate::services::capture::begin_capture_flow(app);
+                // The mandatory fallback trigger on native Wayland (where the
+                // global hotkey can't register). Spawn so the menu callback
+                // returns immediately; capture + overlay run off this thread.
+                let h = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    crate::services::hotkey::trigger_capture(&h).await;
+                });
             }
             "tray-settings" => {
                 if let Some(win) = app.get_webview_window("main") {

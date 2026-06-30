@@ -1,7 +1,12 @@
-import { useEffect, useRef, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { emit, listen } from "@tauri-apps/api/event";
-import { listWindows, type WindowInfo, type CaptureResult } from "../lib/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  cancelCapture,
+  confirmRegion,
+  getOverlayShot,
+  onOverlayRefresh,
+  type MonitorShot,
+} from "../lib/capture";
+import WindowPicker from "./WindowPicker";
 
 type Mode = "region" | "window";
 interface Rect {
@@ -11,126 +16,131 @@ interface Rect {
   h: number;
 }
 
+// The capture overlay. On Win/macOS/X11 it renders inside a frameless,
+// transparent, always-on-top window positioned exactly over the captured
+// monitor; on the Wayland degrade path the same component renders in a normal
+// decorated window. Either way it paints the frozen MonitorShot full-bleed and
+// the user either rubber-bands a region (default) or Tab-toggles to pick a
+// window. Because the overlay is sized 1:1 to the monitor's LOGICAL px, a
+// mouse clientX/clientY already equals the crop-rect coords Rust expects.
 export default function OverlayWindow() {
+  const [shot, setShot] = useState<MonitorShot | null>(null);
   const [mode, setMode] = useState<Mode>("region");
-  const [frame, setFrame] = useState<string>(""); // data URL of the frozen screen
-  const [sel, setSel] = useState<Rect | null>(null);
-  const [windows, setWindows] = useState<WindowInfo[]>([]);
-  const [hover, setHover] = useState<WindowInfo | null>(null);
+  const [rect, setRect] = useState<Rect | null>(null);
   const drag = useRef<{ x: number; y: number } | null>(null);
 
-  // Frameless transparent window -> transparent page bg (curvault pattern).
-  // The frozen frame is pushed by Rust via overlay://seed once it opens this
-  // window after the hotkey (Phase 4 wires the payload).
+  // Tag <html> so overlay.css can paint a transparent page + crosshair cursor
+  // without affecting the other windows that share this bundle.
   useEffect(() => {
-    document.documentElement.style.background = "transparent";
-    document.body.style.background = "transparent";
-    const un = listen<string>("overlay://seed", (e) => setFrame(e.payload));
-    return () => {
-      un.then((f) => f());
-    };
+    document.documentElement.classList.add("overlay-active");
+    return () => document.documentElement.classList.remove("overlay-active");
   }, []);
 
-  useEffect(() => {
-    if (mode === "window") listWindows().then(setWindows).catch(() => {});
-  }, [mode]);
+  const load = useCallback(async () => {
+    try {
+      const s = await getOverlayShot();
+      setShot(s);
+      setRect(null);
+      setMode("region");
+    } catch {
+      // No shot staged — fall back to a no-op; Esc still closes the window.
+    }
+  }, []);
 
+  // Initial mount + reuse refresh (the same overlay window is repositioned and
+  // re-emitted when a fresh hotkey fires on another monitor).
+  useEffect(() => {
+    void load();
+  }, [load]);
+  useEffect(() => {
+    const p = onOverlayRefresh(() => void load());
+    return () => {
+      void p.then((f) => f());
+    };
+  }, [load]);
+
+  const toggleMode = useCallback(() => {
+    setMode((m) => (m === "region" ? "window" : "region"));
+    setRect(null);
+  }, []);
+
+  // Keyboard: Esc cancels, Enter confirms a non-trivial region, Tab toggles.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        void cancelCapture();
+      } else if (e.key === "Enter" && rect && rect.w > 2 && rect.h > 2) {
+        void confirmRegion(rect);
+      } else if (e.key === "Tab") {
+        e.preventDefault();
+        toggleMode();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [rect, toggleMode]);
+
+  // --- region rubber-band ---
   const onMouseDown = (e: React.MouseEvent) => {
     if (mode !== "region") return;
     drag.current = { x: e.clientX, y: e.clientY };
-    setSel({ x: e.clientX, y: e.clientY, w: 0, h: 0 });
+    setRect({ x: e.clientX, y: e.clientY, w: 0, h: 0 });
   };
   const onMouseMove = (e: React.MouseEvent) => {
-    if (mode === "window") {
-      setHover(pickWindow(windows, e.clientX, e.clientY));
-      return;
-    }
-    if (!drag.current) return;
-    const { x, y } = drag.current;
-    setSel({
-      x: Math.min(x, e.clientX),
-      y: Math.min(y, e.clientY),
-      w: Math.abs(e.clientX - x),
-      h: Math.abs(e.clientY - y),
+    if (mode !== "region" || !drag.current) return;
+    const s = drag.current;
+    setRect({
+      x: Math.min(s.x, e.clientX),
+      y: Math.min(s.y, e.clientY),
+      w: Math.abs(e.clientX - s.x),
+      h: Math.abs(e.clientY - s.y),
     });
   };
   const onMouseUp = () => {
     drag.current = null;
   };
 
-  // Crop + hand off to the annotate stage (selection-math is finished in
-  // Phase 4; this is the confirm chokepoint).
-  const confirm = async (result: CaptureResult) => {
-    await emit("capture://annotate", result);
-    await getCurrentWindow().close();
-  };
-  void confirm; // wired by the capture-flow subsystem (Phase 4)
+  if (!shot) {
+    // Nothing to crop (e.g. capture failed); keep a transparent canvas so Esc
+    // still closes the window.
+    return <div className="overlay-root" onClick={() => void cancelCapture()} />;
+  }
 
-  // Esc cancels; Enter / dbl-click confirms (handlers wired in full impl).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") getCurrentWindow().close().catch(() => {});
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  const img = `data:image/png;base64,${shot.pngBase64}`;
+
+  if (mode === "window") {
+    return (
+      <WindowPicker
+        shot={shot}
+        imgSrc={img}
+        onToggleMode={toggleMode}
+        onCancel={() => void cancelCapture()}
+      />
+    );
+  }
 
   return (
     <div
-      className="hud-root"
+      className="overlay-root"
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
     >
-      {frame && <img className="hud-frame" src={frame} alt="" />}
-      <div className="hud-scrim" />
-      {mode === "region" && sel && (
+      <img className="overlay-frame" src={img} draggable={false} alt="" />
+      <div className="overlay-dim" />
+      {rect && (
         <div
-          className="hud-selection"
-          style={{ left: sel.x, top: sel.y, width: sel.w, height: sel.h }}
+          className="overlay-sel"
+          style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
         >
-          {/* 8 .hud-handle nodes + a .hud-readout pill rendered here in full impl */}
+          <span className="overlay-size">
+            {Math.round(rect.w)} × {Math.round(rect.h)}
+          </span>
         </div>
       )}
-      {mode === "window" && hover && (
-        <div
-          className="hud-window-hint"
-          style={{
-            left: hover.x,
-            top: hover.y,
-            width: hover.width,
-            height: hover.height,
-          }}
-        />
-      )}
-      <div className="hud-modebar">
-        <button
-          className={`icon-btn ${mode === "region" ? "active" : ""}`}
-          onClick={() => setMode("region")}
-          title="Region"
-        >
-          ⬚
-        </button>
-        <button
-          className={`icon-btn ${mode === "window" ? "active" : ""}`}
-          onClick={() => setMode("window")}
-          title="Window"
-        >
-          ▤
-        </button>
-        <span className="hud-hint">
-          Drag to select · Enter to confirm · Esc to cancel
-        </span>
+      <div className="overlay-hint">
+        Drag to select · Enter to confirm · Tab for window pick · Esc to cancel
       </div>
     </div>
-  );
-}
-
-function pickWindow(ws: WindowInfo[], x: number, y: number): WindowInfo | null {
-  // Topmost window whose bounds contain the cursor (list is z-ordered).
-  return (
-    ws.find(
-      (w) => x >= w.x && y >= w.y && x <= w.x + w.width && y <= w.y + w.height,
-    ) ?? null
   );
 }

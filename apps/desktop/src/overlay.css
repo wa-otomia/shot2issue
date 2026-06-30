@@ -1,0 +1,116 @@
+/* Capture-overlay styling, in the curvault design language (cyan accent
+ * #36c5ff over a navy dim). Loaded only by the overlay window (main.tsx routes
+ * the "overlay" label here). The page background is transparent so the
+ * frameless always-on-top window shows the frozen frame edge-to-edge; on the
+ * Wayland degrade path the same classes render inside a normal decorated
+ * window against the static <img>. */
+
+:root {
+  --ov-accent: #36c5ff;
+  --ov-dim: rgba(6, 11, 26, 0.45);
+  --ov-pill-bg: rgba(20, 28, 60, 0.85);
+  --ov-pill-border: rgba(54, 197, 255, 0.35);
+  --ov-text: #e6ecf7;
+}
+
+/* Transparent page background + crosshair cursor across the whole overlay. */
+.overlay-active,
+.overlay-active body,
+.overlay-active #root {
+  margin: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: transparent;
+  cursor: crosshair;
+  user-select: none;
+}
+
+.overlay-root {
+  position: fixed;
+  inset: 0;
+}
+
+/* The frozen monitor screenshot, full-bleed. pointer-events:none so drags hit
+ * the root, not the image. */
+.overlay-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
+
+/* Full-screen dim backdrop; the selection box sits above it and re-clears its
+ * own interior via the box-shadow punch-through below. */
+.overlay-dim {
+  position: absolute;
+  inset: 0;
+  background: var(--ov-dim);
+  pointer-events: none;
+}
+
+/* The rubber-band selection. A huge spread box-shadow re-darkens everything
+ * OUTSIDE the box while the box interior shows the un-dimmed frame — the
+ * classic screenshot punch-through. */
+.overlay-sel {
+  position: absolute;
+  border: 1.5px solid var(--ov-accent);
+  box-shadow: 0 0 0 100000px var(--ov-dim);
+  background: transparent;
+  pointer-events: none;
+}
+
+/* Live "W × H" readout pinned to the selection's top-left corner. */
+.overlay-size {
+  position: absolute;
+  top: -22px;
+  left: 0;
+  font: 12px/1 -apple-system, "Segoe UI", sans-serif;
+  color: var(--ov-text);
+  background: var(--ov-pill-bg);
+  padding: 3px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* Window-pick hover highlight. */
+.overlay-winhi {
+  position: absolute;
+  border: 2px solid var(--ov-accent);
+  background: rgba(54, 197, 255, 0.12);
+  box-shadow: 0 0 0 100000px var(--ov-dim);
+  pointer-events: none;
+}
+
+.overlay-winhi-label {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  max-width: calc(100% - 12px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 12px/1.2 -apple-system, "Segoe UI", sans-serif;
+  color: var(--ov-text);
+  background: var(--ov-pill-bg);
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+/* Centered hint pill at the bottom. */
+.overlay-hint {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  font: 13px -apple-system, "Segoe UI", sans-serif;
+  color: var(--ov-text);
+  background: var(--ov-pill-bg);
+  border: 1px solid var(--ov-pill-border);
+  padding: 7px 14px;
+  border-radius: 999px;
+  pointer-events: none;
+  z-index: 10;
+}

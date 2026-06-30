@@ -1,23 +1,41 @@
-import { useState } from "react";
-import { captureScreenUnderCursor } from "../lib/api";
-import type { CaptureResult } from "../lib/api";
+import { useEffect, useState } from "react";
+import {
+  getHotkey,
+  onNeedsScreenRecording,
+  triggerCapture,
+} from "../lib/api";
 
-// Minimal stub for the shell. Phase 4 fleshes out the live capture flow,
-// recent-shots strip, and the prominent hotkey hint.
-export default function HomeView({
-  onCaptureDone,
-}: {
-  onCaptureDone: (shot: CaptureResult) => void;
-}) {
+// The home screen. Capture is Rust-driven: pressing the global hotkey OR the
+// "Capture now" button calls `trigger_capture`, which grabs the monitor under
+// the cursor and opens the crop overlay (Win/macOS/X11) — or, on native
+// Wayland, a normal in-app crop window (the degrade path lives entirely in
+// Rust's overlay::present, so the frontend calls the same command either way).
+export default function HomeView() {
   const [busy, setBusy] = useState(false);
+  const [hotkey, setHotkeyState] = useState("");
+  const [needsScreenRec, setNeedsScreenRec] = useState(false);
+
+  useEffect(() => {
+    getHotkey()
+      .then(setHotkeyState)
+      .catch(() => {});
+  }, []);
+
+  // macOS: Rust emits this when a capture came back black (Screen Recording
+  // denied). Guide the user to grant + restart.
+  useEffect(() => {
+    const p = onNeedsScreenRecording(() => setNeedsScreenRec(true));
+    return () => {
+      void p.then((f) => f());
+    };
+  }, []);
 
   const captureNow = async () => {
     setBusy(true);
     try {
-      const shot = await captureScreenUnderCursor();
-      onCaptureDone(shot);
+      await triggerCapture();
     } catch {
-      // surfaced in the status bar / Phase 4 toast
+      // surfaced in the status bar / a later toast
     } finally {
       setBusy(false);
     }
@@ -27,14 +45,22 @@ export default function HomeView({
     <div className="card">
       <h2>Capture</h2>
       <p className="empty">
-        Press the global hotkey from anywhere, or capture the screen under the
-        cursor now.
+        Press <strong>{hotkey || "the global hotkey"}</strong> from anywhere, or
+        capture the screen under the cursor now. Drag a region or press Tab to
+        pick a window.
       </p>
       <div className="row">
         <button className="primary" disabled={busy} onClick={captureNow}>
           {busy ? "Capturing…" : "Capture now"}
         </button>
       </div>
+      {needsScreenRec && (
+        <p className="empty" role="alert">
+          shot2issue needs Screen Recording permission. Grant it in System
+          Settings → Privacy &amp; Security → Screen Recording, then restart the
+          app.
+        </p>
+      )}
     </div>
   );
 }

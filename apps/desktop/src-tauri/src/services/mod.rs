@@ -1,5 +1,8 @@
 pub mod capture;
+pub mod editor_stage;
 pub mod hotkey;
+pub mod overlay;
+pub mod settings;
 pub mod tray;
 pub mod updates;
 

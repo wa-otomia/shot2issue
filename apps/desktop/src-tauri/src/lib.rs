@@ -36,34 +36,6 @@ pub(crate) fn open_about<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     open_popup(app, "about", "About shot2issue", 520.0, 430.0);
 }
 
-/// Build (or focus) the capture HUD: a borderless, transparent, always-on-top
-/// window covering one display. Returns false on native Wayland where
-/// positioning / raising is unsupported (caller falls back to in-window crop).
-pub(crate) fn open_overlay<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-    display: &services::capture::Display,
-) -> bool {
-    use tauri::{WebviewUrl, WebviewWindowBuilder};
-    if services::capture::is_wayland() {
-        return false;
-    }
-    if let Some(win) = app.get_webview_window("overlay") {
-        let _ = win.show();
-        let _ = win.set_focus();
-        return true;
-    }
-    let built = WebviewWindowBuilder::new(app, "overlay", WebviewUrl::App("index.html".into()))
-        .decorations(false)
-        .transparent(true)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .position(display.x as f64, display.y as f64)
-        .inner_size(display.width as f64, display.height as f64)
-        .focused(true)
-        .build();
-    built.is_ok()
-}
-
 fn build_menu<R: tauri::Runtime>(h: &tauri::AppHandle<R>) -> tauri::Result<tauri::menu::Menu<R>> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
     let about = MenuItemBuilder::with_id("about", "About shot2issue").build(h)?;
@@ -101,19 +73,13 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .plugin(
-            // Global hotkey: stock plugin works on Win/mac/X11; native Wayland
-            // is unsupported (documented). The handler emits an event AND
-            // kicks off the capture flow from Rust.
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                        let _ = app.emit("hotkey://fired", ());
-                        services::capture::begin_capture_flow(app);
-                    }
-                })
-                .build(),
-        )
+        // Global hotkey: stock plugin works on Win/mac/X11; native Wayland is
+        // unsupported (documented; the tray "Capture now" item is the fallback
+        // there). The per-shortcut callback is registered in
+        // `services::hotkey::register` via `on_shortcut`, so the builder needs
+        // no global handler here (a `with_handler` would double-fire alongside
+        // the per-shortcut one).
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .menu(build_menu)
         .on_menu_event(|app, e| match e.id().as_ref() {
             "about" => open_about(app),
@@ -122,9 +88,18 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" {
-                    api.prevent_close();
-                    let _ = window.emit("app://close", ());
+                match window.label() {
+                    "main" => {
+                        api.prevent_close();
+                        let _ = window.emit("app://close", ());
+                    }
+                    // Closing the editor ends the staging session and frees the
+                    // staged image bytes (extension parity with the
+                    // chrome.tabs.onRemoved cleanup).
+                    "editor" => services::editor_stage::clear_pending_shots(),
+                    // Cancelling the overlay drops the retained 4K frame.
+                    "overlay" => services::capture::clear_last_frame(),
+                    _ => {}
                 }
             }
         })
@@ -135,15 +110,26 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::capture_screen_under_cursor,
+            // ---- hotkey ----
+            commands::get_default_accelerator,
+            commands::get_hotkey,
+            commands::set_capture_hotkey,
+            commands::trigger_capture,
+            // ---- capture ----
+            commands::capture_current_monitor,
             commands::list_displays,
+            commands::get_overlay_shot,
             commands::list_windows,
             commands::capture_window,
+            commands::crop_region,
             commands::mac_screen_recording_authorized,
-            commands::open_overlay,
-            commands::close_overlay,
-            commands::get_hotkey,
-            commands::set_hotkey,
+            // ---- overlay ----
+            commands::overlay_set_click_through,
+            commands::overlay_dismiss,
+            // ---- editor staging ----
+            commands::open_editor_with,
+            commands::get_pending_shots,
+            // ---- updates / windows (curvault) ----
             commands::check_for_updates,
             commands::open_updater_window,
             commands::open_about_window,
