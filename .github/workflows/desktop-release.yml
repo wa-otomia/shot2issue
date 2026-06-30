@@ -63,6 +63,7 @@ jobs:
             libayatana-appindicator3-dev libssl-dev \
             libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev libxrandr-dev \
             libxdo-dev libdbus-1-dev libpipewire-0.3-dev clang libclang-dev \
+            libgbm-dev libegl-dev libdrm-dev libwayland-dev libxkbcommon-dev \
             patchelf
 
       # ---- macOS self-signed code signing -------------------------------

@@ -32,9 +32,10 @@ docker run --rm \
         libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev \
         libdbus-1-dev \
         libpipewire-0.3-dev \
+        libgbm-dev libegl-dev libdrm-dev libwayland-dev libxkbcommon-dev \
         clang libclang-dev \
         patchelf > /dev/null
-    cargo check --all-targets
+    cargo build
 '
 
 echo
