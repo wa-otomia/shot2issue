@@ -5,6 +5,9 @@ import OverlayWindow from "./views/OverlayWindow";
 import EditorWindow from "./views/EditorWindow";
 import UpdaterWindow from "./views/UpdaterWindow";
 import AboutWindow from "./views/AboutWindow";
+import { initCore, setLanguage, getConfig } from "@shot2issue/core";
+import { makePlatform } from "./lib/platform";
+import { registerAllProviders } from "./providers";
 import "./index.css";
 import "./overlay.css";
 
@@ -40,8 +43,25 @@ function Root() {
   }
 }
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <Root />
-  </React.StrictMode>,
-);
+// Inject the platform adapters into @shot2issue/core, set the UI language from the persisted
+// config, and register the issue providers — all BEFORE the first render so every view (storage
+// reads, the editor's provider list, AI connect) sees a fully wired core. A platform/store
+// failure must not leave a blank window, so we fall back to rendering with core's defaults.
+async function bootstrap(): Promise<void> {
+  try {
+    initCore(await makePlatform());
+    registerAllProviders();
+    const config = await getConfig();
+    setLanguage(config.lang);
+  } catch (e) {
+    // Storage/platform not ready (or a non-Tauri preview): render anyway with defaults.
+    console.error("core bootstrap failed; rendering with defaults", e);
+  }
+  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    <React.StrictMode>
+      <Root />
+    </React.StrictMode>,
+  );
+}
+
+void bootstrap();

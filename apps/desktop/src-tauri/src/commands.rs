@@ -5,7 +5,10 @@
 
 use tauri::AppHandle;
 
-use crate::services::{capture, editor_stage, hotkey, overlay, updates, ServiceError};
+use crate::services::{
+    capture, editor_stage, github, github_issue, github_upload, hotkey, oauth_loopback, overlay,
+    updates, ServiceError,
+};
 use crate::services::Result;
 
 fn join_err(e: tauri::Error) -> ServiceError {
@@ -151,4 +154,70 @@ pub fn open_updater_window(app: AppHandle) {
 #[tauri::command]
 pub fn open_about_window(app: AppHandle) {
     crate::open_about(&app);
+}
+
+// ---------- Codex OAuth loopback (NOT GitHub) ----------
+
+/// Bind 127.0.0.1:1455 and return the redirect URI to advertise. Called from
+/// platform.ts's oauth.capture() before opening the authorize URL.
+#[tauri::command]
+pub async fn oauth_loopback_start() -> Result<String> {
+    tauri::async_runtime::spawn_blocking(oauth_loopback::start)
+        .await
+        .map_err(join_err)?
+}
+
+/// Wait for the single OAuth callback connection and return the full callback
+/// URL (with ?code=&state=). Runs on a blocking thread (it blocks on accept()).
+#[tauri::command]
+pub async fn oauth_loopback_wait() -> Result<String> {
+    tauri::async_runtime::spawn_blocking(oauth_loopback::wait)
+        .await
+        .map_err(join_err)?
+}
+
+// ---------- GitHub (web-session cookie) ----------
+
+/// Open the built-in GitHub-login webview and capture the user_session cookie
+/// once the user signs in. Async: the cookie read can deadlock in a sync command
+/// on Windows (see github.rs).
+#[tauri::command]
+pub async fn github_login(app: AppHandle) -> Result<github::SessionStatus> {
+    github::login(&app).await
+}
+
+/// Report whether a github.com session cookie is present + which login it is.
+#[tauri::command]
+pub async fn github_session_status(app: AppHandle) -> github::SessionStatus {
+    github::session_status(&app).await
+}
+
+/// Upload one screenshot (data: URL) via the gh-image protocol; returns the
+/// user-attachments URL. Errors if not signed in.
+#[tauri::command]
+pub async fn github_upload_image(
+    app: AppHandle,
+    owner: String,
+    repo: String,
+    data_url: String,
+    filename: String,
+) -> Result<String> {
+    let session = github::session_cookie(&app)
+        .ok_or_else(|| ServiceError::Other("Not signed in to GitHub.".into()))?;
+    github_upload::upload_image(&session, &owner, &repo, &data_url, &filename).await
+}
+
+/// Create an issue on github.com via the session cookie (body already has any
+/// uploaded-image markdown embedded). Returns the created issue URL.
+#[tauri::command]
+pub async fn github_create_issue(
+    app: AppHandle,
+    owner: String,
+    repo: String,
+    title: String,
+    body: String,
+) -> Result<String> {
+    let session = github::session_cookie(&app)
+        .ok_or_else(|| ServiceError::Other("Not signed in to GitHub.".into()))?;
+    github_issue::create_issue(&session, &owner, &repo, &title, &body).await
 }

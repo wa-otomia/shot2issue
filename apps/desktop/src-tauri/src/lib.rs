@@ -133,6 +133,14 @@ pub fn run() {
             commands::check_for_updates,
             commands::open_updater_window,
             commands::open_about_window,
+            // ---- Codex OAuth loopback ----
+            commands::oauth_loopback_start,
+            commands::oauth_loopback_wait,
+            // ---- GitHub (web-session cookie) ----
+            commands::github_login,
+            commands::github_session_status,
+            commands::github_upload_image,
+            commands::github_create_issue,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

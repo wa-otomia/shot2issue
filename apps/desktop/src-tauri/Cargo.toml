@@ -29,7 +29,7 @@ thiserror = "1"
 anyhow = "1"
 
 tokio = { version = "1", features = ["process", "io-util", "macros", "sync", "rt-multi-thread"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "multipart"] }
 
 # Screen capture: multi-monitor grab + per-window enumeration on
 # Win / macOS / X11. Wayland falls back to the XDG Desktop Portal (see

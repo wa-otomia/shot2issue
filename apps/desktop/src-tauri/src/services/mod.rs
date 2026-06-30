@@ -1,6 +1,10 @@
 pub mod capture;
 pub mod editor_stage;
+pub mod github;
+pub mod github_issue;
+pub mod github_upload;
 pub mod hotkey;
+pub mod oauth_loopback;
 pub mod overlay;
 pub mod settings;
 pub mod tray;

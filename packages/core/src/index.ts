@@ -7,7 +7,7 @@
 
 import { bindHttp } from './net.js';
 import { bindStorage } from './storage.js';
-import { bindNow } from './ai/ai.js';
+import { bindNow, bindOAuth, bindShell } from './ai/ai.js';
 import type { Platform } from './ports.js';
 
 /** Inject the host platform. Call once, before any storage/ai/network call. */
@@ -15,6 +15,10 @@ export function initCore(p: Platform): void {
   bindHttp(p.http);
   bindStorage(p.storage);
   bindNow(p.now);
+  // The OAuth loopback + shell are only needed by the desktop's ai.connect(); both ports are
+  // always present on the Platform, so bind them unconditionally (the extension passes no-ops).
+  bindOAuth(p.oauth);
+  bindShell(p.shell);
 }
 
 // Shared data types.
@@ -32,7 +36,20 @@ export { t, setLanguage, localizeDom, detectLang, SUPPORTED_LANGS, DEFAULT_LANG 
 
 // Provider registry contract (impls are registered by the host; see ./providers).
 export { PROVIDER_LIST, registerProviders, getProvider, isAccountBased, accountKinds } from './providers/index.js';
-export type { Provider } from './providers/types.js';
+export type {
+  Provider,
+  ProviderField,
+  ProviderAccount,
+  SubmitContext,
+  SubmitImage,
+  TFunc,
+} from './providers/types.js';
+
+// The two pure-REST provider impls live in core (GitLab + YouTrack are platform-free once
+// fetch is injected). GitHub stays host-owned (the extension uses chrome.scripting; the
+// desktop uses Rust reqwest + the github.com session cookie), so it is NOT exported here.
+export { gitlabProvider, createGitLabIssue } from './providers/gitlab.js';
+export { youtrackProvider, createYouTrackIssue } from './providers/youtrack.js';
 
 // Canvas annotation engine (pure rendering + geometry), under a namespace to mirror './canvas'.
 export * as canvas from './canvas/engine.js';

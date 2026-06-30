@@ -23,7 +23,10 @@
         { "url": "https://gitlab.com/" },
         { "url": "https://*/api/v4/" },
         { "url": "https://*.youtrack.cloud/" },
-        { "url": "https://*/youtrack/api/" }
+        { "url": "https://*/youtrack/api/" },
+        { "url": "https://chatgpt.com/" },
+        { "url": "https://auth.openai.com/" },
+        { "url": "https://api.openai.com/" }
       ]
     }
   ]

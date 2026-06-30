@@ -12,7 +12,7 @@
 //     dropped — see the phase-5 note below.
 
 import { fetch } from '../net.js';
-import type { HttpResponse, HttpRequestInit } from '../ports.js';
+import type { HttpResponse, HttpRequestInit, OAuthLoopbackPort, ShellPort } from '../ports.js';
 import type { AiAuth, AiQuota } from '../types.js';
 import { getPendingAuth, setPendingAuth, clearPendingAuth, getAiAuth, setAiAuth } from '../storage.js';
 
@@ -495,13 +495,48 @@ function nowMs(): number {
 }
 
 // ---- High-level flows ------------------------------------------------------
-// TODO(phase5): desktop connect() via OAuthLoopbackPort. The extension's chrome-only flows
-// (ensureAiPermissions + connectViaCallbackCapture, which opened a tab and watched
-// chrome.tabs.onUpdated for the localhost:1455 ?code=) are intentionally NOT ported here.
-// The desktop connect() will drive the OAuthLoopbackPort (Rust 127.0.0.1:1455 server) plus
-// the ShellPort to open the browser, then reuse genPkce/buildAuthorizeUrl/parseRedirect/
-// exchangeCode/fetchModels below. The token-exchange + refresh + model + generation helpers
-// below are platform-free and ready for that flow.
+// The desktop connect() (below) drives the OAuthLoopbackPort (Rust 127.0.0.1:1455 server)
+// plus the ShellPort to open the system browser, then reuses the platform-free
+// genPkce/buildAuthorizeUrl/parseRedirect/exchangeCode/fetchModels helpers above. The
+// extension's chrome-only flows (ensureAiPermissions + connectViaCallbackCapture, which
+// opened a tab and watched chrome.tabs.onUpdated for the localhost:1455 ?code=) are NOT
+// ported here — the extension keeps owning its own connect().
+
+// The OAuth loopback + shell ports, injected once at boot (see core/index.ts initCore). They
+// are optional: a host that does not implement connect() (the extension) never binds them, and
+// the platform-free token/model/generation helpers above never touch them.
+let OAUTH: OAuthLoopbackPort | undefined;
+let SHELL: ShellPort | undefined;
+export function bindOAuth(port: OAuthLoopbackPort): void {
+  OAUTH = port;
+}
+export function bindShell(port: ShellPort): void {
+  SHELL = port;
+}
+
+/**
+ * Desktop sign-in: full OAuth (PKCE) against the Codex/ChatGPT account via a 127.0.0.1:1455
+ * loopback. The host's OAuthLoopbackPort binds the listener and returns the exact redirect URI
+ * to advertise (`http://localhost:1455/auth/callback` — the only redirect the Codex client
+ * registers) plus a promise that resolves with the full callback URL once the browser hits it.
+ * We then:
+ *   1. ask the loopback to start listening → { redirectUri, callbackUrl };
+ *   2. beginAuth(redirectUri) to stash PKCE state and build the authorize URL with the SAME
+ *      redirect_uri (exchangeCode below sends the identical value — the server checks it);
+ *   3. open that URL in the system browser via the ShellPort;
+ *   4. await the captured callback URL, then completeAuth() (state check + code exchange +
+ *      model list + persist).
+ * Returns the populated, persisted auth.
+ */
+export async function connect(): Promise<AiAuth> {
+  if (!OAUTH) throw new Error('OAuth loopback not bound; the host must call bindOAuth() (initCore).');
+  if (!SHELL) throw new Error('Shell not bound; the host must call bindShell() (initCore).');
+  const { redirectUri, callbackUrl } = await OAUTH.capture();
+  const { url } = await beginAuth(redirectUri);
+  await SHELL.openExternal(url);
+  const captured = await callbackUrl;
+  return completeAuth(captured);
+}
 
 /** Finish a flow from the redirect URL captured by the host (returns the populated auth). */
 export async function completeAuth(callbackUrl: string): Promise<AiAuth> {
