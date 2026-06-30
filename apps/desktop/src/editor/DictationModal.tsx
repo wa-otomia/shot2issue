@@ -1,0 +1,171 @@
+// The Smart-dictation modal: type or dictate a complaint, transcribe it (MediaRecorder →
+// core transcribeAudio), then hand the text to EditorView's runComplaint which streams the AI
+// title + body. Ported from the extension's complaint modal; the floating/draggable behavior is
+// simplified to a centered modal (the desktop editor has its own window, so it never needs to
+// avoid covering a host page). The record button shows a transcribing state via the shared bubble.
+
+import { useEffect, useRef, useState } from "react";
+
+export default function DictationModal({
+  open,
+  t,
+  autoDictate,
+  onClose,
+  onTranscribe,
+  onGenerate,
+  onMicDenied,
+}: {
+  open: boolean;
+  t: (k: string) => string;
+  autoDictate: boolean;
+  onClose: () => void;
+  /** Transcribe a recorded blob; returns the transcript text (or throws). */
+  onTranscribe: (blob: Blob) => Promise<string>;
+  /** Generate the issue title + body from the box text (closes the modal first). */
+  onGenerate: (text: string) => void;
+  onMicDenied: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [recording, setRecording] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+
+  const insertAtCursor = (insert: string): void => {
+    const ta = taRef.current;
+    if (!ta) {
+      setText((v) => (v ? v + " " + insert : insert));
+      return;
+    }
+    const start = ta.selectionStart ?? ta.value.length;
+    const end = ta.selectionEnd ?? ta.value.length;
+    const before = ta.value.slice(0, start);
+    const after = ta.value.slice(end);
+    const sep = before && !/\s$/.test(before) ? " " : "";
+    const next = before + sep + insert + after;
+    setText(next);
+    const pos = (before + sep + insert).length;
+    setTimeout(() => {
+      ta.focus();
+      ta.setSelectionRange(pos, pos);
+    }, 0);
+  };
+
+  const transcribeInto = async (blob: Blob): Promise<void> => {
+    setBusy(true);
+    setStatus("");
+    try {
+      const transcript = (await onTranscribe(blob)).trim();
+      if (transcript) insertAtCursor(transcript);
+    } catch (e) {
+      setStatus(t("complaintFailed").replace("{0}", e instanceof Error ? e.message : String(e)));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const stopRecording = (): void => {
+    setRecording(false);
+    try {
+      recorderRef.current?.stop();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const startDictation = async (): Promise<void> => {
+    if (recording) return;
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setStatus(t("complaintMicDenied"));
+      onMicDenied();
+      return;
+    }
+    chunksRef.current = [];
+    const rec = new MediaRecorder(stream);
+    recorderRef.current = rec;
+    rec.ondataavailable = (e) => {
+      if (e.data && e.data.size) chunksRef.current.push(e.data);
+    };
+    rec.onstop = () => {
+      stream.getTracks().forEach((tr) => tr.stop());
+      void transcribeInto(new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" }));
+    };
+    rec.start();
+    setRecording(true);
+  };
+
+  // Focus on open; optionally auto-start dictation (config.autoDictate).
+  useEffect(() => {
+    if (!open) {
+      if (recording) stopRecording();
+      return;
+    }
+    setStatus("");
+    setTimeout(() => taRef.current?.focus(), 0);
+    if (autoDictate && !recording) void startDictation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // Esc closes (handled here so it doesn't reach the editor's esc-to-close).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [open, onClose]);
+
+  if (!open) return null;
+  return (
+    <div className="s2i-modal-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="s2i-modal" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="s2i-modal-head">
+          <span>{t("complaintModalTitle")}</span>
+          <button className="s2i-modal-close" title="Esc" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+        <textarea
+          ref={taRef}
+          value={text}
+          placeholder={t("complaintPlaceholder")}
+          onChange={(e) => setText(e.target.value)}
+        />
+        <div className="s2i-modal-actions">
+          <button
+            className={`ghost${recording ? " recording" : ""}`}
+            disabled={busy}
+            onClick={() => (recording ? stopRecording() : void startDictation())}
+          >
+            {busy ? t("aiStateTranscribing") : recording ? t("complaintRecordStop") : t("complaintRecordStart")}
+          </button>
+          <button className="ghost" onClick={() => setText("")}>
+            {t("complaintClear")}
+          </button>
+          <span className="s2i-spacer" />
+          <button
+            className="primary"
+            disabled={!text.trim() || busy}
+            onClick={() => onGenerate(text.trim())}
+          >
+            {t("complaintGenerate")}
+          </button>
+        </div>
+        {status && (
+          <div className="s2i-modal-status error" role="alert">
+            {status}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

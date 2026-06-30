@@ -1,11 +1,33 @@
-import { useEffect, useState } from "react";
-import { getHotkey, setCaptureHotkey } from "../lib/api";
+// Settings — the desktop analogue of the extension's options page, over core storage. Tabs:
+//   Workspaces (issue targets + Types), Accounts (GitHub login + GitLab/YouTrack credentials),
+//   AI (connect/manage + prompts/reasoning/vocab), General (capture hotkey recorder + title/body
+//   templates + language).
+//
+// Config is edited as a draft (useState) and persisted with an explicit Save (setConfig),
+// mirroring options.ts. The capture hotkey and AI connect/sign-out are immediate actions (they
+// touch the Rust backend / token store), not draft fields.
 
-// Build a tauri-plugin-global-shortcut accelerator string ("CmdOrCtrl+Shift+2")
-// from a keydown event. Returns null until a non-modifier key is pressed.
+import { useEffect, useState } from "react";
+import {
+  getAiAuth,
+  getConfig,
+  setConfig as persistConfig,
+  setLanguage,
+  t as tr,
+  type AiAuth,
+  type Config,
+} from "@shot2issue/core";
+import { getHotkey, setCaptureHotkey } from "../lib/api";
+import AccountsPanel from "../settings/AccountsPanel";
+import WorkspacesPanel from "../settings/WorkspacesPanel";
+import AiPanel from "../settings/AiPanel";
+
+type Tab = "workspaces" | "accounts" | "ai" | "general";
+
+// Build a tauri-plugin-global-shortcut accelerator string ("CommandOrControl+Shift+2") from a
+// keydown event. Returns null until a non-modifier key is pressed.
 function accelFromEvent(e: KeyboardEvent): string | null {
   const parts: string[] = [];
-  // CommandOrControl maps to ⌘ on macOS, Ctrl elsewhere — the portable token.
   if (e.metaKey || e.ctrlKey) parts.push("CommandOrControl");
   if (e.altKey) parts.push("Alt");
   if (e.shiftKey) parts.push("Shift");
@@ -18,54 +40,129 @@ function accelFromEvent(e: KeyboardEvent): string | null {
 }
 
 export default function SettingsView() {
-  const [hotkey, setHotkeyState] = useState("");
+  const t = tr;
+  const [tab, setTab] = useState<Tab>("workspaces");
+  const [config, setDraft] = useState<Config | null>(null);
+  const [auth, setAuth] = useState<AiAuth | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  // Hotkey recorder (immediate, not part of the draft).
+  const [hotkey, setHotkey] = useState("");
   const [recording, setRecording] = useState(false);
-  const [error, setError] = useState("");
+  const [hotkeyErr, setHotkeyErr] = useState("");
 
   useEffect(() => {
-    getHotkey()
-      .then(setHotkeyState)
-      .catch(() => {});
+    getConfig().then(setDraft).catch(() => {});
+    getAiAuth().then(setAuth).catch(() => {});
+    getHotkey().then(setHotkey).catch(() => {});
   }, []);
 
-  // While armed, capture the next chord, persist it via setCaptureHotkey, and
-  // surface any rejection (Wayland / chord-in-use / invalid).
   useEffect(() => {
     if (!recording) return;
-    const onKey = async (e: KeyboardEvent) => {
+    const onKey = async (e: KeyboardEvent): Promise<void> => {
       e.preventDefault();
       const accel = accelFromEvent(e);
       if (!accel) return; // modifier-only; wait for a real key
       setRecording(false);
       try {
         await setCaptureHotkey(accel);
-        setHotkeyState(accel);
-        setError("");
+        setHotkey(accel);
+        setHotkeyErr("");
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        setHotkeyErr(err instanceof Error ? err.message : String(err));
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [recording]);
 
+  const onConfig = (patch: Partial<Config>): void => {
+    setDraft((c) => (c ? { ...c, ...patch } : c));
+    setSaved(false);
+  };
+
+  const save = async (): Promise<void> => {
+    if (!config) return;
+    setLanguage(config.lang);
+    await persistConfig(config);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
+
+  if (!config) return <div className="card"><p className="empty">…</p></div>;
+
+  const TABS: Array<{ id: Tab; label: string }> = [
+    { id: "workspaces", label: t("tabWorkspaces") },
+    { id: "accounts", label: t("tabAccounts") },
+    { id: "ai", label: t("tabAi") },
+    { id: "general", label: t("tabGeneral") },
+  ];
+
   return (
-    <div className="card">
-      <h2>Settings</h2>
-      <div className="field">
-        <label>Global capture hotkey</label>
-        <button
-          className={`hotkey-pill${recording ? " recording" : ""}`}
-          onClick={() => {
-            setError("");
-            setRecording((r) => !r);
-          }}
-        >
-          {recording ? "Press keys…" : hotkey || "Not set"}
-        </button>
-        {error && <p className="empty" role="alert">{error}</p>}
+    <>
+      <h2>{t("settings")}</h2>
+      <div className="s2i-tabs">
+        {TABS.map((tb) => (
+          <button key={tb.id} className={`s2i-tab${tab === tb.id ? " active" : ""}`} onClick={() => setTab(tb.id)}>
+            {tb.label}
+          </button>
+        ))}
       </div>
-      <p className="empty">Accounts, capture mode, and AI options land later.</p>
-    </div>
+
+      {tab === "workspaces" && <WorkspacesPanel t={t} config={config} onConfig={onConfig} />}
+      {tab === "accounts" && <AccountsPanel t={t} config={config} onConfig={onConfig} />}
+      {tab === "ai" && <AiPanel t={t} config={config} auth={auth} onConfig={onConfig} onAuth={setAuth} />}
+
+      {tab === "general" && (
+        <>
+          <div className="card">
+            <h3>{t("shortcutHeading")}</h3>
+            <div className="field">
+              <label>Global capture hotkey</label>
+              <button
+                className={`hotkey-pill${recording ? " recording" : ""}`}
+                onClick={() => {
+                  setHotkeyErr("");
+                  setRecording((r) => !r);
+                }}
+              >
+                {recording ? "Press keys…" : hotkey || "Not set"}
+              </button>
+              {hotkeyErr && <p className="s2i-set-error">{hotkeyErr}</p>}
+            </div>
+          </div>
+
+          <div className="card">
+            <h3>{t("templatesHeading")}</h3>
+            <p className="empty" style={{ textAlign: "left", padding: 0 }}>{t("templatesHint")}</p>
+            <div className="field">
+              <label>{t("titleTemplateLabel")}</label>
+              <input type="text" value={config.titleTemplate} onChange={(e) => onConfig({ titleTemplate: e.target.value })} />
+            </div>
+            <div className="field">
+              <label>{t("bodyTemplateLabel")}</label>
+              <textarea rows={3} value={config.bodyTemplate} onChange={(e) => onConfig({ bodyTemplate: e.target.value })} />
+            </div>
+          </div>
+
+          <div className="card">
+            <h3>{t("languageHeading")}</h3>
+            <p className="empty" style={{ textAlign: "left", padding: 0 }}>{t("languageHint")}</p>
+            <select value={config.lang} style={{ maxWidth: 240 }} onChange={(e) => onConfig({ lang: e.target.value })}>
+              <option value="en">English</option>
+              <option value="zh">中文（简体）</option>
+              <option value="ja">日本語</option>
+            </select>
+          </div>
+        </>
+      )}
+
+      <div className="s2i-save-bar">
+        <button className="primary" onClick={() => void save()}>
+          {t("save")}
+        </button>
+        {saved && <span className="s2i-set-ok">{t("saved")}</span>}
+      </div>
+    </>
   );
 }

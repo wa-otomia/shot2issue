@@ -4,6 +4,10 @@
 // Capture / hotkey / overlay / editor-staging wrappers live in ./capture.ts;
 // this module re-exports them plus the updater/window commands the shell uses.
 import { invoke } from "@tauri-apps/api/core";
+import { open as shellOpen } from "@tauri-apps/plugin-shell";
+
+/** Open a URL in the system browser (issue links, OAuth pages). */
+export const openExternalUrl = (url: string): Promise<void> => shellOpen(url);
 
 export {
   // capture flow

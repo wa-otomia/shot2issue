@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import OverlayWindow from "./views/OverlayWindow";
-import EditorWindow from "./views/EditorWindow";
+import EditorView from "./editor/EditorView";
 import UpdaterWindow from "./views/UpdaterWindow";
 import AboutWindow from "./views/AboutWindow";
 import { initCore, setLanguage, getConfig } from "@shot2issue/core";
@@ -33,7 +33,7 @@ function Root() {
     case "overlay":
       return <OverlayWindow />; // capture HUD (region/window pick)
     case "editor":
-      return <EditorWindow />; // annotate stage (reads staged shots on mount)
+      return <EditorView />; // annotation editor (reads staged shots on mount)
     case "updater":
       return <UpdaterWindow />;
     case "about":
