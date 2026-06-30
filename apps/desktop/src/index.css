@@ -1,0 +1,950 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  color-scheme: dark;
+
+  /* Shared layout metrics. Used by the chrome (sidebar, titlebar) and by
+   * the fixed-position loading overlay so they stay in sync. */
+  --sidebar-width: 240px;
+  --titlebar-height: 30px;
+
+  /* Curvault palette: deep navy base + brand cyan-blue gradient. */
+  --bg:           #060b1a;
+  --bg-elev:      #0e1530;
+  --bg-elev-2:    #131c3c;
+  --bg-input:     #131c3c;
+  --bg-overlay:   rgba(20, 28, 60, 0.6);
+
+  --border:       #1f2a52;
+  --border-hi:    #2d3d72;
+
+  --text:         #e6ecf7;
+  --text-dim:     #8395b8;
+  --text-mute:    #4f5d7a;
+
+  --accent:       #36c5ff;          /* brand cyan */
+  --accent-2:     #1b4fd6;          /* brand deep blue */
+  --accent-hover: #5cd2ff;
+  --accent-bg:    rgba(54, 197, 255, 0.12);
+
+  --ok:    #4caf7a;
+  --warn:  #d4a13c;
+  --error: #e35f5f;
+
+  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  /* Single source of truth for the chrome opacity. Vibrancy from the
+   * platform (macOS hudWindow / Windows mica / Windows acrylic)
+   * contributes the remaining ~10 % of every pixel except where a
+   * .card overlays it. Sidebar and main-frame add only brand-coloured
+   * gradients on top — no extra solid fills — so the chrome reads as
+   * a uniform 90 % tint with the desktop blur subtly bleeding through. */
+  background: rgba(6, 11, 26, 0.80);
+  color: var(--text);
+  font-feature-settings: "ss01", "cv11";
+}
+
+/* Lock the document so macOS WKWebView can't rubber-band the whole window
+ * when you pull past the top/bottom (which exposed the chrome behind it).
+ * The only scroll lives inside .content. */
+html, body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  /* No backdrop-filter -> no vibrancy. Drop to solid for legibility. */
+  body { background: var(--bg); }
+}
+
+#root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.titlebar {
+  flex: 0 0 var(--titlebar-height);
+  height: var(--titlebar-height);
+  display: flex;
+  align-items: center;
+  /* Reserve room on the left for macOS traffic lights (3 dots, ~74px wide). */
+  padding: 0 1rem 0 80px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-mute);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  background: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  border-bottom: 1px solid rgba(54, 197, 255, 0.06);
+}
+
+.titlebar .brand-mini {
+  opacity: 0.7;
+}
+
+.app-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* -------- buttons -------- */
+
+button {
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: linear-gradient(180deg,
+    rgba(54, 197, 255, 0.18) 0%,
+    rgba(27, 79, 214, 0.28) 100%);
+  border-color: rgba(54, 197, 255, 0.45);
+  color: var(--text);
+  font-weight: 600;
+}
+
+button.primary:hover {
+  background: linear-gradient(180deg,
+    rgba(54, 197, 255, 0.28) 0%,
+    rgba(27, 79, 214, 0.38) 100%);
+  border-color: var(--accent);
+}
+
+button.danger {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+/* -------- inputs -------- */
+
+input, select, textarea {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.55rem 0.7rem;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+code, pre {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+pre {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem;
+  overflow: auto;
+  max-height: 320px;
+}
+
+/* -------- sidebar -------- */
+
+.sidebar {
+  width: var(--sidebar-width);
+  /* Just the brand gradients — body already provides the base opacity.
+   * Sidebar reads slightly cooler than main-frame thanks to the deeper
+   * bottom-left blue gradient. */
+  background:
+    radial-gradient(ellipse at 80% 5%, rgba(54,197,255,0.10) 0%, transparent 50%),
+    radial-gradient(ellipse at 10% 115%, rgba(27,79,214,0.28) 0%, transparent 55%);
+  position: relative;
+  border-right: 1px solid rgba(54, 197, 255, 0.10);
+  padding: 1rem 0.75rem 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar::before {
+  /* dotted texture overlay matching the sticker design */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(70,200,255,0.10) 1px, transparent 1.5px);
+  background-size: 14px 14px;
+  background-position: 0 0;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.sidebar > * {
+  position: relative;
+  z-index: 1;
+}
+
+.sidebar .brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 700;
+  font-size: 20px;
+  color: #ffffff;
+  padding: 0.4rem 0.5rem 1.1rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(54,197,255,0.12);
+}
+
+.sidebar .brand-logo {
+  flex: 0 0 36px;
+  filter: drop-shadow(0 0 6px rgba(54,197,255,0.4));
+}
+
+.sidebar .brand-name {
+  flex: 1;
+  letter-spacing: 0.3px;
+}
+
+.sidebar .brand-nfc {
+  flex: 0 0 20px;
+  opacity: 0.85;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1;
+}
+
+.sidebar-waves {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  bottom: 4%;
+  width: 120%;
+  height: 38%;
+  pointer-events: none;
+  opacity: 0.85;
+  z-index: 0;
+}
+
+.nav-item {
+  background: transparent;
+  border: 1px solid transparent;
+  text-align: left;
+  padding: 0.55rem 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.nav-item:hover {
+  background: var(--bg-overlay);
+  border-color: var(--border-hi);
+}
+
+.nav-item.active {
+  background: linear-gradient(135deg, rgba(54,197,255,0.20) 0%, rgba(27,79,214,0.25) 100%);
+  border-color: rgba(54,197,255,0.35);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+}
+
+/* -------- main frame -------- */
+
+.main-frame {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  /* Brand-blue glow on top of the body tint — no solid fill of its own
+   * (body already provides the 90 % opacity). */
+  background:
+    radial-gradient(ellipse at 80% 0%, rgba(54,197,255,0.10) 0%, transparent 55%);
+}
+
+.content {
+  flex: 1;
+  padding: 1.5rem 2rem;
+  overflow: auto;
+  overscroll-behavior: contain; /* don't chain bounce to the document */
+  position: relative; /* anchor for .loading-overlay */
+}
+
+/* Consistent spacing for top-level page chrome.
+ *
+ * Every view follows the same skeleton — an optional <h2> or a header row
+ * that mixes <h2> with action buttons, then one or more <.card>s. We only
+ * target direct children of .content so nested .row inside a .card stays
+ * compact, while top-level headers always get breathing room before the
+ * first card.
+ */
+.content > h2 {
+  margin: 0 0 1rem;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.content > .row {
+  margin-bottom: 1rem;
+}
+
+.statusbar {
+  border-top: 1px solid rgba(54, 197, 255, 0.08);
+  background: rgba(14, 21, 48, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  padding: 0.3rem 1rem;
+  font-size: 12px;
+  color: var(--text-dim);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.statusbar .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 0.4rem;
+  vertical-align: middle;
+}
+
+.statusbar .dot.ok { background: var(--ok); }
+.statusbar .dot.warn { background: var(--warn); }
+.statusbar .dot.error { background: var(--error); }
+
+/* -------- cards & layout -------- */
+
+.card {
+  /* Cards are content-bearing so they stay mostly opaque for
+   * readability, but we still allow a hint of vibrancy through. */
+  background: linear-gradient(180deg,
+    rgba(14, 21, 48, 0.85) 0%,
+    rgba(11, 16, 38, 0.78) 100%);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.card h3 {
+  margin: 0 0 0.75rem 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.field label {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.55rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+th {
+  font-weight: 500;
+  color: var(--text-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.empty {
+  color: var(--text-dim);
+  font-style: italic;
+  padding: 1rem;
+  text-align: center;
+}
+
+/* -------- loading overlay -------- */
+
+.loading-overlay {
+  /* Fixed positioning so a scrolling page can't slip out from under it.
+   * Anchored to the area right of the sidebar and below the titlebar so
+   * the navigation stays interactive — clicking another nav item while
+   * a load is running unmounts the overlay along with the view. */
+  position: fixed;
+  top: var(--titlebar-height);
+  left: var(--sidebar-width);
+  right: 0;
+  bottom: 0;
+  background: rgba(6, 11, 26, 0.55);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: s2i-fade-in 0.18s ease-out;
+}
+
+.loading-overlay.loading-overlay-exit {
+  animation: s2i-fade-out 0.18s ease-in forwards;
+  pointer-events: none;
+}
+
+.loading-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.loading-spinner {
+  filter: drop-shadow(0 0 14px rgba(54,197,255,0.35));
+}
+
+.loading-spinner .loading-ring-outer,
+.loading-spinner .loading-ring-inner,
+.loading-spinner .loading-dot {
+  /* Anchor the rotation to the centre of the SVG viewport (viewBox is
+   * 0 0 120 120, so 50% = 60 user units). fill-box would pin to each
+   * path's own bounding box centre, which for the open-C arcs is off
+   * canvas — the rings then orbit instead of spinning. */
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+}
+
+.loading-spinner .loading-ring-outer {
+  animation: s2i-spin 1.6s linear infinite;
+}
+
+.loading-spinner .loading-ring-inner {
+  animation: s2i-spin-reverse 1.0s linear infinite;
+}
+
+.loading-spinner .loading-dot {
+  animation: s2i-pulse 1.3s ease-in-out infinite;
+}
+
+.loading-label {
+  font-size: 13px;
+  color: var(--text);
+  letter-spacing: 0.3px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+}
+
+@keyframes s2i-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes s2i-spin-reverse {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(-360deg); }
+}
+
+@keyframes s2i-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(0.45); opacity: 0.45; }
+}
+
+@keyframes s2i-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes s2i-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* Page transition: every direct child of .content (i.e. the active
+ * view) fades in on mount. The loading overlay is excluded so its own
+ * fade-in / fade-out lifecycle stays predictable. */
+.content > *:not(.loading-overlay) {
+  animation: s2i-page-in 0.22s ease-out;
+}
+
+@keyframes s2i-page-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* -------- log panel -------- */
+
+.logpanel {
+  border-top: 1px solid rgba(54, 197, 255, 0.08);
+  background: linear-gradient(180deg,
+    rgba(14, 21, 48, 0.55) 0%,
+    rgba(6, 11, 26, 0.55) 100%);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  flex-direction: column;
+  transition: max-height 0.2s ease;
+  flex: 0 0 auto;
+}
+
+.logpanel.collapsed { max-height: 32px; }
+.logpanel.expanded  { max-height: 280px; }
+
+.logpanel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.9rem;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-dim);
+  user-select: none;
+  border-bottom: 1px solid transparent;
+}
+
+.logpanel-header:hover { color: var(--text); }
+.logpanel.expanded .logpanel-header { border-bottom-color: var(--border); }
+
+.logpanel-header .chevron {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 6px solid var(--text-dim);
+  transition: transform 0.15s;
+}
+
+.logpanel.collapsed .chevron { transform: rotate(180deg); }
+
+.logpanel-list {
+  flex: 1;
+  overflow: auto;
+  padding: 0.25rem 0.9rem 0.5rem;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+}
+
+.logpanel-entry {
+  padding: 0.25rem 0;
+  border-bottom: 1px dashed rgba(255,255,255,0.04);
+  cursor: pointer;
+}
+
+.logpanel-entry:hover { background: rgba(255,255,255,0.02); }
+
+.logpanel-entry .head {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  color: var(--text);
+}
+
+.logpanel-entry .ts { color: var(--text-mute); }
+.logpanel-entry .prog { color: var(--accent); font-weight: 600; }
+.logpanel-entry .args { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.logpanel-entry .exit { font-weight: 600; }
+.logpanel-entry .exit.ok { color: var(--ok); }
+.logpanel-entry .exit.fail { color: var(--error); }
+.logpanel-entry .dur { color: var(--text-mute); }
+
+.logpanel-entry .body {
+  margin-top: 0.25rem;
+  padding-left: 1rem;
+  border-left: 2px solid var(--border);
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow: auto;
+}
+
+/* -------- updater window (frameless, rounded, draggable) -------- */
+
+/* The updater window is transparent + frameless; this opaque rounded panel
+ * is the visible surface. Body is forced transparent (set in main.tsx) so the
+ * corners outside the radius show through. */
+.updater-root {
+  position: relative;
+  overflow: hidden;
+  min-height: 100vh;
+  border-radius: 16px;
+  background: var(--bg);
+  border: 1px solid rgba(120, 160, 255, 0.12);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.75rem 1.75rem 1.4rem;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+/* Dismiss animation: shrink + fade + blur out on an accelerating curve so it
+ * snaps shut fast, then the window is actually closed (the JS waits for this).
+ * The frameless popups animate their panel; the MAIN window animates <body>
+ * so its tinted background fades too (animating #root left the dark tint
+ * behind as a "black blob"). */
+.updater-root.closing,
+body.app-closing {
+  animation: popupClose 0.2s cubic-bezier(0.6, 0, 1, 1) forwards;
+  transform-origin: center center;
+  pointer-events: none;
+}
+@keyframes popupClose {
+  from { opacity: 1; transform: scale(1);    filter: blur(0); }
+  to   { opacity: 0; transform: scale(0.9);  filter: blur(10px); }
+}
+
+.updater-content {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.updater-title {
+  margin: 0.2rem 0 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+/* Fixed-height stage keeps the window from reflowing as states change. */
+.updater-stage {
+  width: 100%;
+  min-height: 188px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.updater-panel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  text-align: center;
+}
+
+/* Each state change replays this fade so content eases in instead of
+ * snapping. Keyed by state in React so progress ticks don't re-trigger it. */
+.updater-fade {
+  animation: updaterFade 0.32s ease;
+}
+@keyframes updaterFade {
+  from { opacity: 0; transform: translateY(7px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.updater-headline { margin: 0; font-weight: 600; font-size: 15px; }
+.updater-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums; /* stop digits from shifting width */
+}
+.updater-version {
+  margin-top: 1rem;
+  color: var(--text-mute);
+  font-size: 11px;
+}
+
+/* The About window is wider than the updater, so its content column is too —
+ * keeps the tagline and meta line from wrapping. */
+.about-content { max-width: 460px; }
+
+.about-meta {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: 1.1rem;
+  margin: 0.5rem 0 0.2rem;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.about-meta span { white-space: nowrap; }
+.about-meta b { color: var(--text); font-weight: 600; }
+
+.updater-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.updater-notes {
+  max-height: 150px;
+  width: 100%;
+  margin: 0.2rem 0;
+  font-size: 11px;
+  white-space: pre-wrap;
+  text-align: left;
+  background: rgba(0, 0, 0, 0.28);
+  border-radius: 6px;
+  padding: 0.6rem 0.7rem;
+  overflow: auto;
+}
+
+/* Close affordance for the frameless window. */
+.updater-close {
+  position: absolute;
+  top: 12px;
+  right: 13px;
+  z-index: 2;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-dim);
+}
+.updater-close:hover { background: rgba(255, 255, 255, 0.10); color: var(--text); }
+
+/* Progress bar: real percentage when known, sliding indeterminate when not. */
+.updater-progress {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  margin-top: 0.4rem;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.updater-progress-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: linear-gradient(90deg, #36c5ff, #1b4fd6);
+  border-radius: 3px;
+  transition: width 0.2s ease;
+}
+.updater-progress-indeterminate {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 38%;
+  background: linear-gradient(90deg, rgba(54,197,255,0) 0%, #36c5ff 50%, rgba(27,79,214,0) 100%);
+  border-radius: 3px;
+  animation: updaterSlide 1.15s ease-in-out infinite;
+}
+@keyframes updaterSlide {
+  0%   { left: -40%; }
+  100% { left: 100%; }
+}
+
+/* ============================================================
+ * shot2issue capture surfaces (additive — not present in curvault).
+ * The capture HUD is a frameless, transparent, fullscreen overlay
+ * window; the annotate stage hosts the reused canvas editor.
+ * ============================================================ */
+
+/* ---- Capture HUD (overlay window) ---- */
+.hud-root {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  cursor: crosshair;
+  overflow: hidden;
+  user-select: none;
+}
+.hud-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+.hud-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 11, 26, 0.42);
+  pointer-events: none;
+}
+.hud-selection {
+  position: absolute;
+  border: 1.5px solid var(--accent);
+  box-shadow: 0 0 0 100vmax rgba(6, 11, 26, 0.55);
+  background: transparent;
+  pointer-events: none;
+}
+.hud-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border: 1px solid #fff;
+  border-radius: 2px;
+}
+.hud-window-hint {
+  position: absolute;
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+  box-shadow: 0 0 0 100vmax rgba(6, 11, 26, 0.55),
+    0 0 18px rgba(54, 197, 255, 0.55);
+  pointer-events: none;
+}
+.hud-readout {
+  position: absolute;
+  top: -26px;
+  left: 0;
+  padding: 2px 8px;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--text);
+  background: var(--bg-elev);
+  border: 1px solid var(--border-hi);
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.hud-modebar {
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-hi);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+}
+.hud-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-left: 6px;
+}
+
+/* ---- Annotate stage (main window) ---- */
+.annotate-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 10px;
+}
+.annotate-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+}
+.annotate-toolbar .sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border-hi);
+  margin: 0 4px;
+}
+.annotate-canvas-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+}
+.annotate-canvas-wrap canvas,
+.annotate-canvas-wrap img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+}
+.compose-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+/* ---- Hotkey recorder pill ---- */
+.hotkey-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-variant-numeric: tabular-nums;
+  background: var(--bg-input);
+  border: 1px solid var(--border-hi);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+.hotkey-pill.recording {
+  border-color: var(--accent);
+  animation: s2i-pulse 1.3s ease-in-out infinite;
+}

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://schema.tauri.app/config/2.0.0",
+  "productName": "shot2issue",
+  "version": "0.1.0",
+  "identifier": "com.waotomia.shot2issue",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5273",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "shot2issue",
+        "width": 1120,
+        "height": 760,
+        "minWidth": 880,
+        "minHeight": 580,
+        "resizable": true,
+        "fullscreen": false,
+        "transparent": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "windowEffects": {
+          "effects": ["hudWindow", "mica", "acrylic", "blur"],
+          "state": "active",
+          "radius": 10
+        }
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset:; connect-src 'self' ipc:"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "dialog": false,
+      "pubkey": "REPLACE_WITH_MINISIGN_PUBKEY",
+      "endpoints": [
+        "https://github.com/wa-otomia/shot2issue/releases/latest/download/latest.json"
+      ]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "Capture, annotate, and file screenshots as issues.",
+    "longDescription": "shot2issue is a global-hotkey screen capture tool: press the shortcut to grab the screen under the cursor, crop a region or pick a window, annotate on a fast canvas (rect, arrow, numbered markers, pen, text, mosaic, crop), then file it straight to GitHub, GitLab, or YouTrack as an issue with the image inlined.",
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    }
+  }
+}

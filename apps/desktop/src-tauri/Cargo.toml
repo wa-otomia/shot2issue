@@ -1,0 +1,52 @@
+[package]
+name = "shot2issue"
+version = "0.1.0"
+description = "shot2issue — global-hotkey screen capture that files annotated screenshots as issues."
+authors = ["wa-otomia"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "shot2issue_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-store = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+tauri-plugin-http = "2"
+tauri-plugin-global-shortcut = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+anyhow = "1"
+
+tokio = { version = "1", features = ["process", "io-util", "macros", "sync", "rt-multi-thread"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Screen capture: multi-monitor grab + per-window enumeration on
+# Win / macOS / X11. Wayland falls back to the XDG Desktop Portal (see
+# services/capture.rs) since xcap cannot grab there reliably. Pinned to the
+# current crates.io release.
+xcap = "0.9.6"
+image = { version = "0.25", default-features = false, features = ["png"] }
+base64 = "0.22"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Query the active Screen Recording (TCC) authorization so the UI can guide
+# the one-time grant + restart instead of capturing a black frame.
+core-graphics = "0.24"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
