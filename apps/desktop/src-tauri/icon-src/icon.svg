@@ -1,0 +1,16 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- shot2issue desktop app icon: GitHub-blue rounded square + white camera -->
+  <!-- background rounded square (iOS-style squircle radius ~20%) -->
+  <rect x="80" y="80" width="864" height="864" rx="208" fill="#1F6FEB"/>
+  <!-- camera body + viewfinder bump, white -->
+  <g fill="#FFFFFF">
+    <!-- viewfinder bump on top, overlapping the body -->
+    <rect x="408" y="298" width="208" height="126" rx="34"/>
+    <!-- main body -->
+    <rect x="200" y="368" width="624" height="452" rx="76"/>
+  </g>
+  <!-- lens: concentric circles (outer ring reads as a cut-out to the blue ground) -->
+  <circle cx="512" cy="596" r="132" fill="#1F6FEB"/>
+  <circle cx="512" cy="596" r="86" fill="#FFFFFF"/>
+  <circle cx="512" cy="596" r="46" fill="#1F6FEB"/>
+</svg>
