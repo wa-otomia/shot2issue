@@ -24,7 +24,7 @@ jobs:
         include:
           - platform: 'macos-latest'
             args: '--target universal-apple-darwin'
-          - platform: 'ubuntu-22.04'
+          - platform: 'ubuntu-24.04'
             args: ''
           - platform: 'windows-latest'
             args: ''
@@ -54,7 +54,7 @@ jobs:
       # xcap 0.9.6 pulls pipewire + needs libclang (bindgen); global-shortcut/xcap
       # on X11 need xdo + xcb.
       - name: Install Linux build deps
-        if: matrix.platform == 'ubuntu-22.04'
+        if: matrix.platform == 'ubuntu-24.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -118,7 +118,9 @@ jobs:
           # macOS code signing (self-signed, no notarization). Empty on other
           # platforms / when the secret is absent — tauri then skips signing.
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_SIGNING_IDENTITY: ${{ steps.macos_cert.outputs.signing_identity }}
+          # With a real cert this is its CN; without one, '-' = ad-hoc signing so
+          # the universal .app still gets codesigned (an empty identity fails).
+          APPLE_SIGNING_IDENTITY: ${{ steps.macos_cert.outputs.signing_identity || '-' }}
         with:
           projectPath: apps/desktop
           includeUpdaterJson: true
@@ -159,7 +161,7 @@ jobs:
       # No-op unless LINUX_GPG_PRIVATE_KEY is provided. AppImage/deb signing is
       # optional; the minisign updater signature already covers update trust.
       - name: Sign Linux packages (placeholder)
-        if: matrix.platform == 'ubuntu-22.04' && env.LINUX_GPG_PRIVATE_KEY != ''
+        if: matrix.platform == 'ubuntu-24.04' && env.LINUX_GPG_PRIVATE_KEY != ''
         env:
           LINUX_GPG_PRIVATE_KEY: ${{ secrets.LINUX_GPG_PRIVATE_KEY }}
           LINUX_GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
