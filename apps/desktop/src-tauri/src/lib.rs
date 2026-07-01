@@ -80,6 +80,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         // Global hotkey: stock plugin works on Win/mac/X11; native Wayland is
         // unsupported (documented; the tray "Capture now" item is the fallback
         // there). The per-shortcut callback is registered in

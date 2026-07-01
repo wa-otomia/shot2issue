@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { t } from "@shot2issue/core";
 import { getHotkey, macScreenRecordingAuthorized } from "../lib/api";
 
 export default function StatusBar() {
@@ -19,14 +20,12 @@ export default function StatusBar() {
   return (
     <div className="statusbar">
       <span>
-        Hotkey: <b>{hotkey || "—"}</b>
+        {t("statusHotkey")}: <b>{hotkey || "—"}</b>
       </span>
       {tcc !== null && (
         <span>
           <span className={`dot ${tcc ? "ok" : "warn"}`} />
-          {tcc
-            ? "Screen Recording granted"
-            : "Grant Screen Recording in System Settings"}
+          {tcc ? t("screenRecOn") : t("screenRecOff")}
         </span>
       )}
     </div>

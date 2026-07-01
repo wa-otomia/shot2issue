@@ -13,6 +13,7 @@
 // orchestration layer; the toolbar / canvas / form / bubble / modal / strip are split out.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { readImage } from "@tauri-apps/plugin-clipboard-manager";
 import {
   ai,
   accountFor,
@@ -326,16 +327,25 @@ export default function EditorView() {
   );
 
   const pasteFromClipboard = useCallback(async () => {
+    // WKWebView blocks navigator.clipboard.read() for images, so read the OS image
+    // clipboard through the Tauri plugin and rasterize it to a PNG data URL. readImage()
+    // rejects when the clipboard holds no image — treat that as "nothing to paste".
+    let img;
     try {
-      const items = await navigator.clipboard.read();
-      for (const it of items) {
-        const type = it.types.find((ty) => ty.startsWith("image/"));
-        if (type) {
-          await addImageAttachment(await blobToDataUrl(await it.getType(type)));
-          return;
-        }
-      }
+      img = await readImage();
+    } catch {
       showToast("pasteNoImage");
+      return;
+    }
+    try {
+      const [rgba, size] = await Promise.all([img.rgba(), img.size()]);
+      const off = document.createElement("canvas");
+      off.width = size.width;
+      off.height = size.height;
+      const c = off.getContext("2d");
+      if (!c) throw new Error("no 2d context");
+      c.putImageData(new ImageData(new Uint8ClampedArray(rgba), size.width, size.height), 0, 0);
+      await addImageAttachment(off.toDataURL("image/png"));
     } catch (e) {
       showToast("pasteFailed:" + errMsg(e));
     }

@@ -13,6 +13,10 @@
     "core:event:allow-listen",
     "dialog:default",
     "store:default",
+    "clipboard-manager:allow-read-image",
+    "clipboard-manager:allow-write-image",
+    "core:image:allow-rgba",
+    "core:image:allow-size",
     {
       "identifier": "http:default",
       "allow": [

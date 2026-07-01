@@ -9,6 +9,7 @@
 // view owns the attachment array (for the thumbnail strip) and calls loadImage() on switch.
 
 import { useCallback, useEffect, useRef } from "react";
+import { writeImage } from "@tauri-apps/plugin-clipboard-manager";
 import { canvas as eng, type EditorPrefs, type Op } from "@shot2issue/core";
 import {
   applyCrop as applyCropTransform,
@@ -232,6 +233,15 @@ export function useAnnotator(opts: AnnotatorOptions) {
         if (cv) {
           cv.width = img.naturalWidth;
           cv.height = img.naturalHeight;
+          // HiDPI crispness: the backing store is device-resolution (the capture is
+          // device px), so DISPLAY it at naturalWidth / devicePixelRatio CSS px — that
+          // maps one backing pixel onto one PHYSICAL pixel (1:1). The previous
+          // `width:auto` rendered each backing px across `dpr` physical px → a 2×
+          // upscale blur on Retina. `max-width:100%` still downsizes wide shots crisply;
+          // height:auto keeps the aspect ratio.
+          const dpr = window.devicePixelRatio || 1;
+          cv.style.width = img.naturalWidth / dpr + "px";
+          cv.style.height = "auto";
         }
         s.hasImage = true;
         redraw();
@@ -326,7 +336,10 @@ export function useAnnotator(opts: AnnotatorOptions) {
     try {
       const blob = await new Promise<Blob | null>((res) => cv.toBlob(res, "image/png"));
       if (!blob) throw new Error("no image");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      // WKWebView blocks navigator.clipboard.write() for images ("not allowed by the
+      // platform"), so write the PNG through the Tauri clipboard plugin — writeImage
+      // decodes the PNG bytes and sets the OS image clipboard.
+      await writeImage(new Uint8Array(await blob.arrayBuffer()));
       opts.onToast("copied");
     } catch (e) {
       opts.onToast("copyFailed:" + (e instanceof Error ? e.message : String(e)));

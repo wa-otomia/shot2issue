@@ -913,14 +913,16 @@ body.app-closing {
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  overflow: hidden;
+  overflow: auto;
   background: repeating-conic-gradient(rgba(255,255,255,0.04) 0% 25%, transparent 0% 50%) 50% / 16px 16px;
 }
 .s2i-canvas-wrap canvas {
   display: block;
+  /* Width is set inline to naturalWidth / devicePixelRatio (see useAnnotator) so
+     the device-resolution backing maps 1:1 to physical pixels — crisp, not upscaled.
+     max-width keeps wide shots inside the column (a crisp downscale); height:auto
+     preserves aspect. Tall shots scroll inside .s2i-canvas-wrap (overflow:auto). */
   max-width: 100%;
-  max-height: calc(100vh - 230px);
-  width: auto;
   height: auto;
   cursor: crosshair;
 }
@@ -1040,7 +1042,12 @@ button.ghost.recording { color: #fff; background: var(--error); border-color: va
 .s2i-set-grid .field { margin-bottom: 0; }
 .s2i-set-error { color: var(--error); font-size: 13px; margin: 6px 0 0; }
 .s2i-set-ok { color: var(--ok); font-size: 13px; }
-.s2i-save-bar { position: sticky; bottom: 0; background: var(--bg); padding: 12px 0; border-top: 1px solid var(--border); margin-top: 12px; display: flex; gap: 10px; align-items: center; }
+/* Settings panel: fixed-height flex column so the save bar is pinned to the
+   bottom of the pane while the tabbed content scrolls between header and bar. */
+.s2i-settings-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.s2i-settings-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.s2i-settings-scroll > h2 { margin: 0 0 1rem; font-size: 20px; font-weight: 600; letter-spacing: 0.2px; }
+.s2i-save-bar { flex: 0 0 auto; background: var(--bg); padding: 12px 0 2px; border-top: 1px solid var(--border); margin-top: 12px; display: flex; gap: 10px; align-items: center; }
 .s2i-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
 .s2i-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; }
 .s2i-chip button { border: none; background: none; padding: 0 2px; color: var(--error); cursor: pointer; }

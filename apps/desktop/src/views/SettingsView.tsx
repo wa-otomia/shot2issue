@@ -310,7 +310,8 @@ export default function SettingsView() {
   ];
 
   return (
-    <>
+    <div className="s2i-settings-panel">
+      <div className="s2i-settings-scroll">
       <h2>{t("settings")}</h2>
       <div className="s2i-tabs">
         {TABS.map((tb) => (
@@ -404,6 +405,7 @@ export default function SettingsView() {
         </>
       )}
 
+      </div>
       <div className="s2i-save-bar">
         <button className="primary" onClick={() => void save()}>
           {t("save")}
@@ -411,6 +413,6 @@ export default function SettingsView() {
         {saved && <span className="s2i-set-ok">{t("saved")}</span>}
         {saveErr && <span className="s2i-set-error" role="alert">{saveErr}</span>}
       </div>
-    </>
+    </div>
   );
 }

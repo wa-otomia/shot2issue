@@ -1,3 +1,4 @@
+import { t } from "@shot2issue/core";
 import BrandLogo from "./BrandLogo";
 
 export type View = "home" | "settings" | "annotate" | "about";
@@ -26,10 +27,10 @@ const ICON: Record<Exclude<View, "annotate">, JSX.Element> = {
   ),
 };
 
-const NAV: { id: Exclude<View, "annotate">; label: string }[] = [
-  { id: "home", label: "Home" },
-  { id: "settings", label: "Settings" },
-  { id: "about", label: "About" },
+const NAV: { id: Exclude<View, "annotate">; labelKey: string }[] = [
+  { id: "home", labelKey: "navHome" },
+  { id: "settings", labelKey: "navSettings" },
+  { id: "about", labelKey: "navAbout" },
 ];
 
 export default function Sidebar({
@@ -67,7 +68,7 @@ export default function Sidebar({
             >
               {ICON[item.id]}
             </svg>
-            <span>{item.label}</span>
+            <span>{t(item.labelKey)}</span>
           </button>
         ))}
       </div>
