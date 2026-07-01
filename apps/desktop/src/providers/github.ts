@@ -1,6 +1,7 @@
-// GitHub provider (desktop): files issues via the user's github.com WEB SESSION cookie — no
-// OAuth, no PAT. The single `user_session` cookie obtained by the built-in GitHub-login
-// webview (see src-tauri/src/services/github.rs) drives BOTH image upload and issue creation.
+// GitHub provider (desktop): files issues via github.com WEB SESSION cookies — no OAuth, no PAT.
+// Supports MULTIPLE accounts: each workspace binds a github account (by login), and that account's
+// `user_session` cookie (captured by the built-in login webview, stored in src-tauri/github.rs)
+// drives BOTH image upload and issue creation.
 //
 // Why cookies for everything: GitHub's user-attachments upload endpoints
 // (/upload/policies/assets, the S3 presign, /upload/assets/{id}) are web-session-only — an
@@ -20,29 +21,33 @@ import type { Provider, SubmitContext, TFunc } from "@shot2issue/core";
 interface GhWorkspace {
   owner?: string;
   repo?: string;
+  githubAccountId?: string;
   [key: string]: unknown;
 }
 
-/** Mirror of the Rust `github::SessionStatus` (serde camelCase). */
-interface SessionStatus {
-  loggedIn: boolean;
+/** Mirror of the Rust `github::AccountInfo` (serde camelCase). id == login. */
+export interface GithubAccount {
+  id: string;
   login: string;
 }
 
-/** Open the built-in GitHub-login webview; resolves once a `user_session` cookie is captured. */
-export const githubLogin = (): Promise<SessionStatus> => invoke("github_login");
+/** Open the login webview; resolves with the account that signed in (upserted by login). */
+export const githubLogin = (): Promise<GithubAccount> => invoke("github_login");
 
-/** Is a github.com `user_session` cookie present + valid? Used for the hint + a pre-submit gate. */
-export const githubSessionStatus = (): Promise<SessionStatus> => invoke("github_session_status");
+/** All signed-in GitHub accounts (id + login; no session values). */
+export const githubAccounts = (): Promise<GithubAccount[]> => invoke("github_accounts");
 
-/** Upload one screenshot via the gh-image protocol; returns the user-attachments URL. */
-function uploadImage(owner: string, repo: string, dataUrl: string, filename: string): Promise<string> {
-  return invoke<string>("github_upload_image", { owner, repo, dataUrl, filename });
+/** Sign out one GitHub account by id (== login), removing its stored session. */
+export const githubLogout = (id: string): Promise<void> => invoke("github_logout", { id });
+
+/** Upload one screenshot via the gh-image protocol using an account's session; returns the URL. */
+function uploadImage(accountId: string, owner: string, repo: string, dataUrl: string, filename: string): Promise<string> {
+  return invoke<string>("github_upload_image", { accountId, owner, repo, dataUrl, filename });
 }
 
-/** Create the issue on github.com via the session cookie; returns the issue URL. */
-function createIssue(owner: string, repo: string, title: string, body: string): Promise<string> {
-  return invoke<string>("github_create_issue", { owner, repo, title, body });
+/** Create the issue via an account's session cookie; returns the issue URL. */
+function createIssue(accountId: string, owner: string, repo: string, title: string, body: string): Promise<string> {
+  return invoke<string>("github_create_issue", { accountId, owner, repo, title, body });
 }
 
 export const githubProvider: Provider = {
@@ -72,10 +77,13 @@ export const githubProvider: Provider = {
     return [];
   },
 
-  async hint(_ws, t: TFunc): Promise<{ text: string; ok: boolean }> {
-    const { loggedIn, login } = await githubSessionStatus();
-    return loggedIn
-      ? { text: t("loginSignedInAs", [login]), ok: true }
+  async hint(ws, t: TFunc): Promise<{ text: string; ok: boolean }> {
+    const id = ((ws as GhWorkspace).githubAccountId || "").trim();
+    const accounts = await githubAccounts();
+    // Bound account, else the sole account (back-compat for workspaces created before binding).
+    const acct = accounts.find((a) => a.id === id) ?? (accounts.length === 1 ? accounts[0] : undefined);
+    return acct
+      ? { text: t("loginSignedInAs", [acct.login]), ok: true }
       : { text: "⚠ " + t("loginNotSignedIn"), ok: false };
   },
 
@@ -85,28 +93,32 @@ export const githubProvider: Provider = {
     const repo = (w.repo || "").trim();
 
     ctx.busy("statusCheckingLogin");
-    const { loggedIn } = await githubSessionStatus();
-    if (!loggedIn) throw new Error(ctx.t("errNotSignedIn"));
+    // Resolve the workspace's bound GitHub account (fall back to the sole account if unbound).
+    const id = (w.githubAccountId || "").trim();
+    const accounts = await githubAccounts();
+    const acct = accounts.find((a) => a.id === id) ?? (accounts.length === 1 ? accounts[0] : undefined);
+    if (!acct) throw new Error(ctx.t("errNotSignedIn"));
+    const accountId = acct.id;
 
     // 1) Upload each screenshot via the gh-image protocol (Rust) and collect the
-    //    user-attachments markdown, in order. The session cookie makes these same-origin-credible.
+    //    user-attachments markdown, in order. The account's session makes these credible.
     const md: string[] = [];
     if (ctx.withImage) {
       for (const img of ctx.images) {
         ctx.busy("statusSubmitting");
-        const url = await uploadImage(owner, repo, img.dataUrl, img.filename);
+        const url = await uploadImage(accountId, owner, repo, img.dataUrl, img.filename);
         md.push(`![${img.filename}](${url})`);
       }
     }
 
     // 2) Compose the body with the uploaded images inlined, then create the issue (Rust, same
-    //    cookie). Unlike the extension's in-page composer, upload + create are separate HTTP
-    //    flows here, but both ride the one web session, so private-repo attachments still render.
+    //    account session). upload + create are separate HTTP flows but both ride one web session,
+    //    so private-repo attachments still render.
     let body = ctx.body || "";
     if (md.length) body = (body ? body.replace(/\s+$/, "") + "\n\n" : "") + md.join("\n\n");
 
     ctx.busy(ctx.withImage ? "statusSubmitting" : "statusSubmittingNoImage");
-    const url = await createIssue(owner, repo, ctx.title, body);
+    const url = await createIssue(accountId, owner, repo, ctx.title, body);
     const m = url.match(/\/issues\/(\d+)/);
     return { url, number: m ? m[1] : "" };
   },

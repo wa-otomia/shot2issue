@@ -40,33 +40,52 @@ pub fn current() -> String {
         .unwrap_or_else(|| default_accelerator().to_string())
 }
 
-/// Register the persisted (or default) accelerator at startup. Best-effort: a
-/// failure (native Wayland, or the chord already taken) is non-fatal — the tray
-/// "Capture now" item still works. The chosen value is persisted so a later
-/// run reuses it.
+/// Register the persisted (or default) accelerator at startup. Best-effort and
+/// SELF-HEALING: if the stored chord fails (taken / transient), fall back to the
+/// default so the app still has a working hotkey. MUST run after the event loop
+/// is live (see lib.rs — spawned off the main thread), never inside setup().
 pub fn register_saved<R: Runtime>(app: &AppHandle<R>) {
-    let accel = settings::capture_hotkey(app).unwrap_or_else(|| default_accelerator().to_string());
-    if let Err(e) = register(app, &accel) {
-        eprintln!("global hotkey not registered: {e}");
+    let stored = settings::capture_hotkey(app).unwrap_or_else(|| default_accelerator().to_string());
+    if let Err(e) = register(app, &stored) {
+        eprintln!("global hotkey '{stored}' not registered: {e}");
+        // Self-heal: if a *custom* stored chord failed, try the default so the
+        // user isn't left with no hotkey at all after a bad rebind.
+        if stored != default_accelerator() {
+            let def = default_accelerator();
+            if let Err(e2) = register(app, def) {
+                eprintln!("default hotkey '{def}' also failed: {e2}");
+            } else {
+                eprintln!("fell back to default hotkey '{def}'");
+            }
+        }
     }
 }
 
-/// (Re)register the global capture hotkey, unregistering any previous binding.
-/// Persists the new accelerator. Returns Err on Wayland / parse failure / when
-/// the chord is taken, so the UI can show the reason.
+/// (Re)register the global capture hotkey. Defensive + idempotent:
+///   1. parse the NEW accelerator first (cheap; no OS call on failure),
+///   2. clear ALL existing registrations so no ghost chord and no stale OS hold
+///      of the same chord survives (fixes eventHotKeyExistsErr on rebind and on
+///      retry-after-a-failed-first-attempt),
+///   3. register fresh; on success record CURRENT + persist.
+/// Returns Err on Wayland / parse failure / genuine OS collision — the raw
+/// message is surfaced to the UI so a first-real-run failure is diagnosable.
 pub fn register<R: Runtime>(app: &AppHandle<R>, accelerator: &str) -> Result<()> {
     let gs = app.global_shortcut();
 
-    // Drop the old binding so a rebind doesn't leave a ghost shortcut.
-    if let Some(prev) = CURRENT.lock().unwrap().take() {
-        if let Ok(s) = prev.parse::<Shortcut>() {
-            let _ = gs.unregister(s);
-        }
-    }
-
+    // Parse first: an invalid accelerator must not disturb the live binding.
     let shortcut: Shortcut = accelerator
         .parse()
         .map_err(|_| ServiceError::Other(format!("invalid accelerator: {accelerator}")))?;
+
+    // Clear EVERYTHING this app registered. This drops both the previous chord
+    // and any stale registration of the incoming chord (e.g. a partial
+    // registration from a failed prior attempt), so re-registering the same
+    // chord can't hit Carbon's eventHotKeyExistsErr. Non-fatal on a fresh
+    // process (nothing to clear). The app registers exactly one global shortcut.
+    if let Err(e) = gs.unregister_all() {
+        eprintln!("unregister_all before rebind failed (continuing): {e}");
+    }
+    *CURRENT.lock().unwrap() = None; // no longer reflects reality after the clear
 
     let handle = app.clone();
     gs.on_shortcut(shortcut, move |_app, _sc, event| {
@@ -82,7 +101,8 @@ pub fn register<R: Runtime>(app: &AppHandle<R>, accelerator: &str) -> Result<()>
     })
     .map_err(|e| {
         ServiceError::Hotkey(format!(
-            "register hotkey: {e} (native Wayland is unsupported — use the tray menu)"
+            "register hotkey '{accelerator}': {e} \
+             (chord may be in use by another app; native Wayland is unsupported — use the tray menu)"
         ))
     })?;
 

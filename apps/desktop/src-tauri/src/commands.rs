@@ -179,45 +179,54 @@ pub async fn oauth_loopback_wait() -> Result<String> {
 // ---------- GitHub (web-session cookie) ----------
 
 /// Open the built-in GitHub-login webview and capture the user_session cookie
-/// once the user signs in. Async: the cookie read can deadlock in a sync command
-/// on Windows (see github.rs).
+/// once the user signs in, upserting the signed-in account (keyed by login).
+/// Async: the cookie read can deadlock in a sync command on Windows (see github.rs).
 #[tauri::command]
-pub async fn github_login(app: AppHandle) -> Result<github::SessionStatus> {
+pub async fn github_login(app: AppHandle) -> Result<github::AccountInfo> {
     github::login(&app).await
 }
 
-/// Report whether a github.com session cookie is present + which login it is.
+/// List all signed-in GitHub accounts (id + login; no session values).
 #[tauri::command]
-pub async fn github_session_status(app: AppHandle) -> github::SessionStatus {
-    github::session_status(&app).await
+pub fn github_accounts(app: AppHandle) -> Vec<github::AccountInfo> {
+    github::list_accounts(&app)
 }
 
-/// Upload one screenshot (data: URL) via the gh-image protocol; returns the
-/// user-attachments URL. Errors if not signed in.
+/// Sign out one GitHub account by id (== login), removing its stored session.
+#[tauri::command]
+pub fn github_logout(app: AppHandle, id: String) {
+    github::logout(&app, &id);
+}
+
+/// Upload one screenshot (data: URL) via the gh-image protocol using the given
+/// account's session; returns the user-attachments URL. Errors if that account
+/// isn't signed in.
 #[tauri::command]
 pub async fn github_upload_image(
     app: AppHandle,
+    account_id: String,
     owner: String,
     repo: String,
     data_url: String,
     filename: String,
 ) -> Result<String> {
-    let session = github::session_cookie(&app)
-        .ok_or_else(|| ServiceError::Other("Not signed in to GitHub.".into()))?;
+    let session = github::session_for(&app, &account_id)
+        .ok_or_else(|| ServiceError::Other("Not signed in to that GitHub account.".into()))?;
     github_upload::upload_image(&session, &owner, &repo, &data_url, &filename).await
 }
 
-/// Create an issue on github.com via the session cookie (body already has any
-/// uploaded-image markdown embedded). Returns the created issue URL.
+/// Create an issue on github.com via the given account's session (body already
+/// has any uploaded-image markdown embedded). Returns the created issue URL.
 #[tauri::command]
 pub async fn github_create_issue(
     app: AppHandle,
+    account_id: String,
     owner: String,
     repo: String,
     title: String,
     body: String,
 ) -> Result<String> {
-    let session = github::session_cookie(&app)
-        .ok_or_else(|| ServiceError::Other("Not signed in to GitHub.".into()))?;
+    let session = github::session_for(&app, &account_id)
+        .ok_or_else(|| ServiceError::Other("Not signed in to that GitHub account.".into()))?;
     github_issue::create_issue(&session, &owner, &repo, &title, &body).await
 }

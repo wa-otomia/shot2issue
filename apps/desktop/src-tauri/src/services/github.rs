@@ -1,37 +1,37 @@
-//! GitHub via the github.com WEB SESSION cookie — no OAuth, no PAT.
+//! GitHub via github.com WEB SESSION cookies — no OAuth, no PAT. Supports MULTIPLE accounts.
 //!
-//! USER DECISION: GitHub uses COOKIES for EVERYTHING. A built-in GitHub-login webview obtains
-//! the `user_session` cookie once; that single session drives BOTH image upload
-//! (user-attachments, see github_upload.rs) AND issue creation (see github_issue.rs). Rationale:
-//! the user-attachments upload endpoints are web-session-only — OAuth/PAT tokens are rejected
-//! there — so cookie-for-everything avoids running two auth systems.
+//! USER DECISION: GitHub uses COOKIES for EVERYTHING. A built-in GitHub-login webview obtains a
+//! `user_session` cookie; that session drives BOTH image upload (user-attachments, see
+//! github_upload.rs) AND issue creation (see github_issue.rs). Rationale: the user-attachments
+//! upload endpoints are web-session-only — OAuth/PAT tokens are rejected there — so
+//! cookie-for-everything avoids running two auth systems.
 //!
-//! This module owns:
-//!   (a) the login flow: open a GitHub-login WebviewWindow, then read the `user_session` cookie
-//!       once the user is signed in, and persist it (commands `github_login` + the cookie read);
-//!   (b) `github_session_status`: report whether a session cookie is present + which login it is;
-//!   (c) the shared reqwest client + cookie header + headers/User-Agent the upload/issue paths use.
+//! MULTI-ACCOUNT: each signed-in account is stored as { login, session } in the app store
+//! (key `githubAccounts`). The account id IS the github login (unique + stable enough). The
+//! upload/issue commands take a session chosen by account id, so different workspaces can file
+//! as different accounts. Adding an account opens the login webview; the user signs in (GitHub's
+//! login page offers "sign in to a different account" to add a second identity), and the captured
+//! `user_session` is upserted by login. Because the session lives in the APP store — not only the
+//! webview cookie store — multiple accounts coexist even though the webview holds one live
+//! github.com session at a time.
 //!
 //! ============================== mac/win VERIFICATION POINT ==============================
-//! Reading the cookie uses Tauri 2's `WebviewWindow::cookies_for_url()` (added in tauri 2.4.0;
-//! this app pins tauri 2.11.x). That API is backed by wry's cookie getters:
+//! Reading the cookie uses Tauri 2's `WebviewWindow::cookies_for_url()` (tauri 2.4.0+; this app
+//! pins 2.11.x), backed by wry's cookie getters:
 //!   - macOS:   WKHTTPCookieStore (WKWebView)   — supported
-//!   - Windows: WebView2 CookieManager          — supported (NOTE: Tauri docs warn this call can
-//!              DEADLOCK if invoked from a *synchronous* command/event handler, so `github_login`
-//!              and `github_session_status` are `async` commands and the read runs on the async
-//!              runtime — see commands.rs.)
+//!   - Windows: WebView2 CookieManager          — supported (Tauri warns this can DEADLOCK from a
+//!              *synchronous* command; `github_login`/`github_accounts` are `async` — see commands.rs)
 //!   - Linux:   WebKitGTK cookie manager         — supported, but the headless-Linux CI box has no
-//!              display, so this whole path CANNOT be exercised here. It is correct-by-construction
-//!              + commented; the user verifies on mac/win.
-//! `cookies_for_url` only returns cookies for http/https URLs (not tauri://), which is why we
-//! query `https://github.com`. HttpOnly cookies (user_session is HttpOnly) ARE included by this
-//! API (it reads the platform cookie store, not document.cookie). If a future platform/runtime
-//! returns an empty Vec, fall back to the persisted cookie from a prior successful login.
+//!              display, so this path CANNOT be exercised here. Correct-by-construction + verified
+//!              by the user on mac/win.
+//! `cookies_for_url` only returns http/https cookies (not tauri://), hence https://github.com.
+//! HttpOnly cookies (user_session is HttpOnly) ARE included (it reads the platform cookie store,
+//! not document.cookie).
 //! =======================================================================================
 
-use std::sync::Mutex;
+use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_store::StoreExt;
 
@@ -44,62 +44,94 @@ pub const USER_AGENT: &str =
 
 /// Persisted store file (shared with settings.rs and the JS-side plugin-store name).
 const STORE_FILE: &str = "settings.json";
-/// Store key holding the captured `user_session` cookie value.
+/// Store key holding the multi-account array (`[{ login, session }]`).
+const KEY_ACCOUNTS: &str = "githubAccounts";
+/// Legacy single-session keys (pre-multi-account); migrated on first load, then cleared.
 const KEY_SESSION: &str = "githubUserSession";
-/// Store key holding the last-known github.com login (handle), for the status hint.
 const KEY_LOGIN: &str = "githubLogin";
 /// The login webview window label.
 const LOGIN_LABEL: &str = "github-login";
 
-/// Reported to the frontend (serde camelCase → { loggedIn, login }). Mirrors the extension's
-/// `checkGithubLogin` result so the core GitHub provider hint/gate is unchanged.
+/// One stored GitHub account: the login handle (also its id) + its session cookie value.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct StoredAccount {
+    login: String,
+    session: String,
+}
+
+/// Reported to the frontend (serde camelCase → { id, login }); never carries the session value.
+/// `id` == `login` (a github handle is unique and stable enough to key on).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SessionStatus {
-    pub logged_in: bool,
+pub struct AccountInfo {
+    pub id: String,
     pub login: String,
 }
 
-/// In-process cache of the session cookie value so the upload/issue paths don't re-read the
-/// store on every request. Populated on login and on first status check.
-static SESSION_CACHE: Mutex<Option<String>> = Mutex::new(None);
+impl From<&StoredAccount> for AccountInfo {
+    fn from(a: &StoredAccount) -> Self {
+        AccountInfo { id: a.login.clone(), login: a.login.clone() }
+    }
+}
 
 // ---- persistence -------------------------------------------------------------
 
-fn persist_session<R: Runtime>(app: &AppHandle<R>, value: &str, login: &str) {
+fn load_accounts<R: Runtime>(app: &AppHandle<R>) -> Vec<StoredAccount> {
+    let Ok(store) = app.store(STORE_FILE) else {
+        return Vec::new();
+    };
+    // Preferred: the multi-account array.
+    if let Some(v) = store.get(KEY_ACCOUNTS) {
+        if let Ok(list) = serde_json::from_value::<Vec<StoredAccount>>(v) {
+            return list;
+        }
+    }
+    // Migrate a legacy single session (pre-multi-account) into one account.
+    let session = store.get(KEY_SESSION).and_then(|v| v.as_str().map(str::to_string));
+    let login = store
+        .get(KEY_LOGIN)
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_default();
+    if let Some(session) = session {
+        if !session.is_empty() && !login.is_empty() {
+            let list = vec![StoredAccount { login, session }];
+            save_accounts(app, &list);
+            return list;
+        }
+    }
+    Vec::new()
+}
+
+fn save_accounts<R: Runtime>(app: &AppHandle<R>, list: &[StoredAccount]) {
     if let Ok(store) = app.store(STORE_FILE) {
-        store.set(KEY_SESSION, value);
-        store.set(KEY_LOGIN, login);
+        if let Ok(v) = serde_json::to_value(list) {
+            store.set(KEY_ACCOUNTS, v);
+        }
+        // We do NOT delete the legacy single-session keys: once `githubAccounts` exists,
+        // load_accounts() reads only that, so the legacy keys are inert (avoids depending on a
+        // store delete() API and can't re-migrate after the user signs all accounts out).
         let _ = store.save();
     }
-    *SESSION_CACHE.lock().unwrap() = Some(value.to_string());
 }
 
-fn stored_session<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
-    if let Some(v) = SESSION_CACHE.lock().unwrap().clone() {
-        return Some(v);
+/// All signed-in accounts (no session values) for the Settings UI.
+pub fn list_accounts<R: Runtime>(app: &AppHandle<R>) -> Vec<AccountInfo> {
+    load_accounts(app).iter().map(AccountInfo::from).collect()
+}
+
+/// The session cookie value for a given account id (== login). `None` ⇒ unknown/signed out.
+/// When `id` is empty and exactly one account exists, fall back to it (single-account convenience
+/// + back-compat for workspaces created before the account binding existed).
+pub fn session_for<R: Runtime>(app: &AppHandle<R>, id: &str) -> Option<String> {
+    let list = load_accounts(app);
+    if id.is_empty() {
+        return if list.len() == 1 { Some(list[0].session.clone()) } else { None };
     }
-    let store = app.store(STORE_FILE).ok()?;
-    let v = store.get(KEY_SESSION).and_then(|v| v.as_str().map(str::to_string))?;
-    *SESSION_CACHE.lock().unwrap() = Some(v.clone());
-    Some(v)
+    list.into_iter().find(|a| a.login == id).map(|a| a.session)
 }
 
-fn stored_login<R: Runtime>(app: &AppHandle<R>) -> String {
-    app.store(STORE_FILE)
-        .ok()
-        .and_then(|s| s.get(KEY_LOGIN).and_then(|v| v.as_str().map(str::to_string)))
-        .unwrap_or_default()
-}
-
-/// The cookie value the upload/issue paths use. `None` ⇒ not signed in.
-pub fn session_cookie<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
-    stored_session(app)
-}
-
-/// Build the `Cookie:` header value GitHub's CSRF check requires on cookie-authenticated
-/// endpoints: BOTH `user_session` AND `__Host-user_session_same_site`, carrying the SAME value
-/// (gh-image synthesizes the second cookie this way; GitHub's verified-fetch check needs the pair).
+/// Build the `Cookie:` header GitHub's CSRF check requires: BOTH `user_session` AND
+/// `__Host-user_session_same_site`, carrying the SAME value (gh-image synthesizes the pair).
 pub fn cookie_header(session_value: &str) -> String {
     format!("user_session={session_value}; __Host-user_session_same_site={session_value}")
 }
@@ -109,13 +141,10 @@ pub fn cookie_header(session_value: &str) -> String {
 /// Read the `user_session` cookie value from the webview's platform cookie store for
 /// https://github.com. Returns None if absent (signed out) or unsupported on this platform.
 fn read_user_session<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
-    // Prefer the dedicated login window's cookie store; fall back to the main window. Both share
-    // the app's cookie store on every supported platform.
     let win = app
         .get_webview_window(LOGIN_LABEL)
         .or_else(|| app.get_webview_window("main"))?;
     let url = "https://github.com".parse().ok()?;
-    // cookies_for_url returns the cookie crate's Cookie, including HttpOnly + Secure cookies.
     let cookies = win.cookies_for_url(url).ok()?;
     cookies
         .into_iter()
@@ -125,44 +154,61 @@ fn read_user_session<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
 
 // ---- login flow --------------------------------------------------------------
 
-/// Open (or focus) the built-in GitHub-login webview, then poll the cookie store until the
-/// `user_session` cookie appears (the user has signed in) or a timeout elapses. On success the
-/// cookie is persisted and the resolved login is returned.
-///
-/// Async (Tauri requires async for the cookie read on Windows — see module header). The poll is
-/// cheap (a cookie-store read every 500ms); the window stays open so the user can complete 2FA.
-pub async fn login<R: Runtime>(app: &AppHandle<R>) -> Result<SessionStatus> {
+/// Open the login webview, wait for a `user_session` cookie, resolve the login, and UPSERT it as
+/// an account (keyed by login). Returns the account. If the user is already signed into
+/// github.com, GitHub's login page offers "sign in to a different account" so a second identity
+/// can be added. Async (Tauri requires async for the cookie read on Windows — see module header).
+pub async fn login<R: Runtime>(app: &AppHandle<R>) -> Result<AccountInfo> {
     open_login_window(app)?;
 
-    // Poll for up to ~3 minutes (covers email + 2FA). The user closing the window early surfaces
-    // as "still signed out" rather than an error.
+    // Poll for up to ~3 minutes (covers email + 2FA). Re-read the cookie each tick; the user
+    // switching accounts inside the webview simply changes which session we capture.
     for _ in 0..360 {
         if app.get_webview_window(LOGIN_LABEL).is_none() {
-            // The user closed the login window. Read once more in case the cookie was just set.
-            break;
+            break; // user closed the window
         }
         if let Some(value) = read_user_session(app) {
-            let login = resolve_login(app, &value).await.unwrap_or_default();
-            persist_session(app, &value, &login);
-            // Sign-in complete: close the login window so it doesn't linger.
-            if let Some(win) = app.get_webview_window(LOGIN_LABEL) {
-                let _ = win.close();
+            if let Some(login) = resolve_login(app, &value).await.filter(|s| !s.is_empty()) {
+                let info = upsert_account(app, &login, &value);
+                if let Some(win) = app.get_webview_window(LOGIN_LABEL) {
+                    let _ = win.close();
+                }
+                return Ok(info);
             }
-            return Ok(SessionStatus { logged_in: true, login });
         }
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
     }
 
-    // One final read after the loop (e.g. window just closed post-login).
+    // One final read (e.g. the window just closed right after sign-in).
     if let Some(value) = read_user_session(app) {
-        let login = resolve_login(app, &value).await.unwrap_or_default();
-        persist_session(app, &value, &login);
-        return Ok(SessionStatus { logged_in: true, login });
+        if let Some(login) = resolve_login(app, &value).await.filter(|s| !s.is_empty()) {
+            return Ok(upsert_account(app, &login, &value));
+        }
     }
-    Ok(SessionStatus {
-        logged_in: false,
-        login: String::new(),
-    })
+    Err(ServiceError::Other(
+        "No GitHub session captured — sign-in was not completed.".into(),
+    ))
+}
+
+/// Insert or update an account by login, persisting its latest session cookie.
+fn upsert_account<R: Runtime>(app: &AppHandle<R>, login: &str, session: &str) -> AccountInfo {
+    let mut list = load_accounts(app);
+    match list.iter_mut().find(|a| a.login == login) {
+        Some(a) => a.session = session.to_string(),
+        None => list.push(StoredAccount {
+            login: login.to_string(),
+            session: session.to_string(),
+        }),
+    }
+    save_accounts(app, &list);
+    AccountInfo { id: login.to_string(), login: login.to_string() }
+}
+
+/// Remove an account by id (== login). No-op if unknown.
+pub fn logout<R: Runtime>(app: &AppHandle<R>, id: &str) {
+    let mut list = load_accounts(app);
+    list.retain(|a| a.login != id);
+    save_accounts(app, &list);
 }
 
 fn open_login_window<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
@@ -171,8 +217,9 @@ fn open_login_window<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
         let _ = win.set_focus();
         return Ok(());
     }
-    // Load github.com/login directly in the webview. The user signs in there; the resulting
-    // session cookie lands in the app's cookie store, which read_user_session() then reads.
+    // Load github.com/login directly. The user signs in there (or uses "sign in to a different
+    // account" to add another); the resulting session cookie lands in the app's cookie store,
+    // which read_user_session() then reads.
     WebviewWindowBuilder::new(
         app,
         LOGIN_LABEL,
@@ -192,38 +239,11 @@ fn open_login_window<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
     Ok(())
 }
 
-// ---- session status ----------------------------------------------------------
-
-/// Report the current session: is a `user_session` cookie present, and which login is it?
-/// Prefers a live cookie-store read (so a sign-out elsewhere is noticed); falls back to the
-/// persisted cookie. Verifies the cookie still works by resolving the login from github.com.
-pub async fn session_status<R: Runtime>(app: &AppHandle<R>) -> SessionStatus {
-    // A live read keeps us honest if the user signed out via the login window; otherwise use the
-    // persisted value (the login window is usually closed during normal use).
-    let value = read_user_session(app).or_else(|| stored_session(app));
-    let Some(value) = value else {
-        return SessionStatus {
-            logged_in: false,
-            login: String::new(),
-        };
-    };
-    match resolve_login(app, &value).await {
-        Some(login) if !login.is_empty() => {
-            persist_session(app, &value, &login);
-            SessionStatus { logged_in: true, login }
-        }
-        // The cookie exists but github.com didn't return a login (expired/revoked). Report the
-        // last-known handle but flagged signed-out so the UI prompts a re-login.
-        _ => SessionStatus {
-            logged_in: false,
-            login: stored_login(app),
-        },
-    }
-}
+// ---- login resolution --------------------------------------------------------
 
 /// Confirm the session cookie is live and learn the login: fetch github.com and scrape the
-/// `<meta name="user-login" content="...">` tag GitHub renders for signed-in users (extension
-/// parity with checkGithubLogin). Returns None on network error or signed-out HTML.
+/// `<meta name="user-login" content="...">` tag GitHub renders for signed-in users. Returns None
+/// on network error or signed-out HTML.
 async fn resolve_login<R: Runtime>(app: &AppHandle<R>, session_value: &str) -> Option<String> {
     let _ = app; // reserved for future per-app client config; keep signature uniform
     let client = github_client().ok()?;
@@ -242,7 +262,6 @@ async fn resolve_login<R: Runtime>(app: &AppHandle<R>, session_value: &str) -> O
 
 /// Extract the signed-in user handle from github.com HTML: <meta name="user-login" content="..">.
 fn scrape_user_login(html: &str) -> Option<String> {
-    // Minimal, allocation-light scrape (no HTML parser dep): find the meta tag, then its content.
     let key = "name=\"user-login\"";
     let idx = html.find(key)?;
     let after = &html[idx..];
@@ -260,12 +279,12 @@ fn scrape_user_login(html: &str) -> Option<String> {
 // ---- shared reqwest client ---------------------------------------------------
 
 /// A reqwest client with the browser UA every github.com request uses. No cookie jar: each
-/// request sets the Cookie header explicitly (the S3 step must send NO cookies, so a shared jar
-/// would be wrong — see github_upload.rs).
+/// request sets the Cookie header explicitly (the S3 step must send NO cookies — see
+/// github_upload.rs).
 pub fn github_client() -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .user_agent(USER_AGENT)
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(Duration::from_secs(60))
         .build()
         .map_err(|e| ServiceError::Other(format!("http client: {e}")))
 }
@@ -292,5 +311,13 @@ mod tests {
     fn scrape_returns_none_when_signed_out() {
         assert_eq!(scrape_user_login("<head></head>"), None);
         assert_eq!(scrape_user_login(r#"<meta name="user-login" content="">"#), None);
+    }
+
+    #[test]
+    fn account_info_from_stored_uses_login_as_id() {
+        let a = StoredAccount { login: "octocat".into(), session: "s".into() };
+        let info = AccountInfo::from(&a);
+        assert_eq!(info.id, "octocat");
+        assert_eq!(info.login, "octocat");
     }
 }

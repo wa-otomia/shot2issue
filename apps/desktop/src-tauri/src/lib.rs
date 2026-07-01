@@ -106,7 +106,17 @@ pub fn run() {
         .setup(|app| {
             services::install_app_handle(app.handle().clone());
             services::tray::install(app.handle())?; // tray icon + menu (capture/settings/quit)
-            services::hotkey::register_saved(app.handle()); // read stored accelerator, register
+            // Defer global-shortcut registration OFF the main thread. On macOS every
+            // plugin call blocks on a main-thread round-trip (run_main_thread!), and
+            // setup() runs ON the main thread before the event loop is live — so
+            // registering here stalls and Carbon never lands the hotkey. Spawning
+            // lets setup() return so the loop starts draining the posted task.
+            {
+                let h = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    services::hotkey::register_saved(&h); // read stored accelerator, register
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -138,7 +148,8 @@ pub fn run() {
             commands::oauth_loopback_wait,
             // ---- GitHub (web-session cookie) ----
             commands::github_login,
-            commands::github_session_status,
+            commands::github_accounts,
+            commands::github_logout,
             commands::github_upload_image,
             commands::github_create_issue,
         ])

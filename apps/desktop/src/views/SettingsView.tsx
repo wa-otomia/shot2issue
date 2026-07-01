@@ -27,12 +27,16 @@ type Tab = "workspaces" | "accounts" | "ai" | "general";
 // Build a tauri-plugin-global-shortcut accelerator string ("CommandOrControl+Shift+2") from a
 // keydown event. Returns null until a non-modifier key is pressed.
 function accelFromEvent(e: KeyboardEvent): string | null {
+  const key = e.key;
+  if (["Control", "Meta", "Alt", "Shift"].includes(key)) return null; // modifier-only
+  // A global chord needs a primary modifier (Cmd/Ctrl/Alt). A bare letter — or
+  // Shift+letter — would grab that key globally and the backend rejects it.
+  // Escape/Tab/Enter are handled as controls in onKey and never reach here.
+  if (!(e.metaKey || e.ctrlKey || e.altKey)) return null;
   const parts: string[] = [];
   if (e.metaKey || e.ctrlKey) parts.push("CommandOrControl");
   if (e.altKey) parts.push("Alt");
   if (e.shiftKey) parts.push("Shift");
-  const key = e.key;
-  if (["Control", "Meta", "Alt", "Shift"].includes(key)) return null;
   let token = key.length === 1 ? key.toUpperCase() : key;
   if (key === " ") token = "Space";
   parts.push(token);
@@ -61,6 +65,7 @@ export default function SettingsView() {
   const [hotkey, setHotkey] = useState("");
   const [recording, setRecording] = useState(false);
   const [hotkeyErr, setHotkeyErr] = useState("");
+  const [hotkeyErrDetail, setHotkeyErrDetail] = useState("");
 
   useEffect(() => {
     getConfig().then(setDraft).catch(() => {});
@@ -71,23 +76,39 @@ export default function SettingsView() {
   useEffect(() => {
     if (!recording) return;
     const onKey = async (e: KeyboardEvent): Promise<void> => {
+      // Escape cancels recording without recording a shortcut (fixes the pill
+      // showing "Escape"). Tab/Enter are navigation keys — ignore, never record.
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setRecording(false);
+        setHotkeyErr("");
+        setHotkeyErrDetail("");
+        return;
+      }
+      if (e.key === "Tab" || e.key === "Enter") return;
       e.preventDefault();
       if (isSystemReserved(e)) {
         setRecording(false);
         setHotkeyErr(t("hotkeyReservedSystem"));
+        setHotkeyErrDetail("");
         return;
       }
       const accel = accelFromEvent(e);
-      if (!accel) return; // modifier-only; wait for a real key
+      if (!accel) return; // modifier-only or lone key — wait for a valid chord
       setRecording(false);
       try {
         await setCaptureHotkey(accel);
         setHotkey(accel);
         setHotkeyErr("");
-      } catch {
-        // Backend rejects on Wayland / parse failure / chord-in-use; show a
-        // friendly, localized hint rather than the raw error string.
+        setHotkeyErrDetail("");
+      } catch (err) {
+        // invoke() rejects with the serialized ServiceError STRING. Keep the
+        // friendly hint AND the raw reason so a first-real-run failure (parse /
+        // chord-in-use / Wayland / macOS refusal) stays diagnosable.
+        const raw = String(err);
+        console.error("setCaptureHotkey failed:", accel, raw);
         setHotkeyErr(t("hotkeyRegisterFailed"));
+        setHotkeyErrDetail(raw);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -96,13 +117,17 @@ export default function SettingsView() {
 
   const resetHotkey = async (): Promise<void> => {
     setHotkeyErr("");
+    setHotkeyErrDetail("");
     setRecording(false);
     try {
       const def = await getDefaultAccelerator();
       await setCaptureHotkey(def);
       setHotkey(def);
-    } catch {
+    } catch (err) {
+      const raw = String(err);
+      console.error("resetHotkey failed:", raw);
       setHotkeyErr(t("hotkeyRegisterFailed"));
+      setHotkeyErrDetail(raw);
     }
   };
 
@@ -154,6 +179,7 @@ export default function SettingsView() {
                   className={`hotkey-pill${recording ? " recording" : ""}`}
                   onClick={() => {
                     setHotkeyErr("");
+                    setHotkeyErrDetail("");
                     setRecording((r) => !r);
                   }}
                 >
@@ -161,7 +187,19 @@ export default function SettingsView() {
                 </button>
                 <button onClick={() => void resetHotkey()}>{t("hotkeyReset")}</button>
               </div>
-              {hotkeyErr && <p className="s2i-set-error">{hotkeyErr}</p>}
+              {hotkeyErr && (
+                <div className="s2i-set-error">
+                  <p style={{ margin: 0 }}>{hotkeyErr}</p>
+                  {hotkeyErrDetail && (
+                    <details style={{ marginTop: 4 }}>
+                      <summary style={{ cursor: "pointer", opacity: 0.8 }}>{t("hotkeyErrorDetails")}</summary>
+                      <code style={{ display: "block", marginTop: 4, whiteSpace: "pre-wrap", opacity: 0.85 }}>
+                        {hotkeyErrDetail}
+                      </code>
+                    </details>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

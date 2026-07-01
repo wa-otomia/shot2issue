@@ -16,7 +16,7 @@ import {
   type Config,
   type ProviderField,
 } from "@shot2issue/core";
-import { githubLogin, githubSessionStatus } from "../providers/github";
+import { githubAccounts, githubLogin, githubLogout, type GithubAccount } from "../providers/github";
 
 export default function AccountsPanel({
   t,
@@ -27,24 +27,29 @@ export default function AccountsPanel({
   config: Config;
   onConfig: (patch: Partial<Config>) => void;
 }) {
-  const [gh, setGh] = useState<{ loggedIn: boolean; login: string }>({ loggedIn: false, login: "" });
+  const [ghAccounts, setGhAccounts] = useState<GithubAccount[]>([]);
   const [ghBusy, setGhBusy] = useState(false);
 
-  useEffect(() => {
-    githubSessionStatus()
-      .then(setGh)
-      .catch(() => {});
-  }, []);
+  const refreshGh = (): void => {
+    githubAccounts().then(setGhAccounts).catch(() => {});
+  };
+  useEffect(refreshGh, []);
 
-  const signInGitHub = async (): Promise<void> => {
+  const addGitHub = async (): Promise<void> => {
     setGhBusy(true);
     try {
-      setGh(await githubLogin());
+      await githubLogin(); // opens the login webview; upserts the signed-in account by login
+      refreshGh();
     } catch {
       /* user closed the webview, or no cookie captured */
     } finally {
       setGhBusy(false);
     }
+  };
+
+  const signOutGitHub = async (id: string): Promise<void> => {
+    await githubLogout(id);
+    refreshGh();
   };
 
   const kinds = accountKinds();
@@ -65,13 +70,22 @@ export default function AccountsPanel({
   return (
     <div className="card">
       <h3>GitHub</h3>
-      <div className="row">
-        <button className="primary" disabled={ghBusy} onClick={() => void signInGitHub()}>
-          {ghBusy ? t("aiConnecting") : gh.loggedIn ? t("aiConnected") : "Sign in to GitHub"}
+      <p className="empty" style={{ textAlign: "left", padding: 0 }}>{t("ghAccountsHint")}</p>
+      {ghAccounts.length === 0 && <p className="empty">{t("ghNoAccounts")}</p>}
+      <div className="s2i-chips">
+        {ghAccounts.map((a) => (
+          <span key={a.id} className="s2i-chip">
+            {a.login}
+            <button title={t("ghSignOut")} onClick={() => void signOutGitHub(a.id)}>
+              ✕
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="row" style={{ marginTop: 8 }}>
+        <button disabled={ghBusy} onClick={() => void addGitHub()}>
+          {ghBusy ? t("aiConnecting") : t("ghAddAccount")}
         </button>
-        <span className="empty" style={{ padding: 0 }}>
-          {gh.loggedIn ? t("loginSignedInAs").replace("{0}", gh.login) : t("loginNotSignedIn")}
-        </span>
       </div>
 
       <h3 style={{ marginTop: "1.25rem" }}>{t("accountsHeading")}</h3>

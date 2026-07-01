@@ -3,7 +3,7 @@
 // pick an Account + project. Also hosts the Types editor (the editor's Type dropdown + default
 // title suffix). Edits live in the draft Config (via onConfig); SettingsView persists on Save.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   getProvider,
   isAccountBased,
@@ -13,6 +13,7 @@ import {
   type ProviderField,
   type Workspace,
 } from "@shot2issue/core";
+import { githubAccounts, type GithubAccount } from "../providers/github";
 
 export default function WorkspacesPanel({
   t,
@@ -24,6 +25,10 @@ export default function WorkspacesPanel({
   onConfig: (patch: Partial<Config>) => void;
 }) {
   const [newType, setNewType] = useState("");
+  const [ghAccounts, setGhAccounts] = useState<GithubAccount[]>([]);
+  useEffect(() => {
+    githubAccounts().then(setGhAccounts).catch(() => {});
+  }, []);
   const workspaces = config.workspaces;
 
   const patchWs = (id: string, patch: Partial<Workspace>): void => {
@@ -95,6 +100,23 @@ export default function WorkspacesPanel({
                   />
                 </div>
               ))}
+              {/* GitHub: bind the workspace to a signed-in GitHub account (multi-account). */}
+              {kind === "github" && (
+                <div className="field">
+                  <label>{t("wsGithubAccount")}</label>
+                  <select
+                    value={(w as Record<string, string>).githubAccountId || ""}
+                    onChange={(e) => patchWs(w.id, { githubAccountId: e.target.value } as Partial<Workspace>)}
+                  >
+                    <option value="">{t("accountNone")}</option>
+                    {ghAccounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.login}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               {/* Account-based: pick an account + the project field. */}
               {accountBased && (
                 <div className="field">
