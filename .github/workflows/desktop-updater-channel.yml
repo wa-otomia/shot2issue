@@ -42,6 +42,10 @@ jobs:
       - name: Keep the desktop release as repo Latest (legacy-endpoint clients)
         run: |
           set -euo pipefail
-          RID=$(gh api "repos/$REPO/releases" --jq ".[] | select(.tag_name==\"$TAG\") | .id")
+          # Use the by-tag endpoint (returns the single canonical release) rather than
+          # list + select: tauri-action's 3-platform matrix can race and briefly leave a
+          # duplicate draft with the same tag, which made list+select emit two ids and a
+          # malformed URL. by-tag resolves to the published release.
+          RID=$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.id')
           gh api -X PATCH "repos/$REPO/releases/$RID" -f make_latest=true >/dev/null
-          echo "Set $TAG as repo Latest and mirrored its latest.json to desktop-latest."
+          echo "Set $TAG as repo Latest."
