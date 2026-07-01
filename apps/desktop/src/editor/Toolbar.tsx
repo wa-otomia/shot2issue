@@ -52,6 +52,12 @@ const ICON: Record<string, React.ReactNode> = {
       <path d="M4 10h9a5 5 0 0 1 0 10h-2" />
     </>
   ),
+  redo: (
+    <>
+      <path d="M15 5l5 5 -5 5" />
+      <path d="M20 10h-9a5 5 0 0 0 0 10h2" />
+    </>
+  ),
   clear: (
     <>
       <path d="M4 7h16" />
@@ -108,6 +114,7 @@ const TOOLS: Array<{ id: string; tipKey: string }> = [
 
 const ACTIONS: Array<{ id: string; tipKey: string }> = [
   { id: "undo", tipKey: "undoTitle" },
+  { id: "redo", tipKey: "redoTitle" },
   { id: "clear", tipKey: "clearTitle" },
   { id: "download", tipKey: "downloadPngTitle" },
   { id: "copy", tipKey: "copyPngTitle" },

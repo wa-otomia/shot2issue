@@ -109,7 +109,7 @@ export default function OverlayWindow() {
       if (e.key === "Escape") {
         void cancelCapture();
       } else if (e.key === "Enter" && rect && rect.w > 2 && rect.h > 2) {
-        void confirmRegion(rect);
+        void confirmRegion(rect, shotRef.current?.token ?? 0);
       } else if (e.key === "Tab") {
         e.preventDefault();
         toggleMode();
@@ -150,16 +150,19 @@ export default function OverlayWindow() {
     const d = drag.current;
     drag.current = null;
     if (!d) return;
-    if (d.moved) {
-      // Recompute from the down/up points so we don't race the rect state.
-      const r = {
-        x: Math.min(d.x, e.clientX),
-        y: Math.min(d.y, e.clientY),
-        w: Math.abs(e.clientX - d.x),
-        h: Math.abs(e.clientY - d.y),
-      };
-      if (r.w > 2 && r.h > 2) void confirmRegion(r);
+    // Recompute from the down/up points so we don't race the rect state.
+    const r = {
+      x: Math.min(d.x, e.clientX),
+      y: Math.min(d.y, e.clientY),
+      w: Math.abs(e.clientX - d.x),
+      h: Math.abs(e.clientY - d.y),
+    };
+    if (d.moved && r.w > 2 && r.h > 2) {
+      void confirmRegion(r, shotRef.current?.token ?? 0);
     } else {
+      // A click, OR a shaky drag too small to crop (d.moved flips at 4px but a
+      // crop needs w>2 && h>2, so e.g. dx=6,dy=1 leaves no usable region): treat
+      // it as a window pick so the gesture isn't dead.
       const win = windowAt(e.clientX, e.clientY);
       if (win) void confirmWindow(win.id);
     }

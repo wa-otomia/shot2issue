@@ -15,6 +15,9 @@ export interface MonitorShot {
   height: number;
   scale: number;
   monitorName: string;
+  /** Monotonic id of the frozen frame; echoed back on crop so a stale crop after
+   *  a rapid re-capture is rejected by the backend. */
+  token: number;
 }
 
 /** A top-level window for the window-pick UX. Bounds in LOGICAL px,
@@ -54,19 +57,18 @@ export const captureWindow = (id: number): Promise<string> =>
   invoke("capture_window", { id });
 /** rect is in LOGICAL px relative to the overlay client area. Returns base64. */
 export const cropRegion = (
+  token: number,
   x: number,
   y: number,
   width: number,
   height: number,
-): Promise<string> => invoke("crop_region", { x, y, width, height });
+): Promise<string> => invoke("crop_region", { token, x, y, width, height });
 /** macOS only: is Screen Recording (TCC) granted? */
 export const macScreenRecordingAuthorized = (): Promise<boolean> =>
   invoke("mac_screen_recording_authorized");
 
 // ---- overlay ----
 
-export const overlaySetClickThrough = (ignore: boolean): Promise<void> =>
-  invoke("overlay_set_click_through", { ignore });
 export const overlayDismiss = (): Promise<void> => invoke("overlay_dismiss");
 
 // ---- editor staging ----
@@ -113,13 +115,11 @@ export const onNeedsScreenRecording = (cb: () => void): Promise<UnlistenFn> =>
  * to the editor, and close the overlay. `rect` is in CSS px of the overlay
  * client area, which equals logical monitor px (the overlay is sized 1:1).
  */
-export async function confirmRegion(rect: {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}): Promise<void> {
-  const png = await cropRegion(rect.x, rect.y, rect.w, rect.h);
+export async function confirmRegion(
+  rect: { x: number; y: number; w: number; h: number },
+  token: number,
+): Promise<void> {
+  const png = await cropRegion(token, rect.x, rect.y, rect.w, rect.h);
   await openEditorWith(png);
   await overlayDismiss();
 }

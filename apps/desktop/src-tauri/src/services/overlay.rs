@@ -62,7 +62,6 @@ fn present_overlay<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
         let _ = win.set_position(LogicalPosition::new(x, y));
         let _ = win.set_size(LogicalSize::new(w, h));
         let _ = win.set_always_on_top(true);
-        let _ = win.set_ignore_cursor_events(false);
         let _ = win.show();
         let _ = win.set_focus();
         let _ = win.emit("overlay://refresh", ());
@@ -110,18 +109,6 @@ fn present_windowed<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
         .center()
         .build()
         .map_err(|e| ServiceError::Other(format!("crop window: {e}")))?;
-    Ok(())
-}
-
-/// Make the overlay click-through (`ignore == true`) or interactive
-/// (`ignore == false`). The frontend flips this so the dimmed region doesn't
-/// eat clicks meant for other apps while hovering windows, then turns it back
-/// on to draw the rubber-band.
-pub fn set_click_through<R: Runtime>(app: &AppHandle<R>, ignore: bool) -> Result<()> {
-    if let Some(win) = app.get_webview_window("overlay") {
-        win.set_ignore_cursor_events(ignore)
-            .map_err(|e| ServiceError::Other(format!("ignore cursor events: {e}")))?;
-    }
     Ok(())
 }
 

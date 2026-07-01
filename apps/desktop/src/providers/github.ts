@@ -80,11 +80,15 @@ export const githubProvider: Provider = {
   async hint(ws, t: TFunc): Promise<{ text: string; ok: boolean }> {
     const id = ((ws as GhWorkspace).githubAccountId || "").trim();
     const accounts = await githubAccounts();
-    // Bound account, else the sole account (back-compat for workspaces created before binding).
-    const acct = accounts.find((a) => a.id === id) ?? (accounts.length === 1 ? accounts[0] : undefined);
-    return acct
-      ? { text: t("loginSignedInAs", [acct.login]), ok: true }
-      : { text: "⚠ " + t("loginNotSignedIn"), ok: false };
+    // Bound account by id; only fall back to the sole account when truly unbound (empty id).
+    // A non-empty id that matches nothing means the bound account signed out — don't substitute.
+    const acct = id ? accounts.find((a) => a.id === id) : accounts.length === 1 ? accounts[0] : undefined;
+    if (!acct) {
+      return id
+        ? { text: "⚠ " + t("errBoundAccountSignedOut"), ok: false }
+        : { text: "⚠ " + t("loginNotSignedIn"), ok: false };
+    }
+    return { text: t("loginSignedInAs", [acct.login]), ok: true };
   },
 
   async submit(ws, ctx: SubmitContext) {
@@ -93,11 +97,13 @@ export const githubProvider: Provider = {
     const repo = (w.repo || "").trim();
 
     ctx.busy("statusCheckingLogin");
-    // Resolve the workspace's bound GitHub account (fall back to the sole account if unbound).
+    // Resolve the workspace's bound GitHub account; only fall back to the sole account when the
+    // workspace is truly unbound (empty id). A non-empty id that matches nothing means the bound
+    // account signed out — surface that instead of silently filing from the wrong account.
     const id = (w.githubAccountId || "").trim();
     const accounts = await githubAccounts();
-    const acct = accounts.find((a) => a.id === id) ?? (accounts.length === 1 ? accounts[0] : undefined);
-    if (!acct) throw new Error(ctx.t("errNotSignedIn"));
+    const acct = id ? accounts.find((a) => a.id === id) : accounts.length === 1 ? accounts[0] : undefined;
+    if (!acct) throw new Error(ctx.t(id ? "errBoundAccountSignedOut" : "errNotSignedInDesktop"));
     const accountId = acct.id;
 
     // 1) Upload each screenshot via the gh-image protocol (Rust) and collect the

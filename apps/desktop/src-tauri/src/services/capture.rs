@@ -45,11 +45,28 @@ struct Frame {
     height: u32,
     /// device pixels per logical px for this monitor (Retina / Windows scaling).
     scale: f64,
+    /// Monotonic id of this frame. A reused overlay carries the token of the
+    /// frame it was handed; the crop path checks it against the CURRENT
+    /// `LAST_FRAME` so a rapid re-capture can't make a stale overlay crop the
+    /// wrong (newer) frozen frame.
+    token: u64,
 }
 
 /// The most-recent frozen frame. Held only between a capture and its crop; the
 /// overlay clears it on dismiss so we don't retain a 30-60 MB 4K buffer.
 static LAST_FRAME: Mutex<Option<Frame>> = Mutex::new(None);
+
+/// Monotonic frame-token source. Bumped on every successful `capture_at` and
+/// stamped into both `LAST_FRAME` and the `MonitorShot` handed to the overlay.
+static FRAME_TOKEN: Mutex<u64> = Mutex::new(0);
+
+/// Allocate the next frame token (starts at 1; 0 is never a valid frame token,
+/// so a defaulted/absent token can't accidentally match a live frame).
+fn next_frame_token() -> u64 {
+    let mut t = FRAME_TOKEN.lock().unwrap();
+    *t += 1;
+    *t
+}
 
 /// A connected display (used by the foreground display picker / shell). Mirrors
 /// `DisplayInfo` in src/lib/api.ts. All geometry in LOGICAL px.
@@ -80,6 +97,10 @@ pub struct MonitorShot {
     pub height: u32,
     pub scale: f64,
     pub monitor_name: String,
+    /// Monotonic id of the frozen frame this shot refers to. The overlay echoes
+    /// it back on `crop_region` so the crop can reject a stale request after a
+    /// rapid re-capture replaced `LAST_FRAME`.
+    pub token: u64,
 }
 
 /// An enumerated top-level window for the window-pick UX. Bounds in LOGICAL px,
@@ -175,7 +196,10 @@ pub fn capture_at(cursor_x: i32, cursor_y: i32) -> Result<MonitorShot> {
     let rgba = img.into_raw();
     let png = encode_png(&rgba, w, h)?;
 
-    *LAST_FRAME.lock().unwrap() = Some(Frame { rgba, width: w, height: h, scale });
+    // Stamp a fresh token so the overlay handed this shot can prove, at crop
+    // time, that `LAST_FRAME` hasn't been replaced by a newer capture.
+    let token = next_frame_token();
+    *LAST_FRAME.lock().unwrap() = Some(Frame { rgba, width: w, height: h, scale, token });
 
     Ok(MonitorShot {
         png_base64: png,
@@ -187,6 +211,7 @@ pub fn capture_at(cursor_x: i32, cursor_y: i32) -> Result<MonitorShot> {
         height: ((h as f64) / scale).round() as u32,
         scale,
         monitor_name,
+        token,
     })
 }
 
@@ -279,11 +304,39 @@ pub fn capture_window(id: u32) -> Result<String> {
 /// Crop the most-recent frozen frame to a rect given in LOGICAL px relative to
 /// the captured monitor's top-left (i.e. overlay-window client coords). Scales
 /// to device px, edge-clamps, and returns a tight base64 PNG.
-pub fn crop_last(x: f64, y: f64, w: f64, h: f64) -> Result<String> {
+///
+/// `token` is the frame id the overlay was handed (`MonitorShot.token`). If a
+/// rapid re-capture has since replaced `LAST_FRAME`, the tokens won't match and
+/// we error instead of cropping the WRONG (newer) frozen frame against the old
+/// overlay's coordinates.
+pub fn crop_last(token: u64, x: f64, y: f64, w: f64, h: f64) -> Result<String> {
     let guard = LAST_FRAME.lock().unwrap();
     let frame = guard
         .as_ref()
         .ok_or_else(|| ServiceError::Other("no frozen frame".into()))?;
+    if frame.token != token {
+        return Err(ServiceError::Other(format!(
+            "stale crop: overlay frame {token} no longer current ({})",
+            frame.token
+        )));
+    }
+    crop_frame(frame, x, y, w, h)
+}
+
+/// Back-compat crop with no frame token: crops whatever `LAST_FRAME` currently
+/// holds. Used only for an older renderer that doesn't yet send the token; the
+/// token path (`crop_last`) is the race-safe one. Remove once the overlay always
+/// threads `MonitorShot.token` through `crop_region`.
+pub fn crop_last_untokened(x: f64, y: f64, w: f64, h: f64) -> Result<String> {
+    let guard = LAST_FRAME.lock().unwrap();
+    let frame = guard
+        .as_ref()
+        .ok_or_else(|| ServiceError::Other("no frozen frame".into()))?;
+    crop_frame(frame, x, y, w, h)
+}
+
+/// Scale a logical-px rect to device px against `frame`, then slice + encode.
+fn crop_frame(frame: &Frame, x: f64, y: f64, w: f64, h: f64) -> Result<String> {
     let s = frame.scale;
     let dx = (x * s).round() as i64;
     let dy = (y * s).round() as i64;

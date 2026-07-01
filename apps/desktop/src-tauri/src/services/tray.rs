@@ -14,7 +14,11 @@ use tauri::{
 /// window is hidden (not closed) on CloseRequested, so `show()` makes it visible
 /// again; `unminimize()` covers a minimized window (harmless no-op otherwise);
 /// `set_focus()` raises it above other apps and gives it keyboard focus.
-fn reveal_main(app: &tauri::AppHandle) {
+///
+/// `pub(crate)` so the application-menu "Show Window" item (see lib.rs
+/// `build_menu`) can reuse the exact same reveal — the menubar is the mandatory
+/// recovery path on a Linux desktop with no system tray.
+pub(crate) fn reveal_main(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
         let _ = win.unminimize();

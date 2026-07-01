@@ -292,6 +292,7 @@ export default function EditorView() {
   const onAction = useCallback(
     (id: string) => {
       if (id === "undo") annot.undo();
+      else if (id === "redo") annot.redo();
       else if (id === "clear") annot.clear();
       else if (id === "download") annot.download();
       else if (id === "copy") void annot.copy();

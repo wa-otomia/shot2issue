@@ -25,7 +25,6 @@ export {
   captureWindow,
   cropRegion,
   macScreenRecordingAuthorized,
-  overlaySetClickThrough,
   overlayDismiss,
   openEditorWith,
   getPendingShots,

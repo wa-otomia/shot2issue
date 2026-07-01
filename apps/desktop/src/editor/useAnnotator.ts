@@ -351,6 +351,9 @@ export function useAnnotator(opts: AnnotatorOptions) {
       if (patch.strokeWidth != null) sel.strokeWidth = patch.strokeWidth;
       if (patch.width != null && sel.tool !== "text") sel.width = patch.width;
       if (patch.size != null && sel.tool === "text") sel.size = patch.size;
+      // Editing a selected op diverges history — restore the invariant undo() relies on.
+      st.current.deleted.length = 0;
+      st.current.redoStack.length = 0;
       redraw();
       opts.onPersist();
     },
@@ -505,6 +508,10 @@ export function useAnnotator(opts: AnnotatorOptions) {
       if (s.dragMode) {
         if (s.dragMode === "move" || s.dragMode === "resize") {
           normalizeSelected();
+          // A move/resize is an op-adding-equivalent edit: it diverges history, so restore
+          // the invariant undo() relies on (no pending deletions / redoables outstanding).
+          s.deleted.length = 0;
+          s.redoStack.length = 0;
           opts.onPersist();
         }
         s.dragMode = null;

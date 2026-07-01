@@ -46,6 +46,12 @@ export default function AccountsPanel({
   const signOutGitHub = async (id: string): Promise<void> => {
     await githubLogout(id);
     refreshGh();
+    // Clear any workspace bound to this account so it can't silently file from the wrong one.
+    onConfig({
+      workspaces: config.workspaces.map((w) =>
+        (w as { githubAccountId?: string }).githubAccountId === id ? { ...w, githubAccountId: "" } : w,
+      ),
+    });
   };
 
   const kinds = accountKinds(); // token-based providers (gitlab, youtrack)

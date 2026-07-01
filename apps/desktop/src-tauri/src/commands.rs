@@ -36,11 +36,12 @@ pub fn set_capture_hotkey(app: AppHandle, accelerator: String) -> Result<()> {
     hotkey::register(&app, &accelerator)
 }
 
-/// Manual trigger (tray menu / "Capture now" button / test) — same path as the
-/// global hotkey: grab the monitor under the cursor, then present the overlay.
+/// Manual "Capture now" button trigger — same capture path as the global hotkey,
+/// but as an explicit in-app request it hides the app's own main window first so
+/// shot2issue isn't part of the grab, then restores it.
 #[tauri::command]
 pub async fn trigger_capture(app: AppHandle) -> Result<()> {
-    hotkey::trigger_capture(&app).await;
+    hotkey::trigger_capture_foreground(&app).await;
     Ok(())
 }
 
@@ -96,11 +97,26 @@ pub async fn capture_window(id: u32) -> Result<String> {
 
 /// Crop the frozen frame to a logical-px rect relative to the overlay client
 /// area. Returns a tight base64 PNG.
+///
+/// `token` is the `MonitorShot.token` the overlay was handed; it lets the crop
+/// reject a request against a frame a newer capture already replaced. It is
+/// `Option` for wire-compat while the webview is threaded through to send it (an
+/// old renderer omits it → best-effort crop of the current frame, today's
+/// behavior); once the overlay always sends it, mismatches hard-error.
 #[tauri::command]
-pub async fn crop_region(x: f64, y: f64, width: f64, height: f64) -> Result<String> {
-    tauri::async_runtime::spawn_blocking(move || capture::crop_last(x, y, width, height))
-        .await
-        .map_err(join_err)?
+pub async fn crop_region(
+    token: Option<u64>,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<String> {
+    tauri::async_runtime::spawn_blocking(move || match token {
+        Some(t) => capture::crop_last(t, x, y, width, height),
+        None => capture::crop_last_untokened(x, y, width, height),
+    })
+    .await
+    .map_err(join_err)?
 }
 
 /// macOS: is Screen Recording (TCC) granted? Always true off macOS. The UI uses
@@ -112,11 +128,6 @@ pub fn mac_screen_recording_authorized() -> bool {
 }
 
 // ---------- Overlay ----------
-
-#[tauri::command]
-pub fn overlay_set_click_through(app: AppHandle, ignore: bool) -> Result<()> {
-    overlay::set_click_through(&app, ignore)
-}
 
 #[tauri::command]
 pub fn overlay_dismiss(app: AppHandle) {

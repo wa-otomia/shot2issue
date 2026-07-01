@@ -5,6 +5,7 @@
 // action, and a short how-it-works hint.
 
 import { useEffect, useState } from "react";
+import { t } from "@shot2issue/core";
 import { getHotkey, onNeedsScreenRecording, triggerCapture } from "../lib/api";
 
 export default function HomeView() {
@@ -45,7 +46,7 @@ export default function HomeView() {
             GitLab, or YouTrack.
           </p>
           <p className="empty" style={{ textAlign: "left", padding: 0 }}>
-            Press <span className="hotkey-pill">{hotkey || "the global hotkey"}</span> from
+            Press <span className="hotkey-pill">{hotkey || t("hotkeyNotSet")}</span> from
             anywhere, or use the button below. Drag a region, or press Tab to pick a window.
           </p>
         </div>

@@ -43,6 +43,7 @@ const MESSAGES: Record<string, Record<string, string>> = {
     cropHint: 'Drag a region, then Apply / Enter to crop · Esc cancels',
     undo: 'Undo',
     undoTitle: 'Undo last step',
+    redoTitle: 'Redo',
     clear: 'Clear',
     clearTitle: 'Clear all annotations',
     downloadPng: 'Download PNG',
@@ -98,6 +99,8 @@ const MESSAGES: Record<string, Record<string, string>> = {
     errWorkspaceIncompleteYouTrack: 'The selected YouTrack workspace is missing base URL, project, or token. Fix it in Settings.',
     errTitleEmpty: 'Title cannot be empty.',
     errNotSignedIn: 'Not signed in to github.com. Sign in to github.com in this browser and try again, or use “Download PNG”.',
+    errBoundAccountSignedOut: 'The GitHub account this workspace uses was signed out — pick another in the workspace, or add it again in Accounts.',
+    errNotSignedInDesktop: 'Add or sign in to a GitHub account in Settings → Accounts, or use Download PNG.',
     errPermissionDenied: 'Permission to access {0} was denied; cannot submit to this YouTrack instance.',
     statusSubmittingYouTrack: 'Creating the YouTrack issue…',
     ytTarget: 'YouTrack: {0}',
@@ -139,8 +142,6 @@ const MESSAGES: Record<string, Record<string, string>> = {
     tabGeneral: 'General',
     accountsHeading: 'Accounts',
     accountsHint: 'All accounts in one place — GitHub (sign in), GitLab / YouTrack (base URL + token). Workspaces bind to one.',
-    ghAccountsHint: 'Sign in to one or more GitHub accounts; each workspace picks which one files its issues.',
-    ghNoAccounts: 'No GitHub accounts yet.',
     ghAddAccount: 'Add GitHub account',
     ghSignOut: 'Sign out',
     wsGithubAccount: 'GitHub account',
@@ -312,6 +313,7 @@ const MESSAGES: Record<string, Record<string, string>> = {
     cropHint: '拖出一个区域，然后“应用 / Enter”进行裁剪 · Esc 取消',
     undo: '撤销',
     undoTitle: '撤销上一步',
+    redoTitle: '重做',
     clear: '清除',
     clearTitle: '清除全部标注',
     downloadPng: '下载 PNG',
@@ -367,6 +369,8 @@ const MESSAGES: Record<string, Record<string, string>> = {
     errWorkspaceIncompleteYouTrack: '当前 YouTrack 工作空间缺少 Base URL、项目或 token，请到设置里修正。',
     errTitleEmpty: '标题不能为空。',
     errNotSignedIn: '未登录 github.com。请在本浏览器登录 github.com 后重试，或使用「下载 PNG」。',
+    errBoundAccountSignedOut: '该工作空间使用的 GitHub 账号已退出登录——请在工作空间里改选其它账号，或到「账号」里重新添加。',
+    errNotSignedInDesktop: '请在「设置 → 账号」里添加或登录一个 GitHub 账号，或使用「下载 PNG」。',
     errPermissionDenied: '访问 {0} 的权限被拒绝，无法提交到该 YouTrack 实例。',
     statusSubmittingYouTrack: '正在创建 YouTrack issue…',
     ytTarget: 'YouTrack：{0}',
@@ -407,8 +411,6 @@ const MESSAGES: Record<string, Record<string, string>> = {
     tabGeneral: '通用',
     accountsHeading: '账号',
     accountsHint: '所有账号集中管理——GitHub（登录）、GitLab / YouTrack（地址 + token）。工作空间绑定其一。',
-    ghAccountsHint: '登录一个或多个 GitHub 账号；每个工作空间选择用哪个账号提交 issue。',
-    ghNoAccounts: '还没有 GitHub 账号。',
     ghAddAccount: '添加 GitHub 账号',
     ghSignOut: '退出',
     wsGithubAccount: 'GitHub 账号',
@@ -579,6 +581,7 @@ const MESSAGES: Record<string, Record<string, string>> = {
     cropHint: '範囲をドラッグし、「適用 / Enter」でトリミング · Esc で取消',
     undo: '元に戻す',
     undoTitle: '直前の操作を元に戻す',
+    redoTitle: 'やり直し',
     clear: 'クリア',
     clearTitle: 'すべての注釈を消去',
     downloadPng: 'PNG をダウンロード',
@@ -634,6 +637,8 @@ const MESSAGES: Record<string, Record<string, string>> = {
     errWorkspaceIncompleteYouTrack: '選択中の YouTrack ワークスペースに Base URL・プロジェクト・トークンがありません。設定で修正してください。',
     errTitleEmpty: 'タイトルは必須です。',
     errNotSignedIn: 'github.com に未サインインです。このブラウザで github.com にサインインして再試行するか、「PNG をダウンロード」を使用してください。',
+    errBoundAccountSignedOut: 'このワークスペースが使う GitHub アカウントはサインアウトされました——ワークスペースで別のアカウントを選ぶか、「アカウント」で再度追加してください。',
+    errNotSignedInDesktop: '「設定 → アカウント」で GitHub アカウントを追加またはサインインするか、「PNG をダウンロード」を使用してください。',
     errPermissionDenied: '{0} へのアクセス許可が拒否されました。この YouTrack インスタンスには送信できません。',
     statusSubmittingYouTrack: 'YouTrack の issue を作成中…',
     ytTarget: 'YouTrack：{0}',
@@ -674,8 +679,6 @@ const MESSAGES: Record<string, Record<string, string>> = {
     tabGeneral: '一般',
     accountsHeading: 'アカウント',
     accountsHint: 'すべてのアカウントをここで管理——GitHub（サインイン）、GitLab / YouTrack（URL + トークン）。ワークスペースが 1 つを選びます。',
-    ghAccountsHint: '1 つ以上の GitHub アカウントにサインインします。各ワークスペースがどのアカウントで issue を作成するか選びます。',
-    ghNoAccounts: 'GitHub アカウントがまだありません。',
     ghAddAccount: 'GitHub アカウントを追加',
     ghSignOut: 'サインアウト',
     wsGithubAccount: 'GitHub アカウント',
@@ -818,6 +821,26 @@ const MESSAGES: Record<string, Record<string, string>> = {
 
 export const SUPPORTED_LANGS: string[] = ['en', 'zh', 'ja'];
 export const DEFAULT_LANG: string = 'en';
+
+/**
+ * Dictation/transcription language choices for the Whisper language hint (code → native name).
+ * 'auto' is first and lets the model detect the language; its label comes from the `dictationAuto`
+ * i18n key, so it carries an empty name here and is rendered specially. The remaining entries are
+ * the major Whisper-supported languages (kept in sync with the extension's options list).
+ */
+export const DICTATION_LANGS: Array<[string, string]> = [
+  ['auto', ''],
+  ['en', 'English'], ['zh', '中文'], ['ja', '日本語'], ['ko', '한국어'], ['es', 'Español'], ['fr', 'Français'],
+  ['de', 'Deutsch'], ['ru', 'Русский'], ['pt', 'Português'], ['it', 'Italiano'], ['nl', 'Nederlands'],
+  ['tr', 'Türkçe'], ['pl', 'Polski'], ['uk', 'Українська'], ['ar', 'العربية'], ['hi', 'हिन्दी'],
+  ['id', 'Bahasa Indonesia'], ['vi', 'Tiếng Việt'], ['th', 'ไทย'], ['sv', 'Svenska'], ['da', 'Dansk'],
+  ['nb', 'Norsk'], ['fi', 'Suomi'], ['cs', 'Čeština'], ['el', 'Ελληνικά'], ['he', 'עברית'], ['ro', 'Română'],
+  ['hu', 'Magyar'], ['ms', 'Bahasa Melayu'], ['ca', 'Català'], ['fa', 'فارسی'], ['sk', 'Slovenčina'],
+  ['hr', 'Hrvatski'], ['bg', 'Български'], ['sr', 'Српски'], ['lt', 'Lietuvių'], ['lv', 'Latviešu'],
+  ['et', 'Eesti'], ['sl', 'Slovenščina'], ['ta', 'தமிழ்'], ['te', 'తెలుగు'], ['ur', 'اردو'], ['bn', 'বাংলা'],
+  ['mr', 'मराठी'], ['fil', 'Filipino'], ['af', 'Afrikaans'], ['sw', 'Kiswahili'], ['is', 'Íslenska'],
+  ['cy', 'Cymraeg'], ['hy', 'Հայերեն'], ['az', 'Azərbaycan'], ['kk', 'Қазақ'], ['gl', 'Galego'], ['eu', 'Euskara'],
+];
 
 /**
  * Best-effort detection of a supported UI language from the system/browser, used only to

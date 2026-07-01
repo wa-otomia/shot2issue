@@ -5,9 +5,7 @@
 // reasoning / vocab) and ai.* (model / sign-out).
 
 import { useState } from "react";
-import { ai, clearAiAuth, patchAiAuth, setAiAuth, type AiAuth, type Config } from "@shot2issue/core";
-
-const DICTATION_LANGS = ["auto", "en", "zh", "ja"];
+import { ai, clearAiAuth, patchAiAuth, setAiAuth, DICTATION_LANGS, type AiAuth, type Config } from "@shot2issue/core";
 
 export default function AiPanel({
   t,
@@ -135,9 +133,9 @@ export default function AiPanel({
       <div className="field">
         <label>{t("dictationLangLabel")}</label>
         <select value={config.dictationLang || "auto"} onChange={(e) => onConfig({ dictationLang: e.target.value })} style={{ maxWidth: 240 }}>
-          {DICTATION_LANGS.map((l) => (
-            <option key={l} value={l}>
-              {l === "auto" ? t("dictationAuto") : l}
+          {DICTATION_LANGS.map(([code, name]) => (
+            <option key={code} value={code}>
+              {code === "auto" ? t("dictationAuto") : `${name} (${code})`}
             </option>
           ))}
         </select>

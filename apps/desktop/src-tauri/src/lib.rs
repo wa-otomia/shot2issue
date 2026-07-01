@@ -40,10 +40,17 @@ fn build_menu<R: tauri::Runtime>(h: &tauri::AppHandle<R>) -> tauri::Result<tauri
     use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
     let about = MenuItemBuilder::with_id("about", "About shot2issue").build(h)?;
     let check = MenuItemBuilder::with_id("check-update", "Check for Updates\u{2026}").build(h)?;
+    // Recovery path for a hidden window when there is no system tray (some Linux
+    // desktops): the window hides (not closes) on close, so without this menu
+    // item a tray-less user could never get it back. Reveals the main window via
+    // the same show+unminimize+focus the tray uses.
+    let show_window = MenuItemBuilder::with_id("show-window", "Show Window").build(h)?;
     #[allow(unused_mut)]
     let mut app_sub = SubmenuBuilder::new(h, "shot2issue")
         .item(&about)
         .item(&check)
+        .separator()
+        .item(&show_window)
         .separator();
     #[cfg(target_os = "macos")]
     {
@@ -84,6 +91,8 @@ pub fn run() {
         .on_menu_event(|app, e| match e.id().as_ref() {
             "about" => open_about(app),
             "check-update" => open_updater(app),
+            // Menubar fallback to un-hide the main window on a tray-less desktop.
+            "show-window" => services::tray::reveal_main(app),
             _ => {}
         })
         .on_window_event(|window, event| {
@@ -137,7 +146,6 @@ pub fn run() {
             commands::crop_region,
             commands::mac_screen_recording_authorized,
             // ---- overlay ----
-            commands::overlay_set_click_through,
             commands::overlay_dismiss,
             // ---- editor staging ----
             commands::open_editor_with,

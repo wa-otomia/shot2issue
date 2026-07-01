@@ -7,15 +7,23 @@
 // mirroring options.ts. The capture hotkey and AI connect/sign-out are immediate actions (they
 // touch the Rust backend / token store), not draft fields.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  accountFor,
   getAiAuth,
   getConfig,
+  getOptionsTab,
+  getProvider,
+  makeAccountId,
+  makeId,
+  migrateAccounts,
   setConfig as persistConfig,
   setLanguage,
+  setOptionsTab,
   t as tr,
   type AiAuth,
   type Config,
+  type Workspace,
 } from "@shot2issue/core";
 import { getDefaultAccelerator, getHotkey, setCaptureHotkey } from "../lib/api";
 import AccountsPanel from "../settings/AccountsPanel";
@@ -76,6 +84,14 @@ export default function SettingsView() {
   const [config, setDraft] = useState<Config | null>(null);
   const [auth, setAuth] = useState<AiAuth | null>(null);
   const [saved, setSaved] = useState(false);
+  const [saveErr, setSaveErr] = useState("");
+  const importInputRef = useRef<HTMLInputElement>(null);
+
+  // Persist the active tab (mirrors the extension's getOptionsTab/setOptionsTab).
+  const selectTab = (name: Tab): void => {
+    setTab(name);
+    void setOptionsTab(name);
+  };
 
   // Hotkey recorder (immediate, not part of the draft).
   const [hotkey, setHotkey] = useState("");
@@ -87,6 +103,14 @@ export default function SettingsView() {
     getConfig().then(setDraft).catch(() => {});
     getAiAuth().then(setAuth).catch(() => {});
     getHotkey().then(setHotkey).catch(() => {});
+    // Restore the last-used Settings tab (persisted across sessions, mirroring options.ts).
+    getOptionsTab()
+      .then((name) => {
+        if (name === "workspaces" || name === "accounts" || name === "ai" || name === "general") {
+          setTab(name);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -150,14 +174,130 @@ export default function SettingsView() {
   const onConfig = (patch: Partial<Config>): void => {
     setDraft((c) => (c ? { ...c, ...patch } : c));
     setSaved(false);
+    setSaveErr("");
   };
 
+  // Validate + normalize the draft before persisting, mirroring the extension's options.ts
+  // save(). Blocks on incomplete accounts, invalid workspaces, or zero types; repairs the
+  // remembered lastWorkspaceId/lastType; and switches to the offending tab on error.
   const save = async (): Promise<void> => {
     if (!config) return;
-    setLanguage(config.lang);
-    await persistConfig(config);
+    setSaveErr("");
+
+    // 1) Normalize + validate accounts: every account-field the provider requires must be filled.
+    const accounts = config.accounts.map((a) => ({
+      ...a,
+      id: a.id || makeAccountId(),
+      name: (a.name || "").trim(),
+      baseUrl: (a.baseUrl || "").trim().replace(/\/+$/, ""),
+      token: (a.token || "").trim(),
+    }));
+    for (const a of accounts) {
+      const fields = getProvider(a.kind).accountFields || [];
+      const rec = a as unknown as Record<string, string>;
+      if (fields.some((f) => !((rec[f.key] || "").trim()))) {
+        selectTab("accounts");
+        setSaveErr(t("errAccountIncomplete"));
+        return;
+      }
+    }
+
+    // 2) Normalize workspaces to the fields relevant to their provider.
+    const workspaces: Workspace[] = config.workspaces.map((w) => {
+      const provider = getProvider(w.kind);
+      return { id: w.id || makeId(), kind: provider.id, name: (w.name || "").trim(), ...provider.normalize(w) };
+    });
+
+    const draft: Config = { ...config, accounts, workspaces };
+
+    // 3) Validate each workspace against its merged shape (account creds overlaid).
+    for (const w of workspaces) {
+      const acct = accountFor(draft, w);
+      const merged = acct ? { ...w, baseUrl: acct.baseUrl, token: acct.token } : w;
+      const errKey = getProvider(w.kind).validate(merged);
+      if (errKey) {
+        selectTab("workspaces");
+        setSaveErr(t(errKey));
+        return;
+      }
+    }
+
+    // 4) At least one issue type must remain.
+    if (draft.types.length < 1) {
+      selectTab("workspaces");
+      setSaveErr(t("errKeepOneType"));
+      return;
+    }
+
+    // 5) Repair the remembered selections if they point at nothing.
+    if (!workspaces.some((w) => w.id === draft.lastWorkspaceId)) {
+      draft.lastWorkspaceId = workspaces[0]?.id || "";
+    }
+    if (!draft.types.includes(draft.lastType)) draft.lastType = draft.types[0] || "";
+
+    setLanguage(draft.lang);
+    await persistConfig(draft);
+    setDraft(draft); // reflect normalized data back into the editor
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
+  };
+
+  // ---- Backup / restore (mirrors options.ts) ----
+  const exportConfig = (): void => {
+    if (!config) return;
+    const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date(Date.now()).toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    a.href = url;
+    a.download = `shot2issue-config-${stamp}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setSaveErr("");
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
+
+  const importConfig = async (file: File): Promise<void> => {
+    if (!config) return;
+    try {
+      const obj = JSON.parse(await file.text()) as Partial<Config>;
+      if (typeof obj !== "object" || obj === null) throw new Error(t("importInvalid"));
+      // Preserve all workspace fields (accountId/project/owner/repo, any legacy inline
+      // baseUrl/token) so migrateAccounts can convert old backups losslessly.
+      const imported: Config = {
+        workspaces: (Array.isArray(obj.workspaces) ? obj.workspaces : []).map((w) => ({
+          ...w,
+          id: w.id || makeId(),
+          kind: getProvider(w.kind || "github").id,
+          name: w.name || "",
+        })),
+        accounts: Array.isArray(obj.accounts) ? obj.accounts : [],
+        types: Array.isArray(obj.types) && obj.types.length ? obj.types : config.types,
+        lang: typeof obj.lang === "string" ? obj.lang : config.lang,
+        titleTemplate: typeof obj.titleTemplate === "string" ? obj.titleTemplate : config.titleTemplate,
+        bodyTemplate: typeof obj.bodyTemplate === "string" ? obj.bodyTemplate : config.bodyTemplate,
+        aiTitlePrompt: typeof obj.aiTitlePrompt === "string" ? obj.aiTitlePrompt : config.aiTitlePrompt,
+        aiComplaintPrompt: typeof obj.aiComplaintPrompt === "string" ? obj.aiComplaintPrompt : config.aiComplaintPrompt,
+        aiVocabulary: Array.isArray(obj.aiVocabulary) ? obj.aiVocabulary : config.aiVocabulary,
+        aiReasoning: typeof obj.aiReasoning === "string" ? obj.aiReasoning : config.aiReasoning,
+        autoDictate: typeof obj.autoDictate === "boolean" ? obj.autoDictate : config.autoDictate,
+        dictationLang: typeof obj.dictationLang === "string" ? obj.dictationLang : config.dictationLang,
+        closeAfterSubmit: typeof obj.closeAfterSubmit === "boolean" ? obj.closeAfterSubmit : config.closeAfterSubmit,
+        shortcutEnabled: typeof obj.shortcutEnabled === "boolean" ? obj.shortcutEnabled : config.shortcutEnabled,
+        lastWorkspaceId: typeof obj.lastWorkspaceId === "string" ? obj.lastWorkspaceId : "",
+        lastType: typeof obj.lastType === "string" ? obj.lastType : "",
+      };
+      const migrated = migrateAccounts(imported); // convert legacy inline-cred workspaces to accounts
+      setLanguage(migrated.lang);
+      await persistConfig(migrated);
+      setDraft(migrated); // reload the draft from the imported config
+      setSaveErr("");
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch (e) {
+      setSaveErr(t("importFailed", [e instanceof Error ? e.message : String(e)]));
+    }
   };
 
   if (!config) return <div className="card"><p className="empty">…</p></div>;
@@ -174,7 +314,7 @@ export default function SettingsView() {
       <h2>{t("settings")}</h2>
       <div className="s2i-tabs">
         {TABS.map((tb) => (
-          <button key={tb.id} className={`s2i-tab${tab === tb.id ? " active" : ""}`} onClick={() => setTab(tb.id)}>
+          <button key={tb.id} className={`s2i-tab${tab === tb.id ? " active" : ""}`} onClick={() => selectTab(tb.id)}>
             {tb.label}
           </button>
         ))}
@@ -241,6 +381,26 @@ export default function SettingsView() {
               <option value="ja">日本語</option>
             </select>
           </div>
+
+          <div className="card">
+            <h3>{t("backupHeading")}</h3>
+            <p className="empty" style={{ textAlign: "left", padding: 0 }}>{t("backupHint")}</p>
+            <div className="row" style={{ gap: 8 }}>
+              <button onClick={exportConfig}>{t("exportConfig")}</button>
+              <button onClick={() => importInputRef.current?.click()}>{t("importConfig")}</button>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept="application/json,.json"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const file = e.target.files && e.target.files[0];
+                  e.target.value = ""; // allow re-importing the same file
+                  if (file) void importConfig(file);
+                }}
+              />
+            </div>
+          </div>
         </>
       )}
 
@@ -249,6 +409,7 @@ export default function SettingsView() {
           {t("save")}
         </button>
         {saved && <span className="s2i-set-ok">{t("saved")}</span>}
+        {saveErr && <span className="s2i-set-error" role="alert">{saveErr}</span>}
       </div>
     </>
   );
