@@ -1,6 +1,6 @@
 [package]
 name = "shot2issue"
-version = "0.1.3"
+version = "0.1.4"
 description = "shot2issue — global-hotkey screen capture that files annotated screenshots as issues."
 authors = ["wa-otomia"]
 edition = "2021"
