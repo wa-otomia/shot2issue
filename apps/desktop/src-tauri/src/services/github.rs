@@ -407,4 +407,3 @@ mod tests {
         assert_eq!(info.login, "octocat");
     }
 }
-</content>
