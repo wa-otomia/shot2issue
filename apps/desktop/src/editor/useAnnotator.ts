@@ -43,6 +43,10 @@ interface Interaction {
   redoStack: Op[];
   /** Deletions (op + its index in ops) awaiting undo, most-recent last. */
   deleted: { op: Op; index: number }[];
+  /** Pre-crop snapshots (base PNG + ops), most-recent last; undo() steps back across a crop.
+   *  `baseline` is the ops length right after the crop, so undo peels off any post-crop draws
+   *  first, then reverts the crop atomically once none remain. */
+  cropHistory: { dataUrl: string; ops: Op[]; baseline: number }[];
 }
 
 export interface AnnotatorOptions {
@@ -81,6 +85,7 @@ export function useAnnotator(opts: AnnotatorOptions) {
     hasImage: false,
     redoStack: [],
     deleted: [],
+    cropHistory: [],
   });
   const baseImage = useRef<HTMLImageElement>(new Image());
 
@@ -196,28 +201,12 @@ export function useAnnotator(opts: AnnotatorOptions) {
     [cancelCrop, commitText, deselect, opts],
   );
 
-  // ---- crop apply ------------------------------------------------------------
-  const applyCrop = useCallback((): void => {
-    const cv = opts.canvasRef.current;
-    const c = ctx();
-    const s = st.current;
-    if (!s.crop.rect || !cv || !cv.width || !c) return;
-    const result = applyCropTransform(baseImage.current, s.crop.rect, s.ops, cv.width, cv.height, c);
-    if (!result) return;
-    s.crop = newCropState();
-    s.selected = null;
-    opts.onCropChange(false);
-    // setTool('rect', false) — internal reset out of crop mode, must NOT clobber the remembered tool.
-    if (s.tool === "crop") {
-      s.tool = "rect";
-      opts.onToolChange("rect");
-    }
-    opts.onCropApplied(result.dataUrl, result.ops); // the view re-bases the attachment + calls loadImage
-  }, [ctx, opts]);
-
   // ---- load the active image -------------------------------------------------
-  const loadImage = useCallback(
-    (dataUrl: string, ops: Op[]): void => {
+  // applyLoad swaps the base image + ops and repaints. keepCropHistory=false (the public
+  // loadImage, used on attachment switch / initial load) resets the crop undo stack; the
+  // crop apply/undo paths pass true so a crop stays reversible across the reload.
+  const applyLoad = useCallback(
+    (dataUrl: string, ops: Op[], keepCropHistory: boolean): void => {
       const cv = opts.canvasRef.current;
       const s = st.current;
       s.ops = ops;
@@ -226,6 +215,7 @@ export function useAnnotator(opts: AnnotatorOptions) {
       s.pendingTextOp = null;
       s.redoStack.length = 0;
       s.deleted.length = 0;
+      if (!keepCropHistory) s.cropHistory.length = 0;
       s.crop = newCropState();
       opts.onCropChange(false);
       const img = baseImage.current;
@@ -235,10 +225,8 @@ export function useAnnotator(opts: AnnotatorOptions) {
           cv.height = img.naturalHeight;
           // HiDPI crispness: the backing store is device-resolution (the capture is
           // device px), so DISPLAY it at naturalWidth / devicePixelRatio CSS px — that
-          // maps one backing pixel onto one PHYSICAL pixel (1:1). The previous
-          // `width:auto` rendered each backing px across `dpr` physical px → a 2×
-          // upscale blur on Retina. `max-width:100%` still downsizes wide shots crisply;
-          // height:auto keeps the aspect ratio.
+          // maps one backing pixel onto one PHYSICAL pixel (1:1). `max-width:100%` still
+          // downsizes wide shots crisply; height:auto keeps the aspect ratio.
           const dpr = window.devicePixelRatio || 1;
           cv.style.width = img.naturalWidth / dpr + "px";
           cv.style.height = "auto";
@@ -253,6 +241,33 @@ export function useAnnotator(opts: AnnotatorOptions) {
     },
     [opts, redraw],
   );
+  /** Load a fresh image (attachment switch / initial). Resets the crop undo stack. */
+  const loadImage = useCallback(
+    (dataUrl: string, ops: Op[]): void => applyLoad(dataUrl, ops, false),
+    [applyLoad],
+  );
+
+  // ---- crop apply ------------------------------------------------------------
+  const applyCrop = useCallback((): void => {
+    const cv = opts.canvasRef.current;
+    const c = ctx();
+    const s = st.current;
+    if (!s.crop.rect || !cv || !cv.width || !c) return;
+    // Snapshot the PRE-crop image + ops so undo() can step back across the crop.
+    const preSrc = baseImage.current.src;
+    const preOps: Op[] = JSON.parse(JSON.stringify(s.ops));
+    const result = applyCropTransform(baseImage.current, s.crop.rect, s.ops, cv.width, cv.height, c);
+    if (!result) return;
+    s.cropHistory.push({ dataUrl: preSrc, ops: preOps, baseline: result.ops.length });
+    s.selected = null;
+    // setTool('rect', false) — internal reset out of crop mode, must NOT clobber the remembered tool.
+    if (s.tool === "crop") {
+      s.tool = "rect";
+      opts.onToolChange("rect");
+    }
+    applyLoad(result.dataUrl, result.ops, true); // re-render the cropped image; keep crop history
+    opts.onCropApplied(result.dataUrl, result.ops); // persist the new base + ops to the attachment store
+  }, [applyLoad, ctx, opts]);
 
   // ---- undo / redo / delete / clear ------------------------------------------
   const undo = useCallback((): void => {
@@ -265,13 +280,24 @@ export function useAnnotator(opts: AnnotatorOptions) {
     const lastDel = s.deleted.pop();
     if (lastDel) {
       s.ops.splice(Math.min(lastDel.index, s.ops.length), 0, lastDel.op);
-    } else {
-      const popped = s.ops.pop();
-      if (popped) s.redoStack.push(popped);
+      redraw();
+      opts.onPersist();
+      return;
     }
+    // Once no post-crop draws remain, the next undo steps back across the last crop:
+    // restore the pre-crop base image + ops as a single atomic undo.
+    const crop = s.cropHistory[s.cropHistory.length - 1];
+    if (crop && s.ops.length <= crop.baseline) {
+      s.cropHistory.pop();
+      applyLoad(crop.dataUrl, crop.ops, true); // repaint the pre-crop image; keep earlier crops
+      opts.onCropApplied(crop.dataUrl, crop.ops); // persist the reverted base + ops
+      return;
+    }
+    const popped = s.ops.pop();
+    if (popped) s.redoStack.push(popped);
     redraw();
     opts.onPersist();
-  }, [commitText, deselect, opts, redraw]);
+  }, [applyLoad, commitText, deselect, opts, redraw]);
 
   const redo = useCallback((): void => {
     commitText();

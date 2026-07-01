@@ -126,11 +126,13 @@ export default function EditorView() {
     prefsRef,
     onPersist: persist,
     onCropApplied: (dataUrl, ops) => {
+      // Persist the crop result (or an undo's reverted state) to the attachment store.
+      // The annotator has already re-rendered internally via applyLoad, so DON'T call
+      // loadImage here — that would reset the crop-undo history.
       const a = attachmentsRef.current[activeIndex];
       if (!a) return;
       a.dataUrl = dataUrl;
       a.ops = ops;
-      annot.loadImage(dataUrl, a.ops);
       bump();
     },
     onToast: showToast,
