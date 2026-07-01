@@ -92,7 +92,7 @@ pub fn stage_and_open<R: Runtime>(app: &AppHandle<R>, png_base64: String) -> Res
         return Ok(());
     }
 
-    WebviewWindowBuilder::new(app, "editor", WebviewUrl::App("index.html".into()))
+    let win = WebviewWindowBuilder::new(app, "editor", WebviewUrl::App("index.html".into()))
         .title("shot2issue — annotate")
         .inner_size(1180.0, 820.0)
         .min_inner_size(820.0, 560.0)
@@ -101,8 +101,30 @@ pub fn stage_and_open<R: Runtime>(app: &AppHandle<R>, png_base64: String) -> Res
         .focused(true)
         .build()
         .map_err(|e| ServiceError::Other(format!("editor window: {e}")))?;
+    fix_retina_scale(&win);
     Ok(())
 }
+
+/// macOS: a programmatically-created WKWebView can come up at 1x — blurry on a Retina display,
+/// because it reads the window's backing scale factor before the window is associated with the
+/// screen, so the WHOLE webview (text, icons, the screenshot) renders at half resolution. A
+/// resize forces `viewDidChangeBackingProperties`, so the webview re-reads the real scale (2x).
+/// Nudge the size by 1px and back shortly after the window appears. No-op off macOS.
+#[cfg(target_os = "macos")]
+fn fix_retina_scale<R: Runtime>(win: &tauri::WebviewWindow<R>) {
+    let w = win.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        if let Ok(sz) = w.inner_size() {
+            let _ = w.set_size(tauri::PhysicalSize::new(sz.width + 1, sz.height + 1));
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            let _ = w.set_size(sz);
+        }
+    });
+}
+
+#[cfg(not(target_os = "macos"))]
+fn fix_retina_scale<R: Runtime>(_win: &tauri::WebviewWindow<R>) {}
 
 /// The editor view calls this once on mount (and on `editor://shots-updated`)
 /// to read the staged shots. Returns `None` if nothing is staged.
