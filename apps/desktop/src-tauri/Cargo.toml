@@ -1,6 +1,6 @@
 [package]
 name = "shot2issue"
-version = "0.1.7"
+version = "0.1.8"
 description = "shot2issue — global-hotkey screen capture that files annotated screenshots as issues."
 authors = ["wa-otomia"]
 edition = "2021"
@@ -41,8 +41,12 @@ base64 = "0.22"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Query the active Screen Recording (TCC) authorization so the UI can guide
-# the one-time grant + restart instead of capturing a black frame.
+# the one-time grant + restart instead of capturing a black frame; also drive
+# window enumeration (authoritative logical bounds + front-to-back z-order)
+# via CGWindowListCopyWindowInfo — xcap's window list isn't layer-filtered or
+# scaled correctly on macOS.
 core-graphics = "0.24"
+core-foundation = "0.10"
 
 [profile.release]
 codegen-units = 1

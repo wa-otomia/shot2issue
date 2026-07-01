@@ -255,6 +255,21 @@ pub fn find_display(display_id: u32) -> Option<Display> {
 /// helper windows. Bounds reported in LOGICAL px in the virtual-desktop space
 /// so the frontend can highlight them over the frozen overlay.
 pub fn list_windows() -> Result<Vec<WindowInfo>> {
+    #[cfg(target_os = "macos")]
+    {
+        list_windows_macos()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        list_windows_xcap()
+    }
+}
+
+// Non-macOS: the original xcap enumeration, unchanged. macOS diverges below to a
+// CGWindowList path that fixes both the Retina-halved bounds (#1) and the
+// z-order / layer filtering (#2).
+#[cfg(not(target_os = "macos"))]
+fn list_windows_xcap() -> Result<Vec<WindowInfo>> {
     let wins = Window::all().map_err(map_xcap)?;
     let mut out = Vec::with_capacity(wins.len());
     for w in wins {
@@ -266,8 +281,6 @@ pub fn list_windows() -> Result<Vec<WindowInfo>> {
         if title.trim().is_empty() {
             continue; // skip chromeless helper windows
         }
-        // Each window's bounds are in device px relative to its own monitor's
-        // scale; normalize to logical px in the shared virtual-desktop space.
         let scale = w
             .current_monitor()
             .ok()
@@ -282,6 +295,139 @@ pub fn list_windows() -> Result<Vec<WindowInfo>> {
             width: ((w.width().map_err(map_xcap)? as f64) / scale).round() as u32,
             height: ((w.height().map_err(map_xcap)? as f64) / scale).round() as u32,
             is_minimized: minimized,
+        });
+    }
+    Ok(out)
+}
+
+// macOS-native window enumeration: authoritative bounds (logical points) AND
+// front-to-back z-order in one CGWindowListCopyWindowInfo call. xcap on macOS
+// returns kCGWindowBounds ALREADY in logical points (dividing by scale halved
+// them on Retina — bug #1) and doesn't filter by kCGWindowLayer (menu bar /
+// Dock / notifications sit above real windows and were picked first — bug #2).
+// CGWindowNumber == xcap Window::id(), so capture_window(id) is unchanged.
+#[cfg(target_os = "macos")]
+fn list_windows_macos() -> Result<Vec<WindowInfo>> {
+    use core_foundation::array::CFArray;
+    use core_foundation::base::{CFType, ItemRef, TCFType};
+    use core_foundation::dictionary::CFDictionary;
+    use core_foundation::number::CFNumber;
+    use core_foundation::string::CFString;
+    use core_graphics::display::{
+        kCGNullWindowID, kCGWindowListExcludeDesktopElements, kCGWindowListOptionOnScreenOnly,
+        CGWindowListCopyWindowInfo,
+    };
+    use std::os::raw::c_void;
+
+    let array_ref = unsafe {
+        CGWindowListCopyWindowInfo(
+            kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
+            kCGNullWindowID,
+        )
+    };
+    if array_ref.is_null() {
+        return Err(ServiceError::Other(
+            "CGWindowListCopyWindowInfo returned null".into(),
+        ));
+    }
+    // Create Rule: we own this reference; CFArray drops it.
+    let array: CFArray<*const c_void> = unsafe { CFArray::wrap_under_create_rule(array_ref) };
+
+    let k_layer = CFString::from_static_string("kCGWindowLayer");
+    let k_number = CFString::from_static_string("kCGWindowNumber");
+    let k_owner = CFString::from_static_string("kCGWindowOwnerName");
+    let k_name = CFString::from_static_string("kCGWindowName");
+    let k_bounds = CFString::from_static_string("kCGWindowBounds");
+    let k_alpha = CFString::from_static_string("kCGWindowAlpha");
+    let k_x = CFString::from_static_string("X");
+    let k_y = CFString::from_static_string("Y");
+    let k_w = CFString::from_static_string("Width");
+    let k_h = CFString::from_static_string("Height");
+
+    let mut out = Vec::with_capacity(array.len() as usize);
+
+    // Front-to-back (topmost first). Preserve the order so the frontend's
+    // "first hit wins" grabs the TOPMOST window under the cursor.
+    for item in array.iter() {
+        let dict_ref = *item as core_foundation::dictionary::CFDictionaryRef;
+        if dict_ref.is_null() {
+            continue;
+        }
+        let dict: CFDictionary<*const c_void, *const c_void> =
+            unsafe { CFDictionary::wrap_under_get_rule(dict_ref) };
+
+        let get = |key: &CFString| -> Option<ItemRef<'_, *const c_void>> {
+            dict.find(key.as_CFTypeRef() as *const c_void)
+        };
+        let get_number_f64 = |key: &CFString| -> Option<f64> {
+            let v = get(key)?;
+            let cf: CFType = unsafe { CFType::wrap_under_get_rule(*v as _) };
+            cf.downcast::<CFNumber>().and_then(|n| n.to_f64())
+        };
+        let get_string = |key: &CFString| -> Option<String> {
+            let v = get(key)?;
+            let cf: CFType = unsafe { CFType::wrap_under_get_rule(*v as _) };
+            cf.downcast::<CFString>().map(|s| s.to_string())
+        };
+
+        // Only real application windows live on layer 0; the Dock, menu bar
+        // extras, notification overlays, wallpaper agents etc. sit ABOVE that
+        // and would otherwise be picked first (breaking z-order picking).
+        let layer = get_number_f64(&k_layer).unwrap_or(1.0);
+        if layer != 0.0 {
+            continue;
+        }
+        if get_number_f64(&k_alpha).unwrap_or(1.0) <= 0.0 {
+            continue; // fully transparent — can't be meaningfully clicked
+        }
+
+        let id = match get_number_f64(&k_number) {
+            Some(n) => n as u32,
+            None => continue,
+        };
+        let title = get_string(&k_name).unwrap_or_default();
+        if title.trim().is_empty() {
+            continue; // chromeless helper windows
+        }
+        let app_name = get_string(&k_owner).unwrap_or_default();
+
+        // kCGWindowBounds is a sub-dict of numbers (X/Y/Width/Height) in GLOBAL
+        // LOGICAL POINTS — the same space as MonitorShot.x/y. No scale.
+        let bounds_ref = match get(&k_bounds) {
+            Some(v) => *v as core_foundation::dictionary::CFDictionaryRef,
+            None => continue,
+        };
+        if bounds_ref.is_null() {
+            continue;
+        }
+        let bounds: CFDictionary<*const c_void, *const c_void> =
+            unsafe { CFDictionary::wrap_under_get_rule(bounds_ref) };
+        let bnum = |key: &CFString| -> f64 {
+            bounds
+                .find(key.as_CFTypeRef() as *const c_void)
+                .and_then(|v| {
+                    let cf: CFType = unsafe { CFType::wrap_under_get_rule(*v as _) };
+                    cf.downcast::<CFNumber>().and_then(|n| n.to_f64())
+                })
+                .unwrap_or(0.0)
+        };
+        let wx = bnum(&k_x);
+        let wy = bnum(&k_y);
+        let ww = bnum(&k_w);
+        let wh = bnum(&k_h);
+        if ww <= 1.0 || wh <= 1.0 {
+            continue; // 1px helper / off-screen sliver
+        }
+
+        out.push(WindowInfo {
+            id,
+            title,
+            app_name,
+            x: wx.round() as i32,
+            y: wy.round() as i32,
+            width: ww.round() as u32,
+            height: wh.round() as u32,
+            is_minimized: false, // OnScreenOnly ⇒ everything returned is on-screen
         });
     }
     Ok(out)
