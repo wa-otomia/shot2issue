@@ -156,6 +156,24 @@ pub fn run() {
             commands::github_upload_image,
             commands::github_create_issue,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // macOS: clicking the dock icon fires Reopen (AppKit's
+            // applicationShouldHandleReopen). No window/tray event covers it, so
+            // reveal the hidden main window here. Gated to macOS since Reopen
+            // only exists/fires there; the else arm silences unused-var warnings.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                if let Some(win) = app_handle.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                let _ = (app_handle, event);
+            }
+        });
 }

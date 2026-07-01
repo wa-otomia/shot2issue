@@ -370,6 +370,20 @@ export default function EditorView() {
         e.preventDefault();
         annot.undo();
       }
+      // Redo: Cmd/Ctrl+Shift+Z, or Ctrl+Y (Windows/Linux convention).
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        ((e.shiftKey && (e.key === "z" || e.key === "Z")) || (!e.shiftKey && (e.key === "y" || e.key === "Y")))
+      ) {
+        if (inField) return;
+        e.preventDefault();
+        annot.redo();
+      }
+      // Delete the selected annotation (Delete or Backspace) — never while typing in a field.
+      if ((e.key === "Delete" || e.key === "Backspace") && !inField && annot.state.current.selected) {
+        e.preventDefault();
+        annot.deleteSelected();
+      }
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === "c" || e.key === "C")) {
         if (inField || (window.getSelection()?.toString() || "").trim()) return;
         if (!attachmentsRef.current.length) return;

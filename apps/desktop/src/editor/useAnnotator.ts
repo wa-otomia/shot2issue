@@ -38,6 +38,10 @@ interface Interaction {
   dragOrig: Op | null;
   crop: CropState;
   hasImage: boolean;
+  /** Ops popped by undo(), most-recent last. Cleared whenever a new op is committed. */
+  redoStack: Op[];
+  /** Deletions (op + its index in ops) awaiting undo, most-recent last. */
+  deleted: { op: Op; index: number }[];
 }
 
 export interface AnnotatorOptions {
@@ -74,6 +78,8 @@ export function useAnnotator(opts: AnnotatorOptions) {
     dragOrig: null,
     crop: newCropState(),
     hasImage: false,
+    redoStack: [],
+    deleted: [],
   });
   const baseImage = useRef<HTMLImageElement>(new Image());
 
@@ -123,6 +129,8 @@ export function useAnnotator(opts: AnnotatorOptions) {
       const w = scale ? ta.offsetWidth / scale : s.pendingTextOp.w;
       committed = { ...s.pendingTextOp, w, text: ta.value.replace(/\n+$/, "") };
       s.ops.push(committed);
+      s.redoStack.length = 0; // a fresh commit invalidates the redo stack
+      s.deleted.length = 0;
     }
     if (ta) {
       ta.style.display = "none";
@@ -215,6 +223,8 @@ export function useAnnotator(opts: AnnotatorOptions) {
       s.selected = null;
       s.drawing = null;
       s.pendingTextOp = null;
+      s.redoStack.length = 0;
+      s.deleted.length = 0;
       s.crop = newCropState();
       opts.onCropChange(false);
       const img = baseImage.current;
@@ -234,19 +244,58 @@ export function useAnnotator(opts: AnnotatorOptions) {
     [opts, redraw],
   );
 
-  // ---- undo / clear ----------------------------------------------------------
+  // ---- undo / redo / delete / clear ------------------------------------------
   const undo = useCallback((): void => {
     commitText();
     deselect();
-    st.current.ops.pop();
+    const s = st.current;
+    // Any op-adding action (draw commit / redo) clears s.deleted, so a pending deletion is
+    // only ever the single most-recent action when it exists — undo it by re-inserting the
+    // op at its original index. Otherwise undo the last draw by popping it onto the redo stack.
+    const lastDel = s.deleted.pop();
+    if (lastDel) {
+      s.ops.splice(Math.min(lastDel.index, s.ops.length), 0, lastDel.op);
+    } else {
+      const popped = s.ops.pop();
+      if (popped) s.redoStack.push(popped);
+    }
     redraw();
     opts.onPersist();
   }, [commitText, deselect, opts, redraw]);
 
+  const redo = useCallback((): void => {
+    commitText();
+    deselect();
+    const s = st.current;
+    const op = s.redoStack.pop();
+    if (!op) return;
+    s.ops.push(op);
+    s.deleted.length = 0; // re-adding a draw makes it the most-recent action
+    redraw();
+    opts.onPersist();
+  }, [commitText, deselect, opts, redraw]);
+
+  const deleteSelected = useCallback((): void => {
+    const s = st.current;
+    const sel = s.selected;
+    if (!sel) return;
+    const index = s.ops.indexOf(sel);
+    if (index === -1) return;
+    s.ops.splice(index, 1);
+    s.selected = null;
+    s.deleted.push({ op: sel, index }); // undoable: undo() re-inserts it at `index`
+    s.redoStack.length = 0; // a delete diverges history, so drop any redoable ops
+    redraw();
+    opts.onPersist();
+  }, [opts, redraw]);
+
   const clear = useCallback((): void => {
     commitText();
     deselect();
-    st.current.ops.length = 0; // clear in place so the attachment's ops array identity is kept
+    const s = st.current;
+    s.ops.length = 0; // clear in place so the attachment's ops array identity is kept
+    s.redoStack.length = 0;
+    s.deleted.length = 0;
     redraw();
     opts.onPersist();
   }, [commitText, deselect, opts, redraw]);
@@ -508,6 +557,8 @@ export function useAnnotator(opts: AnnotatorOptions) {
         }
       }
       if (added) {
+        s.redoStack.length = 0; // a fresh draw invalidates redo + pending deletions
+        s.deleted.length = 0;
         s.selected = eng.isSelectable(d.tool) ? d : null;
         opts.onPersist();
       }
@@ -550,6 +601,8 @@ export function useAnnotator(opts: AnnotatorOptions) {
     setTool,
     loadImage,
     undo,
+    redo,
+    deleteSelected,
     clear,
     applyCrop,
     cancelCrop,
