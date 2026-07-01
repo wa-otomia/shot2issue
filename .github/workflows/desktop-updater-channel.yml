@@ -1,0 +1,47 @@
+name: desktop-updater-channel
+
+# Keeps the desktop auto-updater working independently of the repo's "Latest"
+# badge. The updater endpoint baked into each binary (tauri.conf.json) points at
+# a FIXED rolling release — `desktop-latest` — whose latest.json this workflow
+# overwrites on every published `desktop-v*` release. It ALSO marks the
+# just-published desktop release as the repo Latest, so older clients still on
+# the legacy /releases/latest/ endpoint (<= v0.1.1) keep updating through the
+# transition. Runs on `released` (fires when a draft is published, or on a
+# direct publish) so the desktop release's assets are already public.
+
+on:
+  release:
+    types: [released]
+
+jobs:
+  sync:
+    if: startsWith(github.event.release.tag_name, 'desktop-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Mirror latest.json to the rolling desktop-latest release
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "$REPO" --pattern latest.json --dir . --clobber
+          # Create the rolling channel once. `--prerelease` so it never competes
+          # for the Latest badge; its assets stay reachable at the fixed
+          # /releases/download/desktop-latest/ URL regardless.
+          if ! gh release view desktop-latest --repo "$REPO" >/dev/null 2>&1; then
+            gh release create desktop-latest --repo "$REPO" --prerelease \
+              --target main \
+              --title "Desktop auto-update channel" \
+              --notes "Rolling latest.json for the desktop updater endpoint. Auto-maintained by desktop-updater-channel.yml — do not delete."
+          fi
+          gh release upload desktop-latest latest.json --repo "$REPO" --clobber
+
+      - name: Keep the desktop release as repo Latest (legacy-endpoint clients)
+        run: |
+          set -euo pipefail
+          RID=$(gh api "repos/$REPO/releases" --jq ".[] | select(.tag_name==\"$TAG\") | .id")
+          gh api -X PATCH "repos/$REPO/releases/$RID" -f make_latest=true >/dev/null
+          echo "Set $TAG as repo Latest and mirrored its latest.json to desktop-latest."
