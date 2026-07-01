@@ -1,11 +1,8 @@
-// Settings → Accounts panel. Two parts:
-//   1) GitHub: a "Sign in to GitHub" button that opens the built-in webview (invoke github_login)
-//      and reports the captured github.com session (github_session_status). GitHub files issues
-//      via that web-session cookie, so there is no token field — just a login state.
-//   2) Account-based providers (GitLab / YouTrack): a list of reusable credential records
-//      (baseUrl + token), bound to a provider kind. Workspaces reference an account by id.
-// Account list edits live in the draft Config (added/edited/removed via the onConfig prop);
-// SettingsView persists on Save.
+// Settings → Accounts: ONE unified account list. GitHub accounts (github.com web
+// session, added by signing in) sit in the SAME list as the token-based providers
+// (GitLab / YouTrack) — no separate GitHub section. Workspaces bind to an account
+// by id. Token-account edits live in the draft Config (via onConfig); GitHub
+// sign-in/out are immediate (they touch the Rust cookie store) and refresh in place.
 
 import { useEffect, useState } from "react";
 import {
@@ -46,13 +43,12 @@ export default function AccountsPanel({
       setGhBusy(false);
     }
   };
-
   const signOutGitHub = async (id: string): Promise<void> => {
     await githubLogout(id);
     refreshGh();
   };
 
-  const kinds = accountKinds();
+  const kinds = accountKinds(); // token-based providers (gitlab, youtrack)
   const accounts = config.accounts;
 
   const patchAccount = (id: string, patch: Partial<Account>): void => {
@@ -67,30 +63,28 @@ export default function AccountsPanel({
     onConfig({ accounts: accounts.filter((a) => a.id !== id) });
   };
 
+  const empty = ghAccounts.length === 0 && accounts.length === 0;
+
   return (
     <div className="card">
-      <h3>GitHub</h3>
-      <p className="empty" style={{ textAlign: "left", padding: 0 }}>{t("ghAccountsHint")}</p>
-      {ghAccounts.length === 0 && <p className="empty">{t("ghNoAccounts")}</p>}
-      <div className="s2i-chips">
-        {ghAccounts.map((a) => (
-          <span key={a.id} className="s2i-chip">
-            {a.login}
-            <button title={t("ghSignOut")} onClick={() => void signOutGitHub(a.id)}>
+      <h3>{t("accountsHeading")}</h3>
+      <p className="empty" style={{ textAlign: "left", padding: 0 }}>{t("accountsHint")}</p>
+      {empty && <p className="empty">{t("noAccounts")}</p>}
+
+      {/* GitHub accounts (cookie sessions) — same list as the token accounts below. */}
+      {ghAccounts.map((a) => (
+        <div key={`gh-${a.id}`} className="s2i-set-card">
+          <div className="row">
+            <span className="s2i-k">GitHub</span>
+            <span style={{ flex: 1 }}>{a.login}</span>
+            <button className="danger" title={t("ghSignOut")} onClick={() => void signOutGitHub(a.id)}>
               ✕
             </button>
-          </span>
-        ))}
-      </div>
-      <div className="row" style={{ marginTop: 8 }}>
-        <button disabled={ghBusy} onClick={() => void addGitHub()}>
-          {ghBusy ? t("aiConnecting") : t("ghAddAccount")}
-        </button>
-      </div>
+          </div>
+        </div>
+      ))}
 
-      <h3 style={{ marginTop: "1.25rem" }}>{t("accountsHeading")}</h3>
-      <p className="empty" style={{ textAlign: "left", padding: 0 }}>{t("accountsHint")}</p>
-      {accounts.length === 0 && <p className="empty">{t("noAccounts")}</p>}
+      {/* Token-based accounts (GitLab / YouTrack). */}
       {accounts.map((a) => {
         const provider = getProvider(a.kind);
         const fields = provider.accountFields ?? [];
@@ -131,7 +125,11 @@ export default function AccountsPanel({
           </div>
         );
       })}
+
       <div className="row">
+        <button disabled={ghBusy} onClick={() => void addGitHub()}>
+          {ghBusy ? t("aiConnecting") : t("ghAddAccount")}
+        </button>
         <button onClick={addAccount}>{t("addAccount")}</button>
       </div>
     </div>

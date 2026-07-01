@@ -1,6 +1,4 @@
-import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
-import { exit } from "@tauri-apps/plugin-process";
+import { useState } from "react";
 import Sidebar, { type View } from "./components/Sidebar";
 import StatusBar from "./components/StatusBar";
 import HomeView from "./views/HomeView"; // shows hotkey + 'Capture now' button
@@ -20,19 +18,6 @@ export default function App() {
   // overlay, and a confirmed crop opens the dedicated `editor` window (see
   // services/editor_stage.rs). The main window no longer hosts the captured
   // shot, so there's no in-app capture->annotate listener here.
-
-  // Hold the main-window close in Rust, animate <body>, then exit.
-  useEffect(() => {
-    const un = listen("app://close", () => {
-      document.body.classList.add("app-closing");
-      setTimeout(() => {
-        exit(0).catch(() => {});
-      }, 230);
-    });
-    return () => {
-      un.then((f) => f());
-    };
-  }, []);
 
   return (
     <>

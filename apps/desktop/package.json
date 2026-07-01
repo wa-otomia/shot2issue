@@ -1,6 +1,6 @@
 {
   "name": "shot2issue-desktop",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "description": "shot2issue — desktop capture + annotate + file-as-issue.",

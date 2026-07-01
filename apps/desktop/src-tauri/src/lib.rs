@@ -90,8 +90,11 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 match window.label() {
                     "main" => {
+                        // Don't quit on close — hide to the tray so the global hotkey
+                        // and "Capture now" keep working in the background. The tray's
+                        // "Quit shot2issue" (and the macOS app-menu Quit) actually exit.
                         api.prevent_close();
-                        let _ = window.emit("app://close", ());
+                        let _ = window.hide();
                     }
                     // Closing the editor ends the staging session and frees the
                     // staged image bytes (extension parity with the

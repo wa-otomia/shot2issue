@@ -91,7 +91,8 @@ button {
   background: var(--bg-elev-2);
   border: 1px solid var(--border);
   color: var(--text);
-  padding: 0.5rem 1rem;
+  height: 34px;
+  padding: 0 0.9rem;
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
@@ -132,12 +133,17 @@ input, select, textarea {
   background: var(--bg-input);
   border: 1px solid var(--border);
   color: var(--text);
-  padding: 0.55rem 0.7rem;
+  padding: 0 0.7rem;
   border-radius: 6px;
   font-size: 14px;
   font-family: inherit;
+  box-sizing: border-box;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
+
+/* Single-line controls share one height with buttons; textarea stays multi-line. */
+input, select { height: 34px; }
+textarea { padding: 0.5rem 0.7rem; min-height: 34px; }
 
 input:focus, select:focus, textarea:focus {
   outline: none;

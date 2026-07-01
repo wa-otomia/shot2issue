@@ -26,19 +26,35 @@ type Tab = "workspaces" | "accounts" | "ai" | "general";
 
 // Build a tauri-plugin-global-shortcut accelerator string ("CommandOrControl+Shift+2") from a
 // keydown event. Returns null until a non-modifier key is pressed.
+// Map a PHYSICAL key (e.code) to a tauri accelerator token. Using e.code — not
+// e.key — means Shift doesn't turn a digit into a symbol (Shift+1 → "!", which
+// is an invalid accelerator). tauri accepts short tokens: A, 2, Up, F1, ",".
+function tokenFromCode(code: string): string | null {
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3); // KeyA -> A
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5); // Digit2 -> 2
+  if (/^F[1-9][0-9]?$/.test(code)) return code; // F1..F24
+  const named: Record<string, string> = {
+    ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right",
+    Space: "Space", Enter: "Enter", Tab: "Tab", Backspace: "Backspace",
+    Minus: "-", Equal: "=", Comma: ",", Period: ".", Slash: "/",
+    Semicolon: ";", Quote: "'", BracketLeft: "[", BracketRight: "]",
+    Backslash: "\\", Backquote: "`",
+  };
+  return named[code] ?? null;
+}
+
+// Build a tauri accelerator ("CommandOrControl+Shift+1") from a keydown event.
+// Returns null when the press shouldn't be recorded yet: a modifier-only key, a
+// chord with no primary modifier (Cmd/Ctrl/Alt), or an unsupported physical key.
 function accelFromEvent(e: KeyboardEvent): string | null {
-  const key = e.key;
-  if (["Control", "Meta", "Alt", "Shift"].includes(key)) return null; // modifier-only
-  // A global chord needs a primary modifier (Cmd/Ctrl/Alt). A bare letter — or
-  // Shift+letter — would grab that key globally and the backend rejects it.
-  // Escape/Tab/Enter are handled as controls in onKey and never reach here.
-  if (!(e.metaKey || e.ctrlKey || e.altKey)) return null;
+  if (["Control", "Meta", "Alt", "Shift"].includes(e.key)) return null; // modifier-only
+  if (!(e.metaKey || e.ctrlKey || e.altKey)) return null; // needs a primary modifier
+  const token = tokenFromCode(e.code);
+  if (!token) return null; // unsupported physical key — wait for a valid chord
   const parts: string[] = [];
   if (e.metaKey || e.ctrlKey) parts.push("CommandOrControl");
   if (e.altKey) parts.push("Alt");
   if (e.shiftKey) parts.push("Shift");
-  let token = key.length === 1 ? key.toUpperCase() : key;
-  if (key === " ") token = "Space";
   parts.push(token);
   return parts.join("+");
 }

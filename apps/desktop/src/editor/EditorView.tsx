@@ -38,6 +38,7 @@ import {
 } from "@shot2issue/core";
 import { getPendingShots, onShotsUpdated } from "../lib/capture";
 import { openExternalUrl } from "../lib/api";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAnnotator } from "./useAnnotator";
 import Toolbar from "./Toolbar";
 import AnnotationCanvas from "./AnnotationCanvas";
@@ -375,7 +376,10 @@ export default function EditorView() {
         e.preventDefault();
         void annot.copy();
       }
-      if (e.key === "Escape" && cropActive) annot.cancelCrop();
+      if (e.key === "Escape") {
+        if (cropActive) annot.cancelCrop();
+        else if (!inField) void getCurrentWindow().close(); // Esc closes the editor window
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
