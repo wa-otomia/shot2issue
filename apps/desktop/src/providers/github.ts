@@ -25,20 +25,26 @@ interface GhWorkspace {
   [key: string]: unknown;
 }
 
-/** Mirror of the Rust `github::AccountInfo` (serde camelCase). id == login. */
+/** Mirror of the Rust `github::AccountInfo` (serde camelCase); never carries a session value. */
 export interface GithubAccount {
   id: string;
   login: string;
 }
 
-/** Open the login webview; resolves with the account that signed in (upserted by login). */
-export const githubLogin = (): Promise<GithubAccount> => invoke("github_login");
+/**
+ * Sign in the given account id: opens a signed-out login webview so a fresh (possibly different)
+ * identity can be captured, then upserts the resolved session keyed by that account id. Resolves
+ * with { id, login } (id == the passed accountId). Used both for first sign-in and re-sign-in.
+ */
+export const githubLogin = (accountId: string): Promise<GithubAccount> =>
+  invoke("github_login", { accountId });
 
 /** All signed-in GitHub accounts (id + login; no session values). */
 export const githubAccounts = (): Promise<GithubAccount[]> => invoke("github_accounts");
 
-/** Sign out one GitHub account by id (== login), removing its stored session. */
-export const githubLogout = (id: string): Promise<void> => invoke("github_logout", { id });
+/** Sign out one GitHub account by id, removing its stored session. */
+export const githubLogout = (accountId: string): Promise<void> =>
+  invoke("github_logout", { accountId });
 
 /** Upload one screenshot via the gh-image protocol using an account's session; returns the URL. */
 function uploadImage(accountId: string, owner: string, repo: string, dataUrl: string, filename: string): Promise<string> {
@@ -57,6 +63,11 @@ export const githubProvider: Provider = {
     { key: "owner", labelKey: "wsOwner", placeholder: "octocat" },
     { key: "repo", labelKey: "wsRepo", placeholder: "hello-world" },
   ],
+  // Account-based via a web session (cookieAuth), but with NO token/baseUrl fields: the Account
+  // card renders a Sign-in button instead. isAccountBased() therefore treats github as an
+  // account kind, so it appears in the unified "Add account" flow (accountKinds()).
+  cookieAuth: true,
+  accountFields: [],
 
   describe(ws): string {
     const w = ws as GhWorkspace;

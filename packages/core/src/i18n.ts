@@ -144,6 +144,8 @@ const MESSAGES: Record<string, Record<string, string>> = {
     accountsHint: 'All accounts in one place — GitHub (sign in), GitLab / YouTrack (base URL + token). Workspaces bind to one.',
     ghAddAccount: 'Add GitHub account',
     ghSignOut: 'Sign out',
+    ghSignIn: 'Sign in',
+    ghReSignIn: 'Re-sign-in',
     wsGithubAccount: 'GitHub account',
     addAccount: 'Add account',
     noAccounts: 'No accounts yet.',
@@ -271,7 +273,7 @@ const MESSAGES: Record<string, Record<string, string>> = {
     complaintTranscribing: 'Transcribing…',
     complaintGenerating: 'Writing issue…',
     complaintFailed: 'Complaint failed: {0}',
-    complaintMicDenied: 'Microphone access was denied or unavailable.',
+    complaintMicDenied: 'Microphone access was denied or unavailable. On macOS, open System Settings › Privacy & Security › Microphone, enable access for shot2issue, then try recording again.',
 
     // Background
     captureFailed: 'Screenshot failed: {0} (restricted pages such as chrome:// cannot be captured)',
@@ -413,6 +415,8 @@ const MESSAGES: Record<string, Record<string, string>> = {
     accountsHint: '所有账号集中管理——GitHub（登录）、GitLab / YouTrack（地址 + token）。工作空间绑定其一。',
     ghAddAccount: '添加 GitHub 账号',
     ghSignOut: '退出',
+    ghSignIn: '登录',
+    ghReSignIn: '重新登录',
     wsGithubAccount: 'GitHub 账号',
     addAccount: '添加账号',
     noAccounts: '还没有账号。',
@@ -540,7 +544,7 @@ const MESSAGES: Record<string, Record<string, string>> = {
     complaintTranscribing: '识别中…',
     complaintGenerating: '撰写中…',
     complaintFailed: '抱怨失败：{0}',
-    complaintMicDenied: '麦克风访问被拒绝或不可用。',
+    complaintMicDenied: '麦克风访问被拒绝或不可用。在 macOS 上，请打开「系统设置 › 隐私与安全性 › 麦克风」，为 shot2issue 开启访问权限，然后重新录音。',
 
     captureFailed: '截图失败：{0}（chrome:// 等受限页面无法截图）',
     // 弹出菜单
@@ -681,6 +685,8 @@ const MESSAGES: Record<string, Record<string, string>> = {
     accountsHint: 'すべてのアカウントをここで管理——GitHub（サインイン）、GitLab / YouTrack（URL + トークン）。ワークスペースが 1 つを選びます。',
     ghAddAccount: 'GitHub アカウントを追加',
     ghSignOut: 'サインアウト',
+    ghSignIn: 'サインイン',
+    ghReSignIn: '再サインイン',
     wsGithubAccount: 'GitHub アカウント',
     addAccount: 'アカウントを追加',
     noAccounts: 'アカウントがありません。',
@@ -808,7 +814,7 @@ const MESSAGES: Record<string, Record<string, string>> = {
     complaintTranscribing: '文字起こし中…',
     complaintGenerating: '作成中…',
     complaintFailed: 'クレームに失敗しました：{0}',
-    complaintMicDenied: 'マイクへのアクセスが拒否されたか利用できません。',
+    complaintMicDenied: 'マイクへのアクセスが拒否されたか利用できません。macOS では「システム設定 › プライバシーとセキュリティ › マイク」を開き、shot2issue のアクセスを許可してから、もう一度録音してください。',
 
     captureFailed: 'スクリーンショットに失敗しました：{0}（chrome:// などの制限付きページは撮影できません）',
     // ポップアップ

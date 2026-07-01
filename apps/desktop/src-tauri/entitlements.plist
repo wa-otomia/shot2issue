@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Code-signing entitlements applied by codesign (via the entitlements flag)
+  during the Tauri v2 bundle/sign step; the path comes from
+  bundle.macOS.entitlements in tauri.conf.json. Grants the signed/hardened .app
+  the OS-level right to capture audio and reach the network. Deliberately omits
+  com.apple.security.app-sandbox, since sandboxing would confine file access and
+  the outbound HTTP the app relies on. Kept minimal.
+-->
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <key>com.apple.security.network.client</key>
+    <true/>
+  </dict>
+</plist>

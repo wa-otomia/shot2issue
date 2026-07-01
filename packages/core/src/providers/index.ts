@@ -33,9 +33,13 @@ export function getProvider(kind: string): Provider {
   return BY_ID[kind] || PROVIDER_LIST[0];
 }
 
-/** True for providers whose credentials live on an Account (youtrack, gitlab). */
+/**
+ * True for providers whose credentials live on an Account: token-based ones (youtrack, gitlab)
+ * expose accountFields; cookie/session ones (desktop github) set cookieAuth with no fields but
+ * still render a Sign-in button on the Account card and are picked per-workspace by account id.
+ */
 export function isAccountBased(p: Provider): boolean {
-  return !!(p.accountFields && p.accountFields.length);
+  return !!p.cookieAuth || !!(p.accountFields && p.accountFields.length);
 }
 
 /** Provider ids that use accounts — used to filter the Account-kind dropdown. */

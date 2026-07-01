@@ -189,24 +189,27 @@ pub async fn oauth_loopback_wait() -> Result<String> {
 
 // ---------- GitHub (web-session cookie) ----------
 
-/// Open the built-in GitHub-login webview and capture the user_session cookie
-/// once the user signs in, upserting the signed-in account (keyed by login).
+/// Sign a GitHub identity into the given account slot: clear the login webview so github.com
+/// starts signed OUT (letting a DIFFERENT identity be added), then capture the fresh user_session
+/// cookie once the user signs in, upserting it keyed by `account_id`. GitHub is a first-class
+/// account KIND, so the id is the frontend account id (NOT the mutable github login).
 /// Async: the cookie read can deadlock in a sync command on Windows (see github.rs).
 #[tauri::command]
-pub async fn github_login(app: AppHandle) -> Result<github::AccountInfo> {
-    github::login(&app).await
+pub async fn github_login(app: AppHandle, account_id: String) -> Result<github::AccountInfo> {
+    github::login(&app, &account_id).await
 }
 
-/// List all signed-in GitHub accounts (id + login; no session values).
+/// List all signed-in GitHub accounts (id + login; no session values). One entry per stored
+/// session, i.e. per signed-in account.
 #[tauri::command]
 pub fn github_accounts(app: AppHandle) -> Vec<github::AccountInfo> {
     github::list_accounts(&app)
 }
 
-/// Sign out one GitHub account by id (== login), removing its stored session.
+/// Sign out one GitHub account by its account id, removing its stored session.
 #[tauri::command]
-pub fn github_logout(app: AppHandle, id: String) {
-    github::logout(&app, &id);
+pub fn github_logout(app: AppHandle, account_id: String) {
+    github::logout(&app, &account_id);
 }
 
 /// Upload one screenshot (data: URL) via the gh-image protocol using the given

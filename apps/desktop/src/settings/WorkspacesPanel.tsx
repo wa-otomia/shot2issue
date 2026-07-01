@@ -100,7 +100,9 @@ export default function WorkspacesPanel({
                   />
                 </div>
               ))}
-              {/* GitHub: bind the workspace to a signed-in GitHub account (multi-account). */}
+              {/* GitHub: bind the workspace to a GitHub account (multi-account). The options come
+                  from config.accounts (kind==="github"); githubAccounts() only flags which are
+                  currently signed in. KEEP the field name githubAccountId. */}
               {kind === "github" && (
                 <div className="field">
                   <label>{t("wsGithubAccount")}</label>
@@ -109,16 +111,20 @@ export default function WorkspacesPanel({
                     onChange={(e) => patchWs(w.id, { githubAccountId: e.target.value } as Partial<Workspace>)}
                   >
                     <option value="">{t("accountNone")}</option>
-                    {ghAccounts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.login}
-                      </option>
-                    ))}
+                    {acctsForKind.map((a) => {
+                      const signedIn = ghAccounts.find((g) => g.id === a.id);
+                      const label = a.name || signedIn?.login || a.id;
+                      return (
+                        <option key={a.id} value={a.id}>
+                          {signedIn ? label : `${label} (${t("ghSignIn")})`}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
               )}
-              {/* Account-based: pick an account + the project field. */}
-              {accountBased && (
+              {/* Account-based (token providers only; github is handled above): account + project. */}
+              {accountBased && kind !== "github" && (
                 <div className="field">
                   <label>{t("wsAccount")}</label>
                   <select value={(w as Record<string, string>).accountId || ""} onChange={(e) => patchWs(w.id, { accountId: e.target.value })}>

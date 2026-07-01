@@ -29,6 +29,9 @@ export default function DictationModal({
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
+  // Distinct from `status` so the "grant mic access in System Settings" guidance stays visible
+  // (a later transcribe error would otherwise overwrite `status`) and can be styled as a hint.
+  const [micDenied, setMicDenied] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -81,10 +84,12 @@ export default function DictationModal({
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
-      setStatus(t("complaintMicDenied"));
+      // Surface the actionable "grant Microphone in System Settings › Privacy & Security" hint.
+      setMicDenied(true);
       onMicDenied();
       return;
     }
+    setMicDenied(false);
     chunksRef.current = [];
     const rec = new MediaRecorder(stream);
     recorderRef.current = rec;
@@ -106,6 +111,7 @@ export default function DictationModal({
       return;
     }
     setStatus("");
+    setMicDenied(false);
     setTimeout(() => taRef.current?.focus(), 0);
     if (autoDictate && !recording) void startDictation();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -160,6 +166,11 @@ export default function DictationModal({
             {t("complaintGenerate")}
           </button>
         </div>
+        {micDenied && (
+          <div className="s2i-modal-status error" role="alert">
+            {t("complaintMicDenied")}
+          </div>
+        )}
         {status && (
           <div className="s2i-modal-status error" role="alert">
             {status}

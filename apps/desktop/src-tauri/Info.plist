@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Partial Info.plist merged into the generated bundle Info.plist by the Tauri
+  v2 CLI: it auto-detects `src-tauri/Info.plist` (tauri_dir.join("Info.plist"))
+  and inserts every key here into the .app's Info.plist. Only the microphone
+  usage string is needed — WKWebView getUserMedia audio for in-app voice
+  dictation triggers the macOS TCC microphone prompt, and without this key
+  macOS denies access outright ("麦克风访问被拒绝或不可用"). No camera or
+  speech-recognition keys: the app records audio only (MediaRecorder).
+-->
+<plist version="1.0">
+  <dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>shot2issue uses the microphone for voice dictation of issue descriptions.</string>
+  </dict>
+</plist>

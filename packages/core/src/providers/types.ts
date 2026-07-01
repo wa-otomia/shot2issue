@@ -61,6 +61,13 @@ export interface Provider {
    * the Account card (e.g. baseUrl/token). The workspace then only picks an account + project.
    */
   accountFields?: ProviderField[];
+  /**
+   * True for cookie/session account-based providers (desktop github): the account lives in the
+   * unified account list and is picked per-workspace, but its Account card renders a Sign-in
+   * button (a web session) instead of token fields, so accountFields is empty. isAccountBased()
+   * treats such a provider as account-based even though accountFields has no entries.
+   */
+  cookieAuth?: boolean;
   /** The per-workspace project field for account-based providers. */
   projectField?: ProviderField;
   hintKey?: string;
