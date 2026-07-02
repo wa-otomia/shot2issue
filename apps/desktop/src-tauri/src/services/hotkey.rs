@@ -209,7 +209,7 @@ pub async fn trigger_capture_foreground<R: Runtime>(app: &AppHandle<R>) {
 async fn trigger_capture_impl<R: Runtime>(app: &AppHandle<R>, hide_self: bool) {
     // For the explicit button path, hide our own window so it isn't part of the
     // capture. Remember whether it was visible so we only re-show what we hid.
-    let hid_main = hide_self && hide_main_for_capture(app);
+    let hid_main = hide_self && hide_main_for_capture(app).await;
 
     let (cx, cy) = cursor_global(app);
     let shot = tauri::async_runtime::spawn_blocking(move || capture::capture_at(cx, cy)).await;
@@ -252,7 +252,11 @@ async fn trigger_capture_impl<R: Runtime>(app: &AppHandle<R>, hide_self: bool) {
 /// Returns true only if the window was visible and we hid it (so the caller
 /// re-shows exactly what it hid). Gives the compositor a brief moment to actually
 /// clear the window off-screen before the grab.
-fn hide_main_for_capture<R: Runtime>(app: &AppHandle<R>) -> bool {
+///
+/// The only caller (`trigger_capture_impl`) is itself `async` and runs on the
+/// tokio runtime, so the settle delay awaits `tokio::time::sleep` instead of
+/// blocking a worker thread with `std::thread::sleep`.
+async fn hide_main_for_capture<R: Runtime>(app: &AppHandle<R>) -> bool {
     use tauri::Manager;
     let Some(win) = app.get_webview_window("main") else {
         return false;
@@ -266,7 +270,7 @@ fn hide_main_for_capture<R: Runtime>(app: &AppHandle<R>) -> bool {
     }
     // Let the window server actually composite the window away before we grab
     // the frame; without this the shot can still contain a ghost of our window.
-    std::thread::sleep(std::time::Duration::from_millis(120));
+    tokio::time::sleep(std::time::Duration::from_millis(120)).await;
     true
 }
 

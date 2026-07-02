@@ -16,5 +16,7 @@ function run(cmd, args) {
 // 1) Compile src/ -> build/ (NodeNext emit, so the .js imports resolve under Node ESM).
 run('npx', ['tsc', '-p', 'tsconfig.build.json']);
 
-// 2) Run the unit suite against the compiled output.
+// 2) Run the unit suites against the compiled output.
 run('node', ['tests/core-unit.mjs']);
+run('node', ['tests/canvas-unit.mjs']);
+run('node', ['tests/providers-unit.mjs']);

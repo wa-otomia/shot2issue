@@ -78,8 +78,7 @@ async function resolveProjectId(baseUrl: string, token: string, project: string)
   const lower = project.toLowerCase();
   const match =
     list.find((p) => (p.shortName || "").toLowerCase() === lower) ||
-    list.find((p) => (p.name || "").toLowerCase() === lower) ||
-    list[0];
+    list.find((p) => (p.name || "").toLowerCase() === lower);
   if (!match) throw new Error(`YouTrack project not found: ${project}`);
   return match.id;
 }

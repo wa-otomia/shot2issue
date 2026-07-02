@@ -35,6 +35,15 @@ export default function DictationModal({
   const taRef = useRef<HTMLTextAreaElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const insertAtCursor = (insert: string): void => {
     const ta = taRef.current;
@@ -90,6 +99,7 @@ export default function DictationModal({
       return;
     }
     setMicDenied(false);
+    streamRef.current = stream;
     chunksRef.current = [];
     const rec = new MediaRecorder(stream);
     recorderRef.current = rec;
@@ -98,6 +108,10 @@ export default function DictationModal({
     };
     rec.onstop = () => {
       stream.getTracks().forEach((tr) => tr.stop());
+      if (streamRef.current === stream) streamRef.current = null;
+      // onstop fires as an async task, so on an abrupt unmount every cleanup has already run
+      // and mountedRef is false by now: release the mic but don't fire a pointless transcription.
+      if (!mountedRef.current) return;
       void transcribeInto(new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" }));
     };
     rec.start();
@@ -114,6 +128,19 @@ export default function DictationModal({
     setMicDenied(false);
     setTimeout(() => taRef.current?.focus(), 0);
     if (autoDictate && !recording) void startDictation();
+    // Belt-and-suspenders for abrupt unmount (OS titlebar close / Cmd+W), which never re-runs
+    // this effect with open=false: stop the recorder and release the mic stream directly so it
+    // doesn't stay hot. Also fires (harmlessly) on the normal open->close path since stopRecording()
+    // above already stopped the recorder/tracks by then - .stop() on an inactive recorder/track is a no-op.
+    return () => {
+      try {
+        recorderRef.current?.stop();
+      } catch {
+        /* ignore */
+      }
+      streamRef.current?.getTracks().forEach((tr) => tr.stop());
+      streamRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 

@@ -54,24 +54,25 @@ function dataUrlToBlob(dataUrl: string): Blob {
 async function toError(resp: HttpResponse, fallback: string): Promise<Error> {
   let detail = '';
   try {
-    const j = (await resp.json()) as {
-      error_description?: unknown;
-      error?: unknown;
-      localizedMessage?: unknown;
-      value?: unknown;
-    };
-    detail =
-      (j.error_description as string) ||
-      (j.error as string) ||
-      (j.localizedMessage as string) ||
-      (j.value as string) ||
-      '';
-  } catch {
+    const raw = await resp.text();
     try {
-      detail = (await resp.text()).slice(0, 160);
+      const j = JSON.parse(raw) as {
+        error_description?: unknown;
+        error?: unknown;
+        localizedMessage?: unknown;
+        value?: unknown;
+      };
+      detail =
+        (j.error_description as string) ||
+        (j.error as string) ||
+        (j.localizedMessage as string) ||
+        (j.value as string) ||
+        '';
     } catch {
-      /* ignore */
+      detail = raw.trim().slice(0, 300);
     }
+  } catch {
+    /* ignore */
   }
   return new Error(`${fallback} (HTTP ${resp.status})${detail ? ': ' + detail : ''}`);
 }
@@ -96,9 +97,14 @@ async function resolveProjectId(baseUrl: string, token: string, project: string)
   const lower = project.toLowerCase();
   const match =
     list.find((p) => (p.shortName || '').toLowerCase() === lower) ||
-    list.find((p) => (p.name || '').toLowerCase() === lower) ||
-    list[0];
-  if (!match) throw new Error(`YouTrack project not found: ${project}`);
+    list.find((p) => (p.name || '').toLowerCase() === lower);
+  if (!match) {
+    const candidates = list.map((p) => p.shortName || p.name || p.id).filter(Boolean);
+    throw new Error(
+      `YouTrack project not found: ${project}` +
+        (candidates.length ? ` (candidates: ${candidates.join(', ')})` : '')
+    );
+  }
   return match.id;
 }
 

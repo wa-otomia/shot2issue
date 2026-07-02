@@ -41,19 +41,20 @@ function dataUrlToBlob(dataUrl: string): Blob {
 async function toError(resp: Response, fallback: string): Promise<Error> {
   let detail = '';
   try {
-    const j = (await resp.json()) as { message?: unknown; error?: unknown; error_description?: unknown };
-    const m = j.message;
-    detail =
-      (typeof m === 'string' ? m : m ? JSON.stringify(m) : '') ||
-      (j.error_description as string) ||
-      (j.error as string) ||
-      '';
-  } catch {
+    const raw = await resp.text();
     try {
-      detail = (await resp.text()).slice(0, 160);
+      const j = JSON.parse(raw) as { message?: unknown; error?: unknown; error_description?: unknown };
+      const m = j.message;
+      detail =
+        (typeof m === 'string' ? m : m ? JSON.stringify(m) : '') ||
+        (j.error_description as string) ||
+        (j.error as string) ||
+        '';
     } catch {
-      /* ignore */
+      detail = raw.trim().slice(0, 300);
     }
+  } catch {
+    /* ignore */
   }
   return new Error(`${fallback} (HTTP ${resp.status})${detail ? ': ' + detail : ''}`);
 }

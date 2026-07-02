@@ -87,6 +87,7 @@ export function applyCrop(
 ): { dataUrl: string; ops: Op[] } | null {
   const x = eng.clamp(Math.round(rect.x), 0, canvasW - 1);
   const y = eng.clamp(Math.round(rect.y), 0, canvasH - 1);
+  if (Math.round(rect.w) < 1 || Math.round(rect.h) < 1) return null; // degenerate rect: no-op, not a 1x1 crop
   const w = eng.clamp(Math.round(rect.w), 1, canvasW - x);
   const h = eng.clamp(Math.round(rect.h), 1, canvasH - y);
   const off = document.createElement("canvas");

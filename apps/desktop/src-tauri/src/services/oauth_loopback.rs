@@ -44,8 +44,8 @@ static LISTENER: Mutex<Option<TcpListener>> = Mutex::new(None);
 pub fn start() -> Result<String> {
     let listener = TcpListener::bind(LOOPBACK_ADDR)
         .map_err(|e| ServiceError::Other(format!("cannot bind {LOOPBACK_ADDR} for OAuth loopback: {e}")))?;
-    // Non-blocking would complicate the accept loop; instead we set a read timeout per-connection
-    // in `wait`. Store the listener for `wait` to consume.
+    // `wait` switches this to non-blocking so its accept loop can honor the overall deadline; a
+    // read timeout is set per-connection there too. Store the listener for `wait` to consume.
     *LISTENER
         .lock()
         .map_err(|_| ServiceError::Other("oauth listener lock poisoned".into()))? = Some(listener);
@@ -65,21 +65,27 @@ pub fn wait() -> Result<String> {
     // The browser may make extra probe connections (favicon, etc.). Accept connections until one
     // carries a request line whose path is /auth/callback, or the overall deadline passes.
     let deadline = std::time::Instant::now() + ACCEPT_TIMEOUT;
+    // Non-blocking so the deadline is re-checked between poll attempts instead of blocking in
+    // accept() forever when the browser never connects back (tab closed, network lost).
     listener
-        .set_nonblocking(false)
+        .set_nonblocking(true)
         .map_err(ServiceError::Io)?;
 
     loop {
         if std::time::Instant::now() >= deadline {
             return Err(ServiceError::Other("OAuth sign-in timed out (no callback received).".into()));
         }
-        // A short SO accept poll isn't portable; instead rely on the per-stream read timeout plus
-        // the loop deadline. accept() blocks until a connection arrives; the OS will return one
-        // promptly once the browser redirects.
-        let (mut stream, _) = match listener.accept() {
-            Ok(pair) => pair,
+        let mut stream = match listener.accept() {
+            Ok((stream, _)) => stream,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(75));
+                continue;
+            }
             Err(e) => return Err(ServiceError::Other(format!("OAuth loopback accept failed: {e}"))),
         };
+        // The accepted stream inherits the listener's non-blocking mode; put it back into
+        // blocking mode (with a bounded read timeout) so the request read below works normally.
+        let _ = stream.set_nonblocking(false);
         let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
 
         let request_line = read_request_line(&mut stream);

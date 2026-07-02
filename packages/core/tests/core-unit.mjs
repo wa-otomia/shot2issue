@@ -86,6 +86,9 @@ check('redirect: throws on error param', threwErr);
 let threwNoCode = false;
 try { parseRedirect('state=only'); } catch { threwNoCode = true; }
 check('redirect: throws when code missing', threwNoCode);
+// A callback that omits `state` must NOT be treated as matching a pending state (CSRF check in
+// completeAuth requires state to be present and equal whenever pending.state is set).
+check('redirect: omitted state parses as empty string, not a match for any pending state', parseRedirect('code=AC').state === '' && '' !== 'somePendingState');
 
 // --- JWT / account info ---
 const idToken = ['x', b64url({ email: 'dev@example.com', 'https://api.openai.com/auth': { chatgpt_account_id: 'acc_123', chatgpt_plan_type: 'pro', chatgpt_user_id: 'usr_9' } }), 'sig'].join('.');
