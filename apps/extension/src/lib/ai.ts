@@ -572,7 +572,7 @@ export async function completeManualAuth(pastedUrl: string): Promise<AiAuth> {
   const pending = await getPendingAuth();
   if (!pending) throw new Error('No sign-in in progress. Start again.');
   const parsed = parseRedirect(pastedUrl);
-  if (parsed.state && pending.state && parsed.state !== pending.state) {
+  if (pending.state && parsed.state !== pending.state) {
     throw new Error('State mismatch; the pasted link does not match this sign-in.');
   }
   const auth = await exchangeCode({ code: parsed.code, verifier: pending.verifier, redirectUri: pending.redirectUri });

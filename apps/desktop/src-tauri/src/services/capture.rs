@@ -224,18 +224,33 @@ pub fn screen_under_cursor(cursor_x: i32, cursor_y: i32) -> Result<MonitorShot> 
 
 /// Enumerate connected displays in LOGICAL px (used by a foreground display
 /// picker; the hotkey path uses `capture_at` directly).
+///
+/// `Monitor::width()`/`height()` are NOT consistently reported in the same unit
+/// across platforms: on macOS xcap sources them from `CGDisplayBounds`, which is
+/// ALREADY in logical points (same quirk as `kCGWindowBounds`, documented above
+/// `list_windows_macos`), so dividing by `scale_factor()` here would halve a
+/// Retina display's reported size (1920x1080 -> 960x540). On Windows/Linux xcap
+/// reports physical/device pixels for monitors (consistent with `capture_at`,
+/// which derives `MonitorShot.width/height` from the captured device-px image
+/// buffer divided by scale), so the division must stay for those platforms.
 pub fn list_displays() -> Result<Vec<Display>> {
     let monitors = Monitor::all().map_err(map_xcap)?;
     let mut out = Vec::with_capacity(monitors.len());
     for m in monitors {
         let scale = m.scale_factor().map_err(map_xcap)? as f64;
+        let raw_w = m.width().map_err(map_xcap)? as f64;
+        let raw_h = m.height().map_err(map_xcap)? as f64;
+        #[cfg(target_os = "macos")]
+        let (width, height) = (raw_w.round() as u32, raw_h.round() as u32);
+        #[cfg(not(target_os = "macos"))]
+        let (width, height) = ((raw_w / scale).round() as u32, (raw_h / scale).round() as u32);
         out.push(Display {
             id: m.id().map_err(map_xcap)?,
             name: m.name().unwrap_or_default(),
             x: m.x().map_err(map_xcap)?,
             y: m.y().map_err(map_xcap)?,
-            width: ((m.width().map_err(map_xcap)? as f64) / scale).round() as u32,
-            height: ((m.height().map_err(map_xcap)? as f64) / scale).round() as u32,
+            width,
+            height,
             scale: scale as f32,
             is_primary: m.is_primary().unwrap_or(false),
         });
@@ -482,7 +497,17 @@ pub fn crop_last_untokened(x: f64, y: f64, w: f64, h: f64) -> Result<String> {
 }
 
 /// Scale a logical-px rect to device px against `frame`, then slice + encode.
+/// Rejects non-finite or non-positive geometry BEFORE any float->int cast, so a
+/// bogus/adversarial webview payload (Infinity/NaN/huge width) can never reach
+/// the `as u32` casts below, which otherwise saturate to `u32::MAX` and blow up
+/// the clamping arithmetic in `crop_rgba`.
 fn crop_frame(frame: &Frame, x: f64, y: f64, w: f64, h: f64) -> Result<String> {
+    if !x.is_finite() || !y.is_finite() || !w.is_finite() || !h.is_finite() {
+        return Err(ServiceError::Other("crop rect is not finite".into()));
+    }
+    if w <= 0.0 || h <= 0.0 {
+        return Err(ServiceError::Other("crop rect has non-positive size".into()));
+    }
     let s = frame.scale;
     let dx = (x * s).round() as i64;
     let dy = (y * s).round() as i64;
@@ -492,7 +517,8 @@ fn crop_frame(frame: &Frame, x: f64, y: f64, w: f64, h: f64) -> Result<String> {
 }
 
 /// Slice an RGBA buffer to a device-px rect, clamped to the frame bounds so an
-/// over-pull at a screen edge can't panic.
+/// over-pull at a screen edge can't panic. All clamping uses saturating/checked
+/// arithmetic so a huge or fully out-of-bounds rect errors instead of wrapping.
 fn crop_rgba(
     rgba: &[u8],
     fw: u32,
@@ -502,14 +528,16 @@ fn crop_rgba(
     mut w: u32,
     mut h: u32,
 ) -> Result<String> {
+    if fw == 0 || fh == 0 || w == 0 || h == 0 {
+        return Err(ServiceError::Other("empty crop".into()));
+    }
+    if x >= fw as i64 || y >= fh as i64 {
+        return Err(ServiceError::Other("empty crop".into()));
+    }
     let x = x.clamp(0, fw as i64) as u32;
     let y = y.clamp(0, fh as i64) as u32;
-    if x + w > fw {
-        w = fw - x;
-    }
-    if y + h > fh {
-        h = fh - y;
-    }
+    w = w.min(fw - x);
+    h = h.min(fh - y);
     if w == 0 || h == 0 {
         return Err(ServiceError::Other("empty crop".into()));
     }

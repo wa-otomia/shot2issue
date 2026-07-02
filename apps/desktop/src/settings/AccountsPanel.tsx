@@ -5,7 +5,7 @@
 // edits (name/kind/token) live in the draft Config (via onConfig); a GitHub sign-in/out
 // is immediate (it touches the Rust cookie store) and refreshes the signed-in list in place.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   accountKinds,
   getProvider,
@@ -31,6 +31,13 @@ export default function AccountsPanel({
   const kinds = accountKinds(); // account kinds: github (cookie) + gitlab / youtrack (token)
   const accounts = config.accounts;
 
+  // Tracks the LATEST config/accounts every render, so async handlers that await a
+  // long-running operation (OAuth webview, logout) can build their post-await patch from
+  // ref.current instead of the render-time closure — avoiding clobbering edits made while
+  // the await was in flight.
+  const configRef = useRef(config);
+  configRef.current = config;
+
   const patchAccount = (id: string, patch: Partial<Account>): void => {
     onConfig({ accounts: accounts.map((a) => (a.id === id ? { ...a, ...patch } : a)) });
   };
@@ -40,7 +47,10 @@ export default function AccountsPanel({
     onConfig({ accounts: [...accounts, acct] });
   };
   const removeAccount = (id: string): void => {
-    onConfig({ accounts: accounts.filter((a) => a.id !== id) });
+    onConfig({
+      accounts: accounts.filter((a) => a.id !== id),
+      workspaces: config.workspaces.map((w) => (w.accountId === id ? { ...w, accountId: "" } : w)),
+    });
   };
 
   const refreshGh = (): void => {
@@ -55,7 +65,11 @@ export default function AccountsPanel({
     githubAccounts()
       .then((list) => {
         setGhAccounts(list);
-        const known = new Set(accounts.map((a) => a.id));
+        // The list() await can span a re-render, so build the patch from the LATEST
+        // config (via ref), not the render-time `accounts` closure, to avoid clobbering
+        // edits made while it was in flight.
+        const latest = configRef.current.accounts;
+        const known = new Set(latest.map((a) => a.id));
         const missing = list.filter((g) => !known.has(g.id));
         if (missing.length) {
           const added: Account[] = missing.map((g) => ({
@@ -65,7 +79,7 @@ export default function AccountsPanel({
             baseUrl: "",
             token: "",
           }));
-          onConfig({ accounts: [...accounts, ...added] });
+          onConfig({ accounts: [...latest, ...added] });
         }
       })
       .catch(() => {});
@@ -79,8 +93,13 @@ export default function AccountsPanel({
     setGhBusyId(id);
     try {
       const acct = await githubLogin(id); // opens the login webview; upserts the session by id
-      const current = accounts.find((a) => a.id === id);
-      if (current && !current.name.trim()) patchAccount(id, { name: acct.login });
+      // The webview flow can run for many seconds — read the LATEST accounts via the ref
+      // (not the render-time `accounts` closure) so edits made while it was open aren't lost.
+      const latest = configRef.current.accounts;
+      const current = latest.find((a) => a.id === id);
+      if (current && !current.name.trim()) {
+        onConfig({ accounts: latest.map((a) => (a.id === id ? { ...a, name: acct.login } : a)) });
+      }
       refreshGh();
     } catch {
       /* user closed the webview, or no cookie captured */
@@ -92,9 +111,12 @@ export default function AccountsPanel({
     // Drop the stored session (best-effort), the config entry, and unbind any workspace using it.
     await githubLogout(id).catch(() => {});
     refreshGh();
+    // Build the patch from the LATEST config (via ref), not the render-time closure, so any
+    // edits made while the logout awaited aren't clobbered.
+    const latest = configRef.current;
     onConfig({
-      accounts: accounts.filter((a) => a.id !== id),
-      workspaces: config.workspaces.map((w) =>
+      accounts: latest.accounts.filter((a) => a.id !== id),
+      workspaces: latest.workspaces.map((w) =>
         (w as { githubAccountId?: string }).githubAccountId === id ? { ...w, githubAccountId: "" } : w,
       ),
     });

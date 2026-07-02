@@ -38,6 +38,16 @@ export function bboxOf(ctx: CanvasRenderingContext2D, op: Op): Rect {
     ctx.restore();
     return { x: op.x ?? 0, y: op.y ?? 0, w: op.w || maxw, h: Math.max(size * 1.2, lines.length * size * 1.2) };
   }
+  if (op.points && op.points.length) {
+    let minX = op.points[0].x, maxX = op.points[0].x, minY = op.points[0].y, maxY = op.points[0].y;
+    for (const p of op.points) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
   const x = Math.min(op.x0 ?? 0, op.x1 ?? 0);
   const y = Math.min(op.y0 ?? 0, op.y1 ?? 0);
   return { x, y, w: Math.abs((op.x1 ?? 0) - (op.x0 ?? 0)), h: Math.abs((op.y1 ?? 0) - (op.y0 ?? 0)) };

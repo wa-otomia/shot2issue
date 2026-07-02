@@ -18,6 +18,10 @@
     "core:image:allow-rgba",
     "core:image:allow-size",
     {
+      "identifier": "shell:allow-open",
+      "allow": [{ "url": "^https?://" }]
+    },
+    {
       "identifier": "http:default",
       "allow": [
         { "url": "https://github.com/" },

@@ -1,7 +1,7 @@
 mod commands;
 mod services; // services/{capture,hotkey,tray,updates}.rs — sibling subsystems
 
-use tauri::{Emitter, Manager, WindowEvent};
+use tauri::{Manager, WindowEvent};
 
 /// Open (or focus) a frameless rounded popup (updater / about) — copied from
 /// curvault. The webview branches on window label (see main.tsx).
