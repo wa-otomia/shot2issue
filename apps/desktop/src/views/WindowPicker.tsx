@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  confirmWindow,
+  confirmWindowPick,
   listWindows,
   type MonitorShot,
   type WindowInfo,
@@ -53,12 +53,12 @@ export default function WindowPicker({
         e.preventDefault();
         onToggleMode();
       } else if (e.key === "Enter" && hoveredRef.current) {
-        void confirmWindow(hoveredRef.current.id);
+        void confirmWindowPick(hoveredRef.current, shot);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel, onToggleMode]);
+  }, [onCancel, onToggleMode, shot]);
 
   const onMouseMove = (e: React.MouseEvent) => {
     const px = e.clientX + shot.x;
@@ -72,7 +72,7 @@ export default function WindowPicker({
   };
 
   const onClick = () => {
-    if (hovered) void confirmWindow(hovered.id);
+    if (hovered) void confirmWindowPick(hovered, shot);
   };
 
   const hi = hovered

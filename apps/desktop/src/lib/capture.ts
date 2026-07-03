@@ -131,6 +131,30 @@ export async function confirmWindow(id: number): Promise<void> {
   await overlayDismiss();
 }
 
+/**
+ * Confirm a window pick from the FROZEN frame (the hotkey instant) instead of a live
+ * re-grab. `captureWindow` (used by `confirmWindow`) re-photographs the window at click
+ * time — seconds after the hotkey — so anything that changed (animations, video, a new
+ * notification, the user's own delay) leaks into the shot. When the window sits fully
+ * inside the captured monitor's frozen frame, crop its bounds out of that frame so the
+ * shot matches the moment the hotkey was pressed (same source as a region drag). Falls
+ * back to a live grab only when the window spans / lives on another display, which the
+ * single-monitor frozen frame can't cover.
+ */
+export async function confirmWindowPick(win: WindowInfo, shot: MonitorShot | null): Promise<void> {
+  if (shot) {
+    const rx = win.x - shot.x;
+    const ry = win.y - shot.y;
+    const withinFrame =
+      rx >= 0 && ry >= 0 && rx + win.width <= shot.width && ry + win.height <= shot.height;
+    if (withinFrame) {
+      await confirmRegion({ x: rx, y: ry, w: win.width, h: win.height }, shot.token);
+      return;
+    }
+  }
+  await confirmWindow(win.id);
+}
+
 /** Esc / cancel: just close the overlay (Rust drops the frozen frame). */
 export async function cancelCapture(): Promise<void> {
   await overlayDismiss();

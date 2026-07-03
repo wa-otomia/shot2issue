@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   cancelCapture,
   confirmRegion,
-  confirmWindow,
+  confirmWindowPick,
   getOverlayShot,
   listWindows,
   onOverlayRefresh,
@@ -164,7 +164,7 @@ export default function OverlayWindow() {
       // crop needs w>2 && h>2, so e.g. dx=6,dy=1 leaves no usable region): treat
       // it as a window pick so the gesture isn't dead.
       const win = windowAt(e.clientX, e.clientY);
-      if (win) void confirmWindow(win.id);
+      if (win) void confirmWindowPick(win, shotRef.current);
     }
   };
 
