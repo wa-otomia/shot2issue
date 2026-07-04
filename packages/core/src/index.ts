@@ -32,7 +32,7 @@ export * from './storage.js';
 export * as ai from './ai/ai.js';
 
 // i18n (the verbatim translation table + helpers).
-export { t, setLanguage, localizeDom, detectLang, SUPPORTED_LANGS, DEFAULT_LANG, DICTATION_LANGS } from './i18n.js';
+export { t, setLanguage, getLanguage, onLanguageChange, localizeDom, detectLang, SUPPORTED_LANGS, DEFAULT_LANG, DICTATION_LANGS } from './i18n.js';
 
 // Provider registry contract (impls are registered by the host; see ./providers).
 export { PROVIDER_LIST, registerProviders, getProvider, isAccountBased, accountKinds } from './providers/index.js';

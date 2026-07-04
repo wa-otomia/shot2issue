@@ -706,13 +706,32 @@ async function healModelFor(auth: AiAuth, override?: string): Promise<{ auth: Ai
   return { auth, model };
 }
 
+/**
+ * Pick an upload filename whose extension matches the blob's real container. The ASR service
+ * sniffs the format from the filename extension, so a fixed `audio.webm` name on a non-webm blob
+ * makes it mis-decode and fail with "Error in ASR API". Chrome's MediaRecorder records `audio/webm`
+ * here, but stay in parity with core and be robust if that default ever changes.
+ */
+function audioUploadName(blob: Blob): string {
+  const mime = (blob.type || '').toLowerCase().split(';')[0].trim();
+  const ext: Record<string, string> = {
+    'audio/webm': 'webm', 'video/webm': 'webm',
+    'audio/mp4': 'mp4', 'video/mp4': 'mp4', 'audio/x-m4a': 'm4a', 'audio/m4a': 'm4a', 'audio/aac': 'm4a',
+    'audio/ogg': 'ogg', 'audio/oga': 'ogg', 'application/ogg': 'ogg',
+    'audio/mpeg': 'mp3', 'audio/mp3': 'mp3',
+    'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/wave': 'wav',
+    'audio/flac': 'flac', 'audio/x-flac': 'flac',
+  };
+  return `audio.${ext[mime] || 'webm'}`;
+}
+
 /** Transcribe recorded audio using the ChatGPT subscription (no API key). */
 export async function transcribeAudio(blob: Blob, opts?: { filename?: string; prompt?: string; language?: string }): Promise<string> {
   let auth = await getAiAuth();
   if (!auth) throw new Error('Not connected. Sign in to the AI assistant in Settings.');
   auth = await ensureFreshAuth(auth);
   const fd = new FormData();
-  fd.append('file', blob, opts?.filename || 'audio.webm');
+  fd.append('file', blob, opts?.filename || audioUploadName(blob));
   fd.append('model', TRANSCRIBE_MODEL);
   // A dictionary of names/jargon biases the recognizer toward correct spellings.
   if (opts?.prompt && opts.prompt.trim()) fd.append('prompt', opts.prompt.trim());

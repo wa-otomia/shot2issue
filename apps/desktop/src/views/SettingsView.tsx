@@ -26,6 +26,7 @@ import {
   type Workspace,
 } from "@shot2issue/core";
 import { getDefaultAccelerator, getHotkey, setCaptureHotkey } from "../lib/api";
+import { formatAccelerator } from "../lib/accelerator";
 import AccountsPanel from "../settings/AccountsPanel";
 import WorkspacesPanel from "../settings/WorkspacesPanel";
 import AiPanel from "../settings/AiPanel";
@@ -340,7 +341,7 @@ export default function SettingsView() {
                     setRecording((r) => !r);
                   }}
                 >
-                  {recording ? t("hotkeyRecording") : hotkey || t("hotkeyNotSet")}
+                  {recording ? t("hotkeyRecording") : formatAccelerator(hotkey) || t("hotkeyNotSet")}
                 </button>
                 <button onClick={() => void resetHotkey()}>{t("hotkeyReset")}</button>
               </div>

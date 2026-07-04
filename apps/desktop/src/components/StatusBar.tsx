@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { t } from "@shot2issue/core";
 import { getHotkey, macScreenRecordingAuthorized } from "../lib/api";
+import { formatAccelerator } from "../lib/accelerator";
 
 export default function StatusBar() {
   const [hotkey, setHotkey] = useState("");
@@ -20,7 +21,7 @@ export default function StatusBar() {
   return (
     <div className="statusbar">
       <span>
-        {t("statusHotkey")}: <b>{hotkey || "—"}</b>
+        {t("statusHotkey")}: <b>{formatAccelerator(hotkey) || "—"}</b>
       </span>
       {tcc !== null && (
         <span>

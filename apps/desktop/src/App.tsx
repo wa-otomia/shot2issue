@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useReducer, useState } from "react";
+import { onLanguageChange } from "@shot2issue/core";
 import Sidebar, { type View } from "./components/Sidebar";
 import StatusBar from "./components/StatusBar";
 import HomeView from "./views/HomeView"; // shows hotkey + 'Capture now' button
@@ -8,6 +9,13 @@ import { openAboutWindow } from "./lib/api";
 
 export default function App() {
   const [view, setView] = useState<View>("home");
+
+  // `t()` isn't reactive, so switching language in Settings would otherwise leave the shell
+  // (sidebar, status bar) rendered in the previous language until it re-rendered for some other
+  // reason. Re-render the whole tree whenever the active language changes so the switch applies
+  // everywhere at once.
+  const [, forceRerender] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => onLanguageChange(() => forceRerender()), []);
 
   const onSelect = (v: View) => {
     if (v === "about") openAboutWindow().catch(() => {});

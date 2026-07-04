@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { t } from "@shot2issue/core";
 import { getHotkey, onNeedsScreenRecording, triggerCapture } from "../lib/api";
+import { formatAccelerator } from "../lib/accelerator";
 
 export default function HomeView() {
   const [busy, setBusy] = useState(false);
@@ -36,23 +37,25 @@ export default function HomeView() {
     }
   };
 
+  // The hint reads "Press <pill> from anywhere…"; splitting the translated template on {0} keeps
+  // the styled hotkey pill inline while letting each language place it in its own word order.
+  const [hintBefore, hintAfter = ""] = t("homeHint").split("{0}");
+
   return (
     <>
-      <h2>Capture</h2>
+      <h2>{t("homeHeading")}</h2>
       <div className="card s2i-home-hero">
         <div className="s2i-home-copy">
-          <p>
-            Capture the screen under your cursor, annotate it, and file it straight to GitHub,
-            GitLab, or YouTrack.
-          </p>
+          <p>{t("homeIntro")}</p>
           <p className="empty" style={{ textAlign: "left", padding: 0 }}>
-            Press <span className="hotkey-pill">{hotkey || t("hotkeyNotSet")}</span> from
-            anywhere, or use the button below. Drag a region, or press Tab to pick a window.
+            {hintBefore}
+            <span className="hotkey-pill">{formatAccelerator(hotkey) || t("hotkeyNotSet")}</span>
+            {hintAfter}
           </p>
         </div>
         <div className="row">
           <button className="primary" disabled={busy} onClick={() => void captureNow()}>
-            {busy ? "Capturing…" : "Capture now"}
+            {busy ? t("homeCapturing") : t("homeCaptureNow")}
           </button>
         </div>
       </div>
@@ -60,8 +63,7 @@ export default function HomeView() {
       {needsScreenRec && (
         <div className="card">
           <p className="s2i-set-error" role="alert">
-            shot2issue needs Screen Recording permission. Grant it in System Settings → Privacy &amp;
-            Security → Screen Recording, then restart the app.
+            {t("homeScreenRecNeeded")}
           </p>
         </div>
       )}

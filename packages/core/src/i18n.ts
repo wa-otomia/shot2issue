@@ -23,6 +23,15 @@ const MESSAGES: Record<string, Record<string, string>> = {
     statusHotkey: 'Hotkey',
     screenRecOn: 'Screen Recording granted',
     screenRecOff: 'Grant Screen Recording in System Settings',
+
+    // Home
+    homeHeading: 'Capture',
+    homeIntro: 'Capture the screen under your cursor, annotate it, and file it straight to GitHub, GitLab, or YouTrack.',
+    homeHint: 'Press {0} from anywhere, or use the button below. Drag a region, or press Tab to pick a window.',
+    homeCaptureNow: 'Capture now',
+    homeCapturing: 'Capturing…',
+    homeScreenRecNeeded: 'shot2issue needs Screen Recording permission. Grant it in System Settings → Privacy & Security → Screen Recording, then restart the app.',
+
     toolRect: 'Rectangle',
     toolArrow: 'Arrow',
     toolText: 'Text',
@@ -301,6 +310,14 @@ const MESSAGES: Record<string, Record<string, string>> = {
     statusHotkey: '快捷键',
     screenRecOn: '已授权屏幕录制',
     screenRecOff: '请在系统设置中授权屏幕录制',
+
+    // Home
+    homeHeading: '截图',
+    homeIntro: '捕获光标所在的屏幕，添加标注，并直接提交到 GitHub、GitLab 或 YouTrack。',
+    homeHint: '在任意位置按 {0}，或使用下方按钮。拖拽选择区域，或按 Tab 键选择窗口。',
+    homeCaptureNow: '立即截图',
+    homeCapturing: '正在截图…',
+    homeScreenRecNeeded: 'shot2issue 需要屏幕录制权限。请在 系统设置 → 隐私与安全性 → 屏幕录制 中授予权限，然后重启应用。',
     toolRect: '矩形',
     toolArrow: '箭头',
     toolText: '文字',
@@ -577,6 +594,14 @@ const MESSAGES: Record<string, Record<string, string>> = {
     statusHotkey: 'ホットキー',
     screenRecOn: '画面収録は許可されています',
     screenRecOff: 'システム設定で画面収録を許可してください',
+
+    // Home
+    homeHeading: 'キャプチャ',
+    homeIntro: 'カーソル位置の画面をキャプチャして注釈を付け、GitHub・GitLab・YouTrack にそのまま起票します。',
+    homeHint: 'どこからでも {0} を押すか、下のボタンを使用します。範囲をドラッグするか、Tab キーでウィンドウを選択できます。',
+    homeCaptureNow: '今すぐキャプチャ',
+    homeCapturing: 'キャプチャ中…',
+    homeScreenRecNeeded: 'shot2issue には画面収録の許可が必要です。システム設定 → プライバシーとセキュリティ → 画面収録 で許可してから、アプリを再起動してください。',
     toolRect: '矩形',
     toolArrow: '矢印',
     toolText: 'テキスト',
@@ -890,9 +915,38 @@ export function detectLang(): string {
 
 let current = DEFAULT_LANG;
 
-/** Set the active language. Falls back to English for unknown values. */
+// Listeners notified whenever the active language actually changes. `t()` is a plain function,
+// not reactive state, so a UI that renders once (e.g. the desktop app's sidebar/status bar) keeps
+// the previous language until something re-renders it. Subscribers use this to force that re-render
+// so a language switch applies across the whole UI at once, not just the panel that changed it.
+type LangListener = (lang: string) => void;
+const langListeners = new Set<LangListener>();
+
+/** Current active UI language code. */
+export function getLanguage(): string {
+  return current;
+}
+
+/** Set the active language. Falls back to English for unknown values. Notifies subscribers. */
 export function setLanguage(lang: string): void {
-  current = MESSAGES[lang] ? lang : DEFAULT_LANG;
+  const next = MESSAGES[lang] ? lang : DEFAULT_LANG;
+  if (next === current) return;
+  current = next;
+  for (const fn of langListeners) {
+    try {
+      fn(next);
+    } catch {
+      /* a broken listener must not wedge language switching */
+    }
+  }
+}
+
+/** Subscribe to language changes; returns an unsubscribe function. */
+export function onLanguageChange(fn: LangListener): () => void {
+  langListeners.add(fn);
+  return () => {
+    langListeners.delete(fn);
+  };
 }
 
 /**
