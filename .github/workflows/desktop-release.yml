@@ -291,7 +291,11 @@ jobs:
               if (!sigAssetFor(art.name)) throw new Error(`Missing signature "${art.name}.sig" — refusing to write latest.json`);
             }
 
-            // signature field = base64 of the .sig file's bytes (matches tauri).
+            // signature field = base64 of the .sig file's bytes, encoded EXACTLY
+            // once (that's the form tauri's updater expects). getReleaseAsset can
+            // hand the bytes back raw or already base64-wrapped depending on the
+            // Octokit/runtime, so normalize down to the raw minisign text first
+            // (it always starts with "untrusted comment:"), then encode once.
             const sigCache = new Map();
             async function signatureFor(name) {
               if (!sigCache.has(name)) {
@@ -299,7 +303,16 @@ jobs:
                 const res = await github.rest.repos.getReleaseAsset({
                   owner, repo, asset_id: sig.id, headers: { accept: 'application/octet-stream' },
                 });
-                sigCache.set(name, Buffer.from(res.data).toString('base64'));
+                let text = typeof res.data === 'string' ? res.data : Buffer.from(res.data).toString('utf8');
+                for (let i = 0; i < 3 && !text.startsWith('untrusted comment:'); i++) {
+                  const decoded = Buffer.from(text.trim(), 'base64').toString('utf8');
+                  if (!decoded || decoded === text) break;
+                  text = decoded;
+                }
+                if (!text.startsWith('untrusted comment:')) {
+                  throw new Error(`Unexpected signature format for ${name}.sig`);
+                }
+                sigCache.set(name, Buffer.from(text, 'utf8').toString('base64'));
               }
               return sigCache.get(name);
             }
