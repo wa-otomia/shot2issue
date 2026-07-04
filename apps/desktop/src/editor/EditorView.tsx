@@ -101,6 +101,10 @@ export default function EditorView() {
   const aiBusyRef = useRef(false);
   const aiBusy = titleBusy || complaintBusy;
   aiBusyRef.current = aiBusy;
+  // Timestamp of the last Esc, so closing the editor needs a *double* Esc (a lone
+  // stray Esc must not discard an in-progress issue). See the keydown handler.
+  // Seeded to -Infinity so an Esc in the window's first 2s still arms, not closes.
+  const lastEscRef = useRef(Number.NEGATIVE_INFINITY);
 
   const showToast = useCallback((key: string) => {
     // The annotator passes "copyFailed:<msg>"; everything else is a plain i18n key.
@@ -403,14 +407,47 @@ export default function EditorView() {
         e.preventDefault();
         void annot.copy();
       }
+      // Enter confirms the current edit (mirrors the extension): apply a pending
+      // crop, or "fix" the selected annotation by deselecting it. Never while
+      // typing in a field (the text-tool textarea handles its own Enter).
+      if (e.key === "Enter" && !inField) {
+        if (cropActive) {
+          e.preventDefault();
+          annot.applyCrop();
+          return;
+        }
+        if (annot.state.current.selected) {
+          e.preventDefault();
+          annot.deselect();
+          return;
+        }
+      }
       if (e.key === "Escape") {
-        if (cropActive) annot.cancelCrop();
-        else if (!inField) void getCurrentWindow().close(); // Esc closes the editor window
+        if (cropActive) {
+          annot.cancelCrop(); // first Esc cancels a pending crop
+          return;
+        }
+        if (inField) return; // text fields keep their native Esc; never close from one
+        if (annot.state.current.selected) {
+          annot.deselect(); // then it deselects the active annotation
+          return;
+        }
+        // Finally, require a *double* Esc to close the editor window, so a lone stray
+        // Esc can't discard the in-progress issue (mirrors the extension). First press
+        // arms + hints; a second within 2s actually closes. (Confirming a text box is
+        // handled in useAnnotator and stops propagation, so it never reaches here.)
+        if (e.timeStamp - lastEscRef.current < 2000) {
+          lastEscRef.current = 0;
+          void getCurrentWindow().close();
+        } else {
+          lastEscRef.current = e.timeStamp;
+          showToast("escAgainToClose");
+        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [annot, cropActive]);
+  }, [annot, cropActive, showToast]);
 
   // ---- AI bubble helpers -----------------------------------------------------
   const openBubble = (anchor: HTMLElement | null, statusKey: string) =>

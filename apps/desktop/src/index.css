@@ -972,7 +972,10 @@ body.app-closing {
 .s2i-ai-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .s2i-ai-model { width: auto; max-width: 200px; }
 .s2i-ai-reasoning { width: auto; max-width: 140px; }
-.s2i-auto-dictate { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-dim); cursor: pointer; }
+/* Selector is scoped under .s2i-form-col to outrank `.s2i-form-col label` (which
+   otherwise forces display:block, a 12px top margin, and bold text on this label,
+   knocking the checkbox out of alignment with the AI-row buttons). */
+.s2i-form-col label.s2i-auto-dictate { display: inline-flex; align-items: center; gap: 5px; margin: 0; font-weight: 400; font-size: 12px; color: var(--text-dim); cursor: pointer; }
 .s2i-auto-dictate input { margin: 0; }
 button.ai-busy { background: var(--error); border-color: var(--error); color: #fff; }
 button.ai-busy:hover { background: var(--error); border-color: var(--error); }

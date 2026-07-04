@@ -612,13 +612,19 @@ export function useAnnotator(opts: AnnotatorOptions) {
     };
 
     const onTextKey = (e: KeyboardEvent): void => {
+      // Ctrl/Cmd+Enter commits the text; a plain Enter keeps a newline (multi-line
+      // labels). Esc cancels the box. stopPropagation isolates these from the
+      // window-level editor shortcuts — blur() moves focus off the textarea, which
+      // would otherwise let the window's Enter/Esc handler fire on the same event.
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
+        e.stopPropagation();
         commitText();
         return;
       }
       if (e.key === "Escape") {
         e.preventDefault();
+        e.stopPropagation();
         ta.style.display = "none";
         ta.blur();
         st.current.pendingTextOp = null;
