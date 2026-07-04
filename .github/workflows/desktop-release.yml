@@ -72,13 +72,6 @@ jobs:
       contents: write # upload assets to the release
     strategy:
       fail-fast: false
-      # Serialize the OS builds so their uploads into the shared release never
-      # overlap — in particular the incremental latest.json (updater manifest),
-      # which tauri-action reads-merges-writes per platform and would otherwise
-      # clobber concurrently, dropping a platform's entry. Releases are
-      # infrequent, so the extra wall-clock buys one complete release with every
-      # platform present in a single latest.json.
-      max-parallel: 1
       matrix:
         include:
           - platform: 'macos-latest'
@@ -169,8 +162,15 @@ jobs:
 
       # ---- Build + sign + upload to the pre-created release ------------
       # releaseId targets the single draft from create-release, so tauri-action
-      # only UPLOADS here (it does not create a release), and every platform
-      # lands in one release with a merged latest.json.
+      # only UPLOADS here (it never creates a release). Every OS job uploads its
+      # installers AND updater signatures (.sig) to the one release.
+      #
+      # includeUpdaterJson: false is the key to running the matrix in PARALLEL:
+      # tauri-action's latest.json writer is a read-merge-delete-reupload on a
+      # single shared asset, so concurrent jobs would clobber each other (drop a
+      # platform) or 422 on a duplicate create. We skip it here and let the
+      # update-latest-json job below assemble the complete manifest ONCE, after
+      # all builds finish, from the uploaded .sig files.
       - name: Build and release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -186,8 +186,11 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ steps.macos_cert.outputs.signing_identity || '-' }}
         with:
           projectPath: apps/desktop
-          includeUpdaterJson: true
           releaseId: ${{ needs.create-release.outputs.release_id }}
+          # Do NOT write latest.json per-job (assembled once, below). Still upload
+          # the .sig files — that's what the assembly step reads.
+          includeUpdaterJson: false
+          uploadUpdaterSignatures: true
           args: ${{ matrix.args }}
 
       # ---- Windows OS signing placeholder ------------------------------
@@ -227,3 +230,108 @@ jobs:
               --passphrase "$LINUX_GPG_PASSPHRASE" \
               --detach-sign --armor "$f"
           done
+
+  # Assemble the updater manifest ONCE, after every OS build has finished and
+  # uploaded its installers + .sig files to the shared release. `needs: build`
+  # blocks on the whole matrix, and because `needs` requires success, a failed
+  # OS build skips this job — we never publish a manifest that's missing a
+  # platform. The manifest is built from the .sig assets on the release itself,
+  # so it doesn't depend on cross-job file passing.
+  update-latest-json:
+    needs: [create-release, build]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assemble and upload latest.json
+        uses: actions/github-script@v7
+        env:
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+          TAG: ${{ github.ref_name }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const releaseId = Number(process.env.RELEASE_ID);
+            const tag = process.env.TAG;
+            const version = tag.replace(/^desktop-v/, '');
+
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
+              owner, repo, release_id: releaseId, per_page: 100,
+            });
+
+            // Updater platform key -> the artifact suffix it points at (its
+            // signature lives at "<artifact name>.sig"). These keys mirror what
+            // tauri-action itself emits for a universal-macOS + Linux
+            // (AppImage/deb/rpm) + Windows (msi/nsis) bundle.
+            const MAP = {
+              'linux-x86_64': '.AppImage',
+              'linux-x86_64-appimage': '.AppImage',
+              'linux-x86_64-deb': '.deb',
+              'linux-x86_64-rpm': '.rpm',
+              'windows-x86_64': '.msi',
+              'windows-x86_64-msi': '.msi',
+              'windows-x86_64-nsis': '-setup.exe',
+              'darwin-aarch64': '.app.tar.gz',
+              'darwin-x86_64': '.app.tar.gz',
+              'darwin-aarch64-app': '.app.tar.gz',
+              'darwin-x86_64-app': '.app.tar.gz',
+            };
+            // One artifact per OS MUST be present, else a build silently dropped
+            // out — refuse to write a half manifest.
+            const REQUIRED = ['.app.tar.gz', '.AppImage', '.msi', '-setup.exe'];
+
+            const artFor = (suffix) =>
+              assets.find((a) => a.name.endsWith(suffix) && !a.name.endsWith('.sig'));
+            const sigAssetFor = (name) => assets.find((a) => a.name === `${name}.sig`);
+
+            for (const suffix of REQUIRED) {
+              const art = artFor(suffix);
+              if (!art) throw new Error(`Missing updater artifact "*${suffix}" — build incomplete, refusing to write latest.json`);
+              if (!sigAssetFor(art.name)) throw new Error(`Missing signature "${art.name}.sig" — refusing to write latest.json`);
+            }
+
+            // signature field = base64 of the .sig file's bytes (matches tauri).
+            const sigCache = new Map();
+            async function signatureFor(name) {
+              if (!sigCache.has(name)) {
+                const sig = sigAssetFor(name);
+                const res = await github.rest.repos.getReleaseAsset({
+                  owner, repo, asset_id: sig.id, headers: { accept: 'application/octet-stream' },
+                });
+                sigCache.set(name, Buffer.from(res.data).toString('base64'));
+              }
+              return sigCache.get(name);
+            }
+
+            const platforms = {};
+            for (const [key, suffix] of Object.entries(MAP)) {
+              const art = artFor(suffix);
+              if (!art) { core.warning(`No artifact for ${key} (${suffix}); skipping`); continue; }
+              platforms[key] = {
+                signature: await signatureFor(art.name),
+                // Construct the stable public URL tauri expects (works once the
+                // release is published), rather than the draft browser_download_url.
+                url: `https://github.com/${owner}/${repo}/releases/download/${tag}/${art.name}`,
+              };
+            }
+
+            const notes = [
+              'See the assets attached below for installers.',
+              '',
+              '- `.dmg` — macOS (universal: Apple Silicon + Intel, self-signed; right-click → Open on first launch)',
+              '- `.AppImage` / `.deb` — Linux (x86_64)',
+              '- `.exe` (NSIS) / `.msi` — Windows (x86_64)',
+            ].join('\n');
+            const latest = { version, notes, pub_date: new Date().toISOString(), platforms };
+
+            // Replace any latest.json a build may have left behind.
+            for (const a of assets.filter((a) => a.name === 'latest.json')) {
+              await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: a.id });
+            }
+            await github.rest.repos.uploadReleaseAsset({
+              owner, repo, release_id: releaseId, name: 'latest.json',
+              data: JSON.stringify(latest, null, 2),
+              headers: { 'content-type': 'application/json' },
+            });
+            core.info(`latest.json assembled with platforms: ${Object.keys(platforms).join(', ')}`);
